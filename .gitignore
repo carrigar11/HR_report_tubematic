@@ -64,6 +64,7 @@ Desktop.ini
 
 # Specific project files
 ignore
+README.md
 
 # Excel / Data files
 *.xlsx
