@@ -15,14 +15,16 @@ export const admins = {
 }
 
 export const upload = {
-  employees: (file) => {
+  employees: (file, preview = false) => {
     const fd = new FormData()
     fd.append('file', file)
+    fd.append('preview', preview ? 'true' : 'false')
     return api.post('/upload/employees/', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
   },
-  attendance: (file) => {
+  attendance: (file, preview = false) => {
     const fd = new FormData()
     fd.append('file', file)
+    fd.append('preview', preview ? 'true' : 'false')
     return api.post('/upload/attendance/', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
   },
 }

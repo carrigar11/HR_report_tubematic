@@ -74,7 +74,8 @@ class UploadEmployeesView(APIView):
         f = request.FILES.get('file')
         if not f:
             return Response({'success': False, 'error': 'No file'}, status=400)
-        result = upload_employees_excel(f)
+        preview = request.data.get('preview', 'false').lower() == 'true'
+        result = upload_employees_excel(f, preview=preview)
         if not result.get('success'):
             return Response(result, status=400)
         return Response(result)
@@ -85,7 +86,8 @@ class UploadAttendanceView(APIView):
         f = request.FILES.get('file')
         if not f:
             return Response({'success': False, 'error': 'No file'}, status=400)
-        result = upload_attendance_excel(f)
+        preview = request.data.get('preview', 'false').lower() == 'true'
+        result = upload_attendance_excel(f, preview=preview)
         if not result.get('success'):
             return Response(result, status=400)
         return Response(result)
