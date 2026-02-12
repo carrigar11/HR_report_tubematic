@@ -64,7 +64,6 @@ export default function EmployeeMaster() {
                 <th>Dept</th>
                 <th>Designation</th>
                 <th>Status</th>
-                <th>Type</th>
                 <th>Salary Type</th>
                 <th>Profile</th>
               </tr>
@@ -79,7 +78,6 @@ export default function EmployeeMaster() {
                   <td>{row.dept_name || '—'}</td>
                   <td>{row.designation || '—'}</td>
                   <td><span className={`badge badge-${row.status === 'Active' ? 'success' : 'warn'}`}>{row.status}</span></td>
-                  <td>{row.employment_type || '—'}</td>
                   <td>{row.salary_type || '—'}</td>
                   <td><Link to={`/employees/${row.emp_code}/profile`}>View</Link></td>
                 </tr>

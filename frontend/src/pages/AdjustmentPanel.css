@@ -2,6 +2,64 @@
   margin-bottom: 1.25rem;
 }
 
+.adjustmentShiftBanner {
+  margin-bottom: 1.25rem;
+  background: var(--surface2);
+  border-left: 4px solid var(--accent);
+}
+
+.adjustmentShiftTitle {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+  color: var(--textMuted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.adjustmentShiftInfo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  font-size: 0.95rem;
+}
+
+.adjustmentShiftLabel {
+  color: var(--textMuted);
+  font-weight: 500;
+}
+
+.adjustmentShiftValue {
+  color: var(--text);
+  font-weight: 600;
+  margin-right: 0.5rem;
+}
+
+.adjustmentShiftNote {
+  flex-basis: 100%;
+  font-size: 0.8rem;
+  color: var(--textMuted);
+  margin-top: 0.25rem;
+}
+
+.adjustmentOTPreview {
+  min-height: 2.25rem;
+  display: flex;
+  align-items: center;
+}
+
+.adjustmentOTValue {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.adjustmentOTMuted {
+  font-size: 0.9rem;
+  color: var(--textMuted);
+}
+
 .adjustmentFilterCard,
 .adjustmentCurrentCard,
 .adjustmentFormCard,

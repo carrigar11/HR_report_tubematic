@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { upload } from '../api'
-import { IconUsers, IconCalendar } from '../components/Icons'
+import { IconUsers, IconCalendar, IconClock } from '../components/Icons'
 import './Upload.css'
 
 function UploadCard({ title, icon: Icon, hint, accept, onPreview, onConfirm, type }) {
@@ -63,7 +63,9 @@ function UploadCard({ title, icon: Icon, hint, accept, onPreview, onConfirm, typ
     setStep('select')
   }
 
-  const hasChanges = preview && (preview.created > 0 || preview.updated > 0 || preview.inserted > 0)
+  const hasChanges = preview && (
+    preview.created > 0 || preview.updated > 0 || preview.inserted > 0
+  )
 
   return (
     <section className="uploadPageCard card">
@@ -96,7 +98,18 @@ function UploadCard({ title, icon: Icon, hint, accept, onPreview, onConfirm, typ
           <div className="uploadPreviewSummary">
             <h4>Preview Summary</h4>
             <div className="previewStats">
-              {type === 'employees' ? (
+              {type === 'forcePunch' ? (
+                <>
+                  <div className="previewStat update">
+                    <span className="statNum">{preview.updated}</span>
+                    <span className="statLabel">Records to overwrite (punch in/out)</span>
+                  </div>
+                  <div className="previewStat skip">
+                    <span className="statNum">{preview.skipped}</span>
+                    <span className="statLabel">Skipped (no matching record)</span>
+                  </div>
+                </>
+              ) : type === 'employees' ? (
                 <>
                   <div className="previewStat new">
                     <span className="statNum">{preview.created}</span>
@@ -105,6 +118,17 @@ function UploadCard({ title, icon: Icon, hint, accept, onPreview, onConfirm, typ
                   <div className="previewStat update">
                     <span className="statNum">{preview.updated}</span>
                     <span className="statLabel">Employees to update</span>
+                  </div>
+                </>
+              ) : type === 'shift' ? (
+                <>
+                  <div className="previewStat new">
+                    <span className="statNum">{preview.created}</span>
+                    <span className="statLabel">New records to create</span>
+                  </div>
+                  <div className="previewStat update">
+                    <span className="statNum">{preview.updated}</span>
+                    <span className="statLabel">Records to update</span>
                   </div>
                 </>
               ) : (
@@ -188,6 +212,66 @@ function UploadCard({ title, icon: Icon, hint, accept, onPreview, onConfirm, typ
             </div>
           )}
 
+          {type === 'shift' && preview.to_create?.length > 0 && (
+            <div className="uploadPreviewTable">
+              <h5>New Shift Records ({preview.to_create.length}{preview.has_more ? '+' : ''})</h5>
+              <div className="previewTableWrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Emp Code</th>
+                      <th>Date</th>
+                      <th>Shift</th>
+                      <th>From</th>
+                      <th>To</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {preview.to_create.map((rec, i) => (
+                      <tr key={i}>
+                        <td>{rec.emp_code}</td>
+                        <td>{rec.date}</td>
+                        <td>{rec.shift || '—'}</td>
+                        <td>{rec.shift_from?.slice(0, 5) || '—'}</td>
+                        <td>{rec.shift_to?.slice(0, 5) || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {type === 'shift' && preview.to_update?.length > 0 && (
+            <div className="uploadPreviewTable">
+              <h5>Updated Shift Records ({preview.to_update.length}{preview.has_more ? '+' : ''})</h5>
+              <div className="previewTableWrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Emp Code</th>
+                      <th>Date</th>
+                      <th>Shift</th>
+                      <th>From</th>
+                      <th>To</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {preview.to_update.map((upd, i) => (
+                      <tr key={i}>
+                        <td>{upd.emp_code}</td>
+                        <td>{upd.date}</td>
+                        <td>{upd.new?.shift || '—'}</td>
+                        <td>{upd.new?.shift_from?.slice(0, 5) || '—'}</td>
+                        <td>{upd.new?.shift_to?.slice(0, 5) || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           {type === 'attendance' && preview.to_insert?.length > 0 && (
             <div className="uploadPreviewTable">
               <h5>New Attendance Records ({preview.to_insert.length}{preview.has_more ? '+' : ''})</h5>
@@ -210,6 +294,38 @@ function UploadCard({ title, icon: Icon, hint, accept, onPreview, onConfirm, typ
                         <td>{rec.status}</td>
                         <td>{rec.punch_in?.slice(0, 5) || '—'}</td>
                         <td>{rec.punch_out?.slice(0, 5) || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {type === 'forcePunch' && preview.to_update?.length > 0 && (
+            <div className="uploadPreviewTable">
+              <h5>Force Punch Updates ({preview.to_update.length}{preview.has_more ? '+' : ''})</h5>
+              <div className="previewTableWrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Emp Code</th>
+                      <th>Date</th>
+                      <th>Old Punch In</th>
+                      <th>New Punch In</th>
+                      <th>Old Punch Out</th>
+                      <th>New Punch Out</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {preview.to_update.map((upd, i) => (
+                      <tr key={i}>
+                        <td>{upd.emp_code}</td>
+                        <td>{upd.date}</td>
+                        <td className="oldValue">{upd.old_punch_in?.slice(0, 5) || '—'}</td>
+                        <td className="newValue">{upd.new_punch_in?.slice(0, 5) || '—'}</td>
+                        <td className="oldValue">{upd.old_punch_out?.slice(0, 5) || '—'}</td>
+                        <td className="newValue">{upd.new_punch_out?.slice(0, 5) || '—'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -296,6 +412,18 @@ function UploadCard({ title, icon: Icon, hint, accept, onPreview, onConfirm, typ
                 <span>Updated: {result.updated}</span>
                 {result.errors > 0 && <span className="errorStat">Errors: {result.errors}</span>}
               </>
+            ) : type === 'shift' ? (
+              <>
+                <span>Created: {result.created}</span>
+                <span>Updated: {result.updated}</span>
+                {result.errors > 0 && <span className="errorStat">Errors: {result.errors}</span>}
+              </>
+            ) : type === 'forcePunch' ? (
+              <>
+                <span>Updated: {result.updated}</span>
+                <span>Skipped: {result.skipped}</span>
+                {result.errors > 0 && <span className="errorStat">Errors: {result.errors}</span>}
+              </>
             ) : (
               <>
                 <span>Inserted: {result.inserted}</span>
@@ -339,6 +467,24 @@ export default function Upload() {
           type="attendance"
           onPreview={(file) => upload.attendance(file, true)}
           onConfirm={(file) => upload.attendance(file, false)}
+        />
+        <UploadCard
+          title="Upload shift-wise attendance"
+          icon={IconClock}
+          hint="Required: Emp Id, Date, Shift. Optional: From, To. Takes shift, from, to from Excel and connects to attendance by employee id. Use shift_wise_attendance.xlsx format."
+          accept=".xlsx,.xls"
+          type="shift"
+          onPreview={(file) => upload.shift(file, true)}
+          onConfirm={(file) => upload.shift(file, false)}
+        />
+        <UploadCard
+          title="Upload as force punch in and out"
+          icon={IconClock}
+          hint="Overwrites punch_in and punch_out for existing attendance records. Required: Emp Id, Date, Punch In, Punch Out. Optional: Total Working Hours. Only updates records that already exist."
+          accept=".xlsx,.xls"
+          type="forcePunch"
+          onPreview={(file) => upload.forcePunch(file, true)}
+          onConfirm={(file) => upload.forcePunch(file, false)}
         />
       </div>
     </div>

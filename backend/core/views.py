@@ -20,7 +20,7 @@ from .serializers import (
     HolidaySerializer, SystemSettingSerializer,
     AdminLoginSerializer, AttendanceAdjustPayloadSerializer,
 )
-from .excel_upload import upload_employees_excel, upload_attendance_excel
+from .excel_upload import upload_employees_excel, upload_attendance_excel, upload_shift_excel, upload_force_punch_excel
 from .reward_engine import run_reward_engine
 
 
@@ -93,6 +93,31 @@ class UploadAttendanceView(APIView):
         return Response(result)
 
 
+class UploadShiftView(APIView):
+    def post(self, request):
+        f = request.FILES.get('file')
+        if not f:
+            return Response({'success': False, 'error': 'No file'}, status=400)
+        preview = request.data.get('preview', 'false').lower() == 'true'
+        result = upload_shift_excel(f, preview=preview)
+        if not result.get('success'):
+            return Response(result, status=400)
+        return Response(result)
+
+
+class UploadForcePunchView(APIView):
+    """Upload Excel to force overwrite punch_in and punch_out for existing attendance records."""
+    def post(self, request):
+        f = request.FILES.get('file')
+        if not f:
+            return Response({'success': False, 'error': 'No file'}, status=400)
+        preview = request.data.get('preview', 'false').lower() == 'true'
+        result = upload_force_punch_excel(f, preview=preview)
+        if not result.get('success'):
+            return Response(result, status=400)
+        return Response(result)
+
+
 # ---------- CRUD ViewSets ----------
 class EmployeeViewSet(viewsets.ModelViewSet):
     queryset = Employee.objects.all()
@@ -116,11 +141,18 @@ class AttendanceViewSet(viewsets.ReadOnlyModelViewSet):
     filterset_fields = ['emp_code', 'status']
 
     def get_queryset(self):
+        today = timezone.localdate()
+        Attendance.objects.filter(
+            date=today,
+            punch_in__isnull=False
+        ).exclude(status='Present').update(status='Present')
         qs = super().get_queryset()
         date_from = self.request.query_params.get('date_from', '').strip()
         date_to = self.request.query_params.get('date_to', '').strip()
         date_single = self.request.query_params.get('date', '').strip()
         search = self.request.query_params.get('search', '').strip()
+        punchin = self.request.query_params.get('punchin', '').strip()
+        status_filter = self.request.query_params.get('status', '').strip()
         if date_single:
             qs = qs.filter(date=date_single)
         if date_from:
@@ -129,6 +161,13 @@ class AttendanceViewSet(viewsets.ReadOnlyModelViewSet):
             qs = qs.filter(date__lte=date_to)
         if search:
             qs = qs.filter(Q(emp_code__icontains=search) | Q(name__icontains=search))
+        if punchin:
+            if punchin == 'yes':
+                qs = qs.filter(punch_in__isnull=False)
+            elif punchin == 'no':
+                qs = qs.filter(punch_in__isnull=True)
+        if status_filter:
+            qs = qs.filter(status=status_filter)
         return qs.order_by('-date', 'emp_code')
 
 
@@ -178,6 +217,57 @@ class SystemSettingViewSet(viewsets.ModelViewSet):
 
 
 # ---------- Attendance Adjust (audit trail) ----------
+def _time_to_decimal_hours(t):
+    """Convert time to decimal hours (e.g. 09:30 -> 9.5)."""
+    if t is None:
+        return None
+    return t.hour + t.minute / 60 + t.second / 3600
+
+
+def _shift_duration_hours(shift_from, shift_to):
+    """Expected shift duration. If shift_to < shift_from, spans next day."""
+    if shift_from is None or shift_to is None:
+        return None
+    from_h = _time_to_decimal_hours(shift_from)
+    to_h = _time_to_decimal_hours(shift_to)
+    if from_h is None or to_h is None:
+        return None
+    diff = to_h - from_h
+    if diff <= 0:
+        diff += 24
+    return round(diff, 2)
+
+
+def _punch_spans_next_day(punch_in, punch_out):
+    """True when punch_out < punch_in (next day)."""
+    if not punch_in or not punch_out:
+        return False
+    in_h = _time_to_decimal_hours(punch_in)
+    out_h = _time_to_decimal_hours(punch_out)
+    return in_h is not None and out_h is not None and out_h < in_h
+
+
+def _calc_overtime_from_punch(punch_in, punch_out, shift_from, shift_to):
+    """OT = working_hours - expected_shift_hours (whole hours only)."""
+    if punch_in is None or punch_out is None:
+        return Decimal('0')
+    in_h = _time_to_decimal_hours(punch_in)
+    out_h = _time_to_decimal_hours(punch_out)
+    if in_h is None or out_h is None:
+        return Decimal('0')
+    diff = out_h - in_h
+    if diff < 0:
+        diff += 24
+    total_working = Decimal(str(round(diff, 2)))
+    expected = _shift_duration_hours(shift_from, shift_to)
+    if expected is None or expected <= 0:
+        return Decimal('0')
+    ot = total_working - Decimal(str(expected))
+    if ot <= 0:
+        return Decimal('0')
+    return Decimal(int(ot))
+
+
 class AttendanceAdjustView(APIView):
     def post(self, request):
         ser = AttendanceAdjustPayloadSerializer(data=request.data)
@@ -192,11 +282,24 @@ class AttendanceAdjustView(APIView):
         old_punch_in, old_punch_out = att.punch_in, att.punch_out
         old_ot = att.over_time
         # Update
+        punch_in = data.get('punch_in') if data.get('punch_in') is not None else att.punch_in
+        punch_out = data.get('punch_out') if data.get('punch_out') is not None else att.punch_out
         if data.get('punch_in') is not None:
             att.punch_in = data['punch_in']
         if data.get('punch_out') is not None:
             att.punch_out = data['punch_out']
-        if data.get('over_time') is not None:
+        # Auto-calculate overtime when punch_in and punch_out are set (from shift)
+        if punch_in and punch_out and att.shift_from and att.shift_to:
+            att.over_time = _calc_overtime_from_punch(punch_in, punch_out, att.shift_from, att.shift_to)
+            # Also update total_working_hours and punch_spans_next_day from punch times
+            in_h = _time_to_decimal_hours(punch_in)
+            out_h = _time_to_decimal_hours(punch_out)
+            diff = out_h - in_h
+            if diff < 0:
+                diff += 24
+            att.total_working_hours = Decimal(str(round(diff, 2)))
+            att.punch_spans_next_day = _punch_spans_next_day(punch_in, punch_out)
+        elif data.get('over_time') is not None:
             att.over_time = data['over_time']
         att.save()
         # Audit log
@@ -219,10 +322,16 @@ class AttendanceAdjustView(APIView):
 # ---------- Dashboard ----------
 class DashboardView(APIView):
     def get(self, request):
-        today = date.today()
+        today = timezone.localdate()
         total_employees = Employee.objects.filter(status='Active').count()
-        today_present = Attendance.objects.filter(date=today, status='Present').count()
-        today_absent = Attendance.objects.filter(date=today, status='Absent').count()
+        Attendance.objects.filter(
+            date=today,
+            punch_in__isnull=False
+        ).exclude(status='Present').update(status='Present')
+        today_present = Attendance.objects.filter(
+            date=today
+        ).filter(Q(punch_in__isnull=False) | Q(status='Present')).count()
+        today_absent = max(total_employees - today_present, 0)
         # Overtime leaders (this week)
         week_start = today - timedelta(days=6)
         ot_leaders = Attendance.objects.filter(
@@ -284,7 +393,21 @@ class LeaderboardView(APIView):
         rewards = PerformanceReward.objects.filter(
             is_on_leaderboard=True, entry_type='REWARD'
         ).order_by('-created_at')[:50]
-        return Response(PerformanceRewardSerializer(rewards, many=True).data)
+        
+        # Get employee names for display
+        reward_list = list(rewards.values('id', 'emp_code', 'entry_type', 'trigger_reason', 
+                                          'metric_data', 'is_on_leaderboard', 'admin_action_status', 
+                                          'created_at'))
+        if reward_list:
+            emp_codes = [r['emp_code'] for r in reward_list]
+            emp_lookup = {
+                e['emp_code']: e.get('name', '')
+                for e in Employee.objects.filter(emp_code__in=emp_codes).values('emp_code', 'name')
+            }
+            for r in reward_list:
+                r['name'] = emp_lookup.get(r['emp_code'], '')
+        
+        return Response(reward_list)
 
 
 # ---------- Absentee Alert ----------
@@ -325,10 +448,10 @@ class ExportView(APIView):
             if date_to:
                 qs = qs.filter(date__lte=date_to)
             rows = list(qs.values(
-                'emp_code', 'name', 'date', 'punch_in', 'punch_out',
-                'total_working_hours', 'total_break', 'status', 'over_time'
+                'emp_code', 'name', 'date', 'shift', 'shift_from', 'shift_to',
+                'punch_in', 'punch_out', 'punch_spans_next_day', 'total_working_hours', 'total_break', 'status', 'over_time'
             ))
-            fieldnames = ['emp_code', 'name', 'date', 'punch_in', 'punch_out', 'total_working_hours', 'total_break', 'status', 'over_time']
+            fieldnames = ['emp_code', 'name', 'date', 'shift', 'shift_from', 'shift_to', 'punch_in', 'punch_out', 'punch_spans_next_day', 'total_working_hours', 'total_break', 'status', 'over_time']
         else:
             rows = []
             fieldnames = []

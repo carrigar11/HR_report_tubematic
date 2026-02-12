@@ -10,12 +10,45 @@ function timeToInputValue(t) {
   return s.slice(0, 5)
 }
 
+/** Parse "HH:MM" or "HH:MM:SS" to decimal hours */
+function timeToHours(t) {
+  if (!t) return null
+  const s = typeof t === 'string' ? t : t.toString()
+  const parts = s.split(':').map(Number)
+  if (parts.length < 2) return null
+  return parts[0] + (parts[1] || 0) / 60 + (parts[2] || 0) / 3600
+}
+
+/** Expected shift duration (handles next-day e.g. 22:00→06:00) */
+function shiftDurationHours(from, to) {
+  const f = timeToHours(from)
+  const t = timeToHours(to)
+  if (f == null || t == null) return null
+  let diff = t - f
+  if (diff <= 0) diff += 24
+  return diff
+}
+
+/** OT = working_hours - expected_shift (whole hours only) */
+function calcOvertime(punchIn, punchOut, shiftFrom, shiftTo) {
+  const inH = timeToHours(punchIn)
+  const outH = timeToHours(punchOut)
+  if (inH == null || outH == null) return 0
+  let diff = outH - inH
+  if (diff < 0) diff += 24
+  const totalWorking = diff
+  const expected = shiftDurationHours(shiftFrom, shiftTo)
+  if (expected == null || expected <= 0) return 0
+  const ot = totalWorking - expected
+  return ot > 0 ? Math.floor(ot) : 0
+}
+
 export default function AdjustmentPanel() {
   const [list, setList] = useState([])
   const [listLoading, setListLoading] = useState(true)
   const [listFilters, setListFilters] = useState({ emp_code: '', date_from: '', date_to: '' })
 
-  const [form, setForm] = useState({ emp_code: '', date: '', punch_in: '', punch_out: '', over_time: '', reason: '', created_by_admin: 'admin' })
+  const [form, setForm] = useState({ emp_code: '', date: '', punch_in: '', punch_out: '', reason: '', created_by_admin: 'admin' })
   const [submitLoading, setSubmitLoading] = useState(false)
   const [message, setMessage] = useState('')
   const [empSearch, setEmpSearch] = useState('')
@@ -69,15 +102,14 @@ export default function AdjustmentPanel() {
             ...f,
             punch_in: timeToInputValue(record.punch_in),
             punch_out: timeToInputValue(record.punch_out),
-            over_time: record.over_time != null ? String(record.over_time) : '',
           }))
         } else {
-          setForm((f) => ({ ...f, punch_in: '', punch_out: '', over_time: '' }))
+          setForm((f) => ({ ...f, punch_in: '', punch_out: '' }))
         }
       })
       .catch(() => {
         setCurrentRecord(null)
-        setForm((f) => ({ ...f, punch_in: '', punch_out: '', over_time: '' }))
+        setForm((f) => ({ ...f, punch_in: '', punch_out: '' }))
       })
       .finally(() => setCurrentRecordLoading(false))
   }, [form.emp_code, form.date])
@@ -122,7 +154,7 @@ export default function AdjustmentPanel() {
       }
       if (form.punch_in) payload.punch_in = form.punch_in + (form.punch_in.length === 5 ? ':00' : '')
       if (form.punch_out) payload.punch_out = form.punch_out + (form.punch_out.length === 5 ? ':00' : '')
-      if (form.over_time !== '') payload.over_time = form.over_time
+      // OT is auto-calculated by backend from punch times + shift
       await attendance.adjust(payload)
       setMessage('Attendance adjusted and logged.')
       loadList()
@@ -153,10 +185,31 @@ export default function AdjustmentPanel() {
       .finally(() => setListLoading(false))
   }
 
+  // Calculated OT from punch times + shift (preview)
+  const calculatedOT = currentRecord && form.punch_in && form.punch_out && currentRecord.shift_from && currentRecord.shift_to
+    ? calcOvertime(form.punch_in, form.punch_out, currentRecord.shift_from, currentRecord.shift_to)
+    : null
+
   return (
     <div className="pageContent">
       <h2 className="sectionTitle">Adjustment Panel</h2>
-      <p className="muted adjustmentIntro">Select employee and date to load existing attendance, then edit and save. All changes are logged below.</p>
+      <p className="muted adjustmentIntro">Select employee and date to load existing attendance, then edit and save. Overtime is auto-calculated from punch times and shift. All changes are logged below.</p>
+
+      {/* Shift info from database (when record loaded) */}
+      {currentRecord && (currentRecord.shift || currentRecord.shift_from || currentRecord.shift_to) && (
+        <div className="card adjustmentShiftBanner">
+          <h4 className="adjustmentShiftTitle">Shift from database</h4>
+          <div className="adjustmentShiftInfo">
+            <span className="adjustmentShiftLabel">Shift:</span>
+            <span className="adjustmentShiftValue">{currentRecord.shift || '—'}</span>
+            <span className="adjustmentShiftLabel">From:</span>
+            <span className="adjustmentShiftValue">{currentRecord.shift_from ? timeToInputValue(currentRecord.shift_from) : '—'}</span>
+            <span className="adjustmentShiftLabel">To:</span>
+            <span className="adjustmentShiftValue">{currentRecord.shift_to ? timeToInputValue(currentRecord.shift_to) : '—'}</span>
+            <span className="adjustmentShiftNote">(OT is calculated when working hours exceed shift duration)</span>
+          </div>
+        </div>
+      )}
 
       {/* Step 1: Filter — Emp + Date */}
       <div className="card adjustmentFilterCard">
@@ -247,8 +300,16 @@ export default function AdjustmentPanel() {
             <input type="time" className="input" value={form.punch_out} onChange={(e) => setForm((f) => ({ ...f, punch_out: e.target.value }))} />
           </div>
           <div className="adjustmentField">
-            <label className="label">Overtime</label>
-            <input type="number" step="0.5" className="input" value={form.over_time} onChange={(e) => setForm((f) => ({ ...f, over_time: e.target.value }))} style={{ width: 90 }} />
+            <label className="label">Overtime (auto)</label>
+            <div className="adjustmentOTPreview">
+              {calculatedOT !== null ? (
+                <span className="adjustmentOTValue">{calculatedOT}h</span>
+              ) : currentRecord && (!currentRecord.shift_from || !currentRecord.shift_to) ? (
+                <span className="adjustmentOTMuted">No shift set — upload shift first</span>
+              ) : (
+                <span className="adjustmentOTMuted">Set punch in & out</span>
+              )}
+            </div>
           </div>
           <div className="adjustmentField adjustmentFieldWide">
             <label className="label">Reason</label>

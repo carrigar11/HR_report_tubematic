@@ -24,12 +24,24 @@ ATTENDANCE_COLUMN_ALIASES = {
     'designation': ['designation', 'designation name'],
     'date': ['date', 'attendance date', 'work date'],
     'day': ['day', 'day name'],
-    'punch in': ['punch in', 'punchin', 'in time', 'check in'],
-    'punch out': ['punch out', 'punchout', 'out time', 'check out'],
+    'punch in': ['punch in', 'first punch', 'punchin', 'in time', 'check in'],
+    'punch out': ['punch out', 'last punch', 'punchout', 'out time', 'check out'],
     'total working hours': ['total working hours', 'working hours', 'total hours', 'work hours'],
     'total break': ['total break', 'break', 'break hours'],
     'status': ['status', 'attendance status', 'day status'],
     'over_time': ['over_time', 'overtime', 'over time', 'ot hours'],
+}
+
+# Shift-wise attendance upload (shift, from, to, first punch, last punch)
+SHIFT_COLUMN_ALIASES = {
+    'emp id': ['emp id', 'empid', 'emp_id', 'emp_code', 'code', 'employee id', 'employee code'],
+    'date': ['date', 'attendance date', 'work date'],
+    'shift': ['shift', 'shift name', 'shift type'],
+    'shift_from': ['from', 'shift from', 'start time', 'from time'],
+    'shift_to': ['to', 'shift to', 'end time', 'to time'],
+    'punch in': ['first punch', 'punch in', 'punchin', 'in time', 'check in'],
+    'punch out': ['last punch', 'punch out', 'punchout', 'out time', 'check out'],
+    'total working hours': ['total working hours', 'working hours', 'total hours', 'work hours'],
 }
 
 # Expected normalized names for employee sheet (code, emp id, emp_id = same)

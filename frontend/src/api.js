@@ -27,6 +27,18 @@ export const upload = {
     fd.append('preview', preview ? 'true' : 'false')
     return api.post('/upload/attendance/', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
   },
+  shift: (file, preview = false) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    fd.append('preview', preview ? 'true' : 'false')
+    return api.post('/upload/shift/', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+  },
+  forcePunch: (file, preview = false) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    fd.append('preview', preview ? 'true' : 'false')
+    return api.post('/upload/force-punch/', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+  },
 }
 
 export const dashboard = () => api.get('/dashboard/')

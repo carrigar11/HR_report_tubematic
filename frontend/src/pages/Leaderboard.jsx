@@ -25,6 +25,7 @@ export default function Leaderboard() {
             <thead>
               <tr>
                 <th>Emp Code</th>
+                <th>Name</th>
                 <th>Trigger</th>
                 <th>Metric</th>
                 <th>Date</th>
@@ -35,6 +36,7 @@ export default function Leaderboard() {
               {list.map((row) => (
                 <tr key={row.id}>
                   <td><Link to={`/employees/${row.emp_code}/profile`}>{row.emp_code}</Link></td>
+                  <td>{row.name || '—'}</td>
                   <td><span className="badge badge-success">{row.trigger_reason}</span></td>
                   <td>{row.metric_data}</td>
                   <td>{row.created_at?.slice(0, 10)}</td>

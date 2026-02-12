@@ -16,6 +16,8 @@ urlpatterns = [
     path('admins/<int:pk>/', views.AdminProfileView.as_view()),
     path('upload/employees/', views.UploadEmployeesView.as_view()),
     path('upload/attendance/', views.UploadAttendanceView.as_view()),
+    path('upload/shift/', views.UploadShiftView.as_view()),
+    path('upload/force-punch/', views.UploadForcePunchView.as_view()),
     path('dashboard/', views.DashboardView.as_view()),
     path('salary/monthly/', views.SalaryMonthlyView.as_view()),
     path('leaderboard/', views.LeaderboardView.as_view()),

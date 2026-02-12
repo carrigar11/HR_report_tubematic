@@ -1,0 +1,146 @@
+/* Employee Profile Page */
+.profilePage {
+  padding-bottom: 2rem;
+}
+
+/* Profile header */
+.profileHeader {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 1.5rem 1.75rem;
+  margin-bottom: 1.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius);
+  box-shadow: var(--cardShadow);
+}
+
+.profileAvatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accentDim) 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--bg);
+  flex-shrink: 0;
+}
+
+.profileHeaderInfo h2 {
+  margin: 0 0 0.25rem;
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.profileHeaderInfo .profileCode {
+  font-size: 0.9rem;
+  color: var(--textMuted);
+  font-family: var(--fontMono, monospace);
+}
+
+.profileHeaderInfo .profileStatus {
+  display: inline-block;
+  margin-top: 0.5rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.profileStatusActive {
+  background: rgba(34, 197, 94, 0.2);
+  color: var(--accent);
+}
+
+.profileStatusInactive {
+  background: rgba(239, 68, 68, 0.2);
+  color: var(--danger);
+}
+
+/* Details section */
+.profileDetailsCard {
+  padding: 1.5rem 1.75rem;
+  margin-bottom: 1.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--cardShadow);
+}
+
+.profileDetailsTitle {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 1.25rem;
+  color: var(--text);
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.profileDetailsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem 1.5rem;
+}
+
+.profileDetailItem {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.profileDetailLabel {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--textMuted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.profileDetailValue {
+  font-size: 0.95rem;
+  color: var(--text);
+}
+
+.profileDetailValue.empty {
+  color: var(--textMuted);
+  font-style: italic;
+}
+
+.profileDetailValue.highlight {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.profileDetailValue.mono {
+  font-family: var(--fontMono, monospace);
+}
+
+/* Section titles */
+.profileSectionTitle {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 0.75rem;
+  color: var(--text);
+}
+
+.profileCard {
+  margin-bottom: 1.5rem;
+}
+
+@media (max-width: 640px) {
+  .profileHeader {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .profileDetailsGrid {
+    grid-template-columns: 1fr;
+  }
+}

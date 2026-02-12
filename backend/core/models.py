@@ -61,8 +61,12 @@ class Attendance(models.Model):
     emp_code = models.CharField(max_length=50, db_index=True)
     name = models.CharField(max_length=255, blank=True)
     date = models.DateField(db_index=True)
+    shift = models.CharField(max_length=100, blank=True)
+    shift_from = models.TimeField(null=True, blank=True)
+    shift_to = models.TimeField(null=True, blank=True)
     punch_in = models.TimeField(null=True, blank=True)
     punch_out = models.TimeField(null=True, blank=True)
+    punch_spans_next_day = models.BooleanField(default=False, help_text='True when punch_out is next day (e.g. night shift)')
     total_working_hours = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal('0'))
     total_break = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal('0'))
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Present')
@@ -76,6 +80,15 @@ class Attendance(models.Model):
         constraints = [
             models.UniqueConstraint(fields=['emp_code', 'date'], name='unique_emp_date')
         ]
+
+    def save(self, *args, **kwargs):
+        # Auto status: If punched in, mark as Present
+        if self.punch_in:
+            self.status = 'Present'
+        elif not self.status or self.status == 'Present':
+            # If no punch_in and no explicit status, mark as Absent
+            self.status = 'Absent'
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.emp_code} {self.date} {self.status}"

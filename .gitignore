@@ -13,6 +13,9 @@ dist/
 build/
 *.egg
 
+# SQL DB schema (do not commit)
+*.sql
+database.sql
 # Django
 *.log
 local_settings.py
