@@ -1,0 +1,206 @@
+/* Attendance page layout */
+.attendancePage {
+  padding-bottom: 2rem;
+}
+
+/* Filter card */
+.attFilterCard {
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1.25rem;
+  border-left: 4px solid var(--primary);
+  background: var(--surface);
+}
+
+.attFilterTitle {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 1rem;
+  color: var(--text);
+}
+
+.attFilterBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1.5rem;
+}
+
+.attFilterBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.attFilterLabel {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--textMuted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.attSearchInput {
+  width: 100%;
+  min-width: 200px;
+  max-width: 280px;
+}
+
+/* Date filter block */
+.attDateBlock {
+  flex: 1;
+  min-width: 260px;
+}
+
+.attDateOptions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.attRadioLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.attRadioLabel input {
+  margin: 0;
+  accent-color: var(--primary);
+}
+
+.attDateInputs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.attDateInput {
+  width: 160px;
+}
+
+.attDateSep {
+  font-size: 0.85rem;
+  color: var(--textMuted);
+  padding: 0 0.25rem;
+}
+
+/* Table card */
+.attTableCard {
+  overflow: hidden;
+  padding: 0;
+}
+
+.attTableWrap {
+  overflow-x: auto;
+}
+
+.attTable {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.attTable th,
+.attTable td {
+  padding: 0.65rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.attTable th {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--textMuted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  background: var(--surface2);
+  white-space: nowrap;
+}
+
+.attTable tbody tr:hover {
+  background: var(--surface2);
+}
+
+.attTable td.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.attLoading,
+.attEmpty {
+  padding: 2rem 1.5rem !important;
+  text-align: center;
+  margin: 0 !important;
+}
+
+/* Pagination */
+.attPagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-top: 1px solid var(--border);
+  background: var(--surface2);
+}
+
+.attPaginationInfo {
+  font-size: 0.9rem;
+  color: var(--textMuted);
+}
+
+.attPaginationButtons {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.attPageBtn {
+  min-width: 90px;
+  padding: 0.45rem 0.85rem;
+  font-size: 0.9rem;
+}
+
+.attPageBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.attPageNum {
+  font-size: 0.9rem;
+  color: var(--text);
+  font-weight: 500;
+}
+
+@media (max-width: 640px) {
+  .attFilterBar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .attSearchInput {
+    max-width: none;
+  }
+
+  .attDateInputs {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .attDateInput {
+    width: 100%;
+  }
+
+  .attPagination {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .attPaginationButtons {
+    justify-content: center;
+  }
+}

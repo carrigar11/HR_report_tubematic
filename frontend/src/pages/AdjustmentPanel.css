@@ -1,0 +1,151 @@
+.adjustmentIntro {
+  margin-bottom: 1.25rem;
+}
+
+.adjustmentFilterCard,
+.adjustmentCurrentCard,
+.adjustmentFormCard,
+.adjustmentLogCard {
+  margin-bottom: 1.25rem;
+}
+
+.adjustmentCardTitle {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 1rem;
+  color: var(--text);
+}
+
+.adjustmentFilterRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem;
+}
+
+.adjustmentFilterGroup {
+  position: relative;
+  min-width: 200px;
+}
+
+.adjustmentFilterGroup .label {
+  margin-bottom: 0.35rem;
+}
+
+.adjustmentLoadStatus {
+  margin: 0.75rem 0 0;
+  font-size: 0.9rem;
+}
+
+.currentRecordGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 1rem;
+}
+
+.currentRecordItem {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.currentRecordLabel {
+  font-size: 0.75rem;
+  color: var(--textMuted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.currentRecordValue {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.adjustmentFormCard .adjustmentForm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem;
+}
+
+.adjustmentField {
+  position: relative;
+  min-width: 120px;
+}
+
+.adjustmentFieldWide {
+  min-width: 200px;
+}
+
+.adjustmentSubmit {
+  align-self: flex-end;
+}
+
+.adjustmentLogFilters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.adjustmentLogFilters .filterGroup {
+  display: flex;
+  flex-direction: column;
+  min-width: 100px;
+}
+
+.adjustmentLogFilters .filterGroup .label {
+  margin-bottom: 0.35rem;
+}
+
+.suggestionsList {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  max-height: 220px;
+  overflow-y: auto;
+  z-index: 100;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.suggestionItem {
+  width: 100%;
+  padding: 0.6rem 0.85rem;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.suggestionItem:hover {
+  background: var(--border);
+}
+
+.adjustmentMessage {
+  margin: 0.75rem 0 0;
+  font-size: 0.9rem;
+}
+
+.adjustmentMessage.success {
+  color: var(--accent);
+}
+
+.adjustmentMessage.error {
+  color: var(--danger);
+}
+
+.adjustmentLogCard .tableCard {
+  overflow-x: auto;
+}

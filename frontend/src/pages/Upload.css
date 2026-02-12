@@ -1,0 +1,101 @@
+.uploadPage {
+  max-width: 100%;
+}
+
+.uploadPageIntro {
+  margin-bottom: 1.5rem;
+}
+
+.uploadPageTitle {
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin: 0 0 0.35rem;
+  color: var(--text);
+}
+
+.uploadPageSub {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--textMuted);
+}
+
+.uploadPageGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+
+@media (max-width: 900px) {
+  .uploadPageGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.uploadPageCard {
+  padding: 1.5rem;
+  border-left: 4px solid var(--accent);
+}
+
+.uploadPageCard:nth-child(2) {
+  border-left-color: var(--primary);
+}
+
+.uploadPageCardHead {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.uploadPageCardIcon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--surface2);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.uploadPageCard:nth-child(2) .uploadPageCardIcon {
+  color: var(--primary);
+}
+
+.uploadPageCardTitle {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--text);
+}
+
+.uploadCard {
+  max-width: 520px;
+}
+
+.uploadHint {
+  color: var(--textMuted);
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+  line-height: 1.5;
+}
+
+.uploadForm input[type="file"] {
+  margin-bottom: 1rem;
+  color: var(--text);
+}
+
+.uploadError {
+  color: var(--danger);
+  margin-bottom: 0.75rem;
+  font-size: 0.9rem;
+}
+
+.uploadResult {
+  background: rgba(34, 197, 94, 0.1);
+  color: var(--accent);
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius);
+  margin-bottom: 0.75rem;
+  font-size: 0.9rem;
+}

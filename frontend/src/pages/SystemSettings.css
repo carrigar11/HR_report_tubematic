@@ -1,0 +1,192 @@
+.settingsPage {
+  max-width: 720px;
+}
+
+.settingsPageHeader {
+  margin-bottom: 1.75rem;
+}
+
+.settingsPageTitle {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0 0 0.35rem;
+  color: var(--text);
+}
+
+.settingsPageTagline {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--textMuted);
+}
+
+.settingsSection {
+  margin-bottom: 1.5rem;
+  padding-left: 1rem;
+  border-left: 4px solid var(--border);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.settingsSection:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.settingsSectionProfile {
+  border-left-color: var(--primary);
+}
+
+.settingsSectionSystem {
+  border-left-color: var(--accent);
+}
+
+.settingsSectionReward {
+  border-left-color: var(--warn);
+}
+
+.settingsSectionTitleRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.settingsSectionTitleRow + .systemSettingsTableWrap,
+.settingsSectionTitleRow ~ .muted {
+  margin-top: 0.5rem;
+}
+
+.settingsSectionIcon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.settingsSectionIconProfile {
+  background: rgba(59, 130, 246, 0.15);
+  color: var(--primary);
+}
+
+.settingsSectionIconSystem {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--accent);
+}
+
+.settingsSectionIconReward {
+  background: rgba(234, 179, 8, 0.2);
+  color: var(--warn);
+}
+
+.profileSectionHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.profileSectionHead .settingsSectionTitle {
+  margin: 0 0 0.25rem;
+}
+
+.profileSectionHead .settingsSectionDesc {
+  margin: 0;
+}
+
+.settingsSectionTitle {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin: 0 0 0.35rem;
+  color: var(--text);
+}
+
+.settingsSectionTitleRow .settingsSectionDesc {
+  margin: 0;
+}
+
+.settingsSectionDesc {
+  margin: 0 0 1rem;
+  font-size: 0.9rem;
+}
+
+.profileFormActions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.profileForm {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.profileField {
+  max-width: 420px;
+}
+
+.profileFieldEdit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.profileFieldRead {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.profileValue {
+  font-size: 0.95rem;
+  color: var(--text);
+}
+
+.profileValueReadOnly {
+  color: var(--textMuted);
+}
+
+.readOnlyBadge {
+  font-size: 0.75rem;
+  color: var(--textMuted);
+  background: var(--surface2);
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+}
+
+.btnEdit {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.85rem;
+}
+
+.profileMessage {
+  margin-top: 0.75rem;
+  font-size: 0.9rem;
+}
+
+.profileMessage.success {
+  color: var(--accent);
+}
+
+.profileMessage.error {
+  color: var(--danger);
+}
+
+.systemSettingsTableWrap {
+  overflow-x: auto;
+}
+
+.systemSettingsTableWrap table {
+  width: 100%;
+  max-width: 560px;
+}
+
+.runResult {
+  margin-top: 0.75rem;
+  font-size: 0.9rem;
+  color: var(--accent);
+}
