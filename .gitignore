@@ -61,3 +61,11 @@ Desktop.ini
 *.temp
 *.orig
 *.rej
+
+# Specific project files
+ignore
+
+# Excel / Data files
+*.xlsx
+*.xls
+*.csv
