@@ -121,6 +121,32 @@
   white-space: nowrap;
 }
 
+/* Sortable column headers */
+.sortableHeader {
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.2s;
+}
+
+.sortableHeader:hover {
+  background: var(--surface);
+}
+
+.sortLabel {
+  margin-right: 0.5rem;
+}
+
+.sortIcon {
+  font-size: 0.85rem;
+  color: var(--textMuted);
+  opacity: 0.6;
+}
+
+.sortableHeader:hover .sortIcon {
+  opacity: 1;
+  color: var(--primary);
+}
+
 .attTable tbody tr:hover {
   background: var(--surface2);
 }
