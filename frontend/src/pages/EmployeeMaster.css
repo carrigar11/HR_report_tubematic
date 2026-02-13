@@ -1,0 +1,32 @@
+/* Shift column in Employee table */
+.empShiftCell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.empShiftName {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.empShiftTime {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--accent);
+  background: rgba(34, 197, 94, 0.1);
+  padding: 0.1rem 0.45rem;
+  border-radius: 4px;
+  width: fit-content;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.empShiftNone {
+  font-size: 0.8rem;
+  color: var(--textMuted);
+  font-style: italic;
+}

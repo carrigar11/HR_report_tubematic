@@ -1,0 +1,595 @@
+/* ─── Bonus Management Page ─── */
+.bmPage {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+/* Header */
+.bmHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+.bmTitle {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--text);
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+.bmSubtitle {
+  font-size: 0.82rem;
+  color: var(--textMuted);
+  margin: 0.15rem 0 0;
+}
+.bmGiveBtn {
+  padding: 0.55rem 1.2rem;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--accent), #059669);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 2px 8px rgba(34,197,94,0.25);
+}
+.bmGiveBtn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(34,197,94,0.35);
+}
+
+/* ─── Give Bonus Panel ─── */
+.bmGivePanel {
+  margin-bottom: 1.25rem;
+  padding: 1.25rem 1.5rem;
+  border: 1px dashed var(--accent);
+  border-radius: 12px;
+  background: rgba(34,197,94,0.03);
+}
+.bmGivePanelTitle {
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin: 0 0 1rem;
+  color: var(--text);
+}
+.bmGiveGrid {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.bmGiveField {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  position: relative;
+  min-width: 200px;
+}
+.bmGiveFieldBtn {
+  min-width: auto;
+}
+.bmFieldLabel {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--textMuted);
+}
+.bmInput {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.85rem;
+  background: var(--surface);
+  color: var(--text);
+  transition: border-color 0.15s;
+}
+.bmInput:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(34,197,94,0.1);
+}
+.bmAwardBtn {
+  padding: 0.52rem 1.5rem;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  white-space: nowrap;
+}
+.bmAwardBtn:hover { opacity: 0.88; }
+.bmAwardBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Employee Search Dropdown */
+.bmDropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+  z-index: 20;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  margin-top: 4px;
+}
+.bmDropItem {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.75rem;
+  cursor: pointer;
+  font-size: 0.82rem;
+  transition: background 0.1s;
+}
+.bmDropItem:hover {
+  background: rgba(34,197,94,0.08);
+}
+.bmDropMuted {
+  cursor: default;
+  color: var(--textMuted);
+  font-style: italic;
+}
+.bmDropCode {
+  font-weight: 700;
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-family: monospace;
+}
+.bmDropName {
+  font-weight: 600;
+  color: var(--text);
+}
+.bmDropDept {
+  margin-left: auto;
+  font-size: 0.7rem;
+  color: var(--textMuted);
+}
+
+/* Selected Employee Card */
+.bmSelectedEmp {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.65rem;
+  background: rgba(34,197,94,0.06);
+  border: 1px solid rgba(34,197,94,0.2);
+  border-radius: 8px;
+}
+.bmSelectedAvatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), #2563eb);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.72rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.bmSelectedName {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+.bmSelectedMeta {
+  font-size: 0.7rem;
+  color: var(--textMuted);
+}
+
+/* Give panel message */
+.bmGiveMsg {
+  margin-top: 0.75rem;
+  padding: 0.45rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+.bmGiveMsg.success {
+  background: rgba(34,197,94,0.1);
+  color: var(--accent);
+}
+.bmGiveMsg.error {
+  background: rgba(239,68,68,0.1);
+  color: #ef4444;
+}
+
+/* ─── Filter Card ─── */
+.bmFilterCard {
+  margin-bottom: 1.25rem;
+}
+
+/* ─── Summary Cards ─── */
+.bmSummary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+.bmSumCard {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.bmSumCard:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+}
+.bmSumIcon {
+  font-size: 1.6rem;
+  flex-shrink: 0;
+}
+.bmSumContent {
+  display: flex;
+  flex-direction: column;
+}
+.bmSumNum {
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1.2;
+}
+.bmSumLabel {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--textMuted);
+}
+
+/* Color accents on summary cards */
+.bmSumTotal { border-left: 3px solid var(--accent); }
+.bmSumCount { border-left: 3px solid #3b82f6; }
+.bmSumHigh  { border-left: 3px solid #f59e0b; }
+.bmSumAvg   { border-left: 3px solid #a855f7; }
+
+/* ─── Sections ─── */
+.bmSection {
+  margin-bottom: 1.75rem;
+}
+.bmSectionTitle {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.bmSectionCount {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.1rem 0.45rem;
+  border-radius: 10px;
+  min-width: 20px;
+}
+.bmSectionCountMuted {
+  background: var(--border);
+  color: var(--textMuted);
+}
+
+/* ─── Tables ─── */
+.bmTable { width: 100%; }
+.bmTable th {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--textMuted);
+  font-weight: 700;
+  padding: 0.65rem 0.6rem;
+}
+.bmTable td {
+  vertical-align: middle;
+  padding: 0.6rem;
+}
+.bmRow:hover {
+  background: rgba(34,197,94,0.025);
+}
+
+/* Employee cell */
+.bmEmpCell {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+.bmEmpAvatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.bmEmpInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+}
+.bmEmpName {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+.bmEmpCode {
+  font-size: 0.7rem;
+  color: var(--textMuted);
+}
+
+/* Rank number */
+.bmRowNum {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(34,197,94,0.1);
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+/* Bonus value (editable) */
+.bmBonusVal {
+  font-weight: 700;
+  font-size: 0.92rem;
+  color: var(--accent);
+  cursor: pointer;
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+.bmBonusVal:hover {
+  background: rgba(34,197,94,0.08);
+}
+
+/* Edit inline */
+.bmEditInline {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.bmEditInput {
+  width: 65px;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  font-size: 0.82rem;
+  background: var(--surface);
+  color: var(--text);
+  text-align: center;
+}
+.bmEditSave, .bmEditCancel {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.bmEditSave {
+  background: var(--accent);
+  color: #fff;
+}
+.bmEditCancel {
+  background: var(--border);
+  color: var(--textMuted);
+}
+
+/* Chips */
+.bmChip {
+  display: inline-block;
+  padding: 0.12rem 0.45rem;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+.bmChipPurple { background: rgba(168,85,247,0.1); color: #a855f7; }
+.bmChipGreen { background: rgba(34,197,94,0.1); color: var(--accent); }
+.bmChipBlue { background: rgba(59,130,246,0.1); color: #3b82f6; }
+
+.bmDept {
+  font-size: 0.8rem;
+  color: var(--textMuted);
+}
+
+/* Actions */
+.bmActions {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+.bmActionBtn {
+  padding: 0.22rem 0.55rem;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-decoration: none;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--textMuted);
+  white-space: nowrap;
+}
+.bmActionBtn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.bmActionExpand {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(34,197,94,0.05);
+}
+.bmActionReset {
+  color: #ef4444;
+  border-color: rgba(239,68,68,0.3);
+}
+.bmActionReset:hover {
+  border-color: #ef4444;
+  color: #ef4444;
+  background: rgba(239,68,68,0.05);
+}
+.bmActionProfile {
+  color: #3b82f6;
+  border-color: rgba(59,130,246,0.3);
+}
+.bmActionProfile:hover {
+  border-color: #3b82f6;
+  color: #3b82f6;
+}
+
+/* ─── Detail Expand Row ─── */
+.bmDetailRow td {
+  padding: 0 !important;
+  border-top: none !important;
+}
+.bmDetailPanel {
+  padding: 1rem 1.25rem;
+  background: rgba(34,197,94,0.02);
+  border-top: 1px dashed var(--border);
+}
+.bmDetailGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  margin-bottom: 0.75rem;
+}
+.bmDetailItem {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.bmDetailLabel {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--textMuted);
+}
+.bmDetailValue {
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--text);
+}
+.bmDetailHighlight {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+/* Quick bonus buttons */
+.bmDetailQuickBonus {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--border);
+}
+.bmQuickBonusRow {
+  display: flex;
+  gap: 0.4rem;
+}
+.bmQuickBtn {
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.bmQuickBtn:hover {
+  background: var(--accent);
+  color: #fff;
+}
+.bmQuickBtnSmall {
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--textMuted);
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.bmQuickBtnSmall:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Table links */
+.bmTableLink {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+}
+.bmTableLink:hover { text-decoration: underline; }
+
+/* Muted table (no bonus) */
+.bmTableMuted tbody tr {
+  opacity: 0.8;
+}
+.bmTableMuted tbody tr:hover {
+  opacity: 1;
+  background: rgba(59,130,246,0.025);
+}
+
+/* ─── Responsive ─── */
+@media (max-width: 900px) {
+  .bmSummary {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .bmGiveGrid {
+    flex-direction: column;
+  }
+}
+@media (max-width: 600px) {
+  .bmSummary {
+    grid-template-columns: 1fr;
+  }
+  .bmDetailGrid {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  .bmActions {
+    flex-direction: column;
+  }
+  .bmHeader {
+    flex-direction: column;
+  }
+}

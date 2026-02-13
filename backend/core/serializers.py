@@ -36,7 +36,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'emp_code', 'name', 'mobile', 'email', 'gender',
             'dept_name', 'designation', 'status', 'employment_type', 'salary_type',
-            'base_salary', 'created_at', 'updated_at'
+            'base_salary', 'shift', 'shift_from', 'shift_to', 'created_at', 'updated_at'
         ]
         read_only_fields = ['created_at', 'updated_at']
 
@@ -55,7 +55,7 @@ class AttendanceSerializer(serializers.ModelSerializer):
 class SalarySerializer(serializers.ModelSerializer):
     class Meta:
         model = Salary
-        fields = ['id', 'emp_code', 'salary_type', 'base_salary', 'overtime_hours', 'bonus', 'month', 'year', 'created_at']
+        fields = ['id', 'emp_code', 'salary_type', 'base_salary', 'overtime_hours', 'total_working_hours', 'days_present', 'bonus', 'month', 'year', 'created_at']
 
 
 class AdjustmentSerializer(serializers.ModelSerializer):

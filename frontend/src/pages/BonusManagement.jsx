@@ -1,0 +1,427 @@
+import { useState, useEffect, useCallback } from 'react'
+import { Link } from 'react-router-dom'
+import { bonus, employees as empApi } from '../api'
+import './Table.css'
+import './BonusManagement.css'
+
+
+const now = new Date()
+const currentMonth = now.getMonth() + 1
+const currentYear = now.getFullYear()
+const monthNames = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+export default function BonusManagement() {
+  const [month, setMonth] = useState(currentMonth)
+  const [year, setYear] = useState(currentYear)
+  const [search, setSearch] = useState('')
+  const [searchDebounced, setSearchDebounced] = useState('')
+  const [data, setData] = useState({ summary: {}, employees: [] })
+  const [loading, setLoading] = useState(true)
+
+  // Give bonus panel
+  const [giveOpen, setGiveOpen] = useState(false)
+  const [giveSearch, setGiveSearch] = useState('')
+  const [giveResults, setGiveResults] = useState([])
+  const [giveSearching, setGiveSearching] = useState(false)
+  const [selectedEmp, setSelectedEmp] = useState(null)
+  const [giveHours, setGiveHours] = useState('')
+  const [giveLoading, setGiveLoading] = useState(false)
+  const [giveMsg, setGiveMsg] = useState({ text: '', type: '' })
+
+  // Edit bonus inline
+  const [editId, setEditId] = useState(null)
+  const [editVal, setEditVal] = useState('')
+  const [editLoading, setEditLoading] = useState(false)
+
+  // Expanded row
+  const [expanded, setExpanded] = useState(null)
+
+  useEffect(() => {
+    const t = setTimeout(() => setSearchDebounced(search.trim()), 300)
+    return () => clearTimeout(t)
+  }, [search])
+
+  const fetchData = useCallback(() => {
+    setLoading(true)
+    bonus.overview(month, year, searchDebounced || undefined)
+      .then((r) => setData(r.data || { summary: {}, employees: [] }))
+      .catch(() => setData({ summary: {}, employees: [] }))
+      .finally(() => setLoading(false))
+  }, [month, year, searchDebounced])
+
+  useEffect(() => { fetchData() }, [fetchData])
+
+  // Search employees for give-bonus panel
+  useEffect(() => {
+    if (!giveSearch.trim()) { setGiveResults([]); return }
+    const t = setTimeout(() => {
+      setGiveSearching(true)
+      empApi.list({ search: giveSearch.trim() })
+        .then((r) => setGiveResults(Array.isArray(r.data?.results) ? r.data.results : Array.isArray(r.data) ? r.data : []))
+        .catch(() => setGiveResults([]))
+        .finally(() => setGiveSearching(false))
+    }, 300)
+    return () => clearTimeout(t)
+  }, [giveSearch])
+
+  const handleGiveBonus = async () => {
+    if (!selectedEmp || !giveHours) return
+    const hrs = parseFloat(giveHours)
+    if (!hrs || hrs <= 0) { setGiveMsg({ text: 'Enter valid hours > 0', type: 'error' }); return }
+    setGiveLoading(true)
+    setGiveMsg({ text: '', type: '' })
+    try {
+      const { data: res } = await bonus.give(selectedEmp.emp_code, hrs)
+      setGiveMsg({ text: `Bonus awarded! ${selectedEmp.name || selectedEmp.emp_code} now has ${res.new_bonus}h total bonus.`, type: 'success' })
+      setGiveHours('')
+      setSelectedEmp(null)
+      setGiveSearch('')
+      setGiveResults([])
+      fetchData()
+    } catch (err) {
+      setGiveMsg({ text: 'Error: ' + (err.response?.data?.error || err.message), type: 'error' })
+    } finally {
+      setGiveLoading(false)
+    }
+  }
+
+  const handleSetBonus = async (empCode) => {
+    const hrs = parseFloat(editVal)
+    if (isNaN(hrs) || hrs < 0) return
+    setEditLoading(true)
+    try {
+      await bonus.set(empCode, hrs)
+      setEditId(null)
+      setEditVal('')
+      fetchData()
+    } catch {
+      // silent
+    } finally {
+      setEditLoading(false)
+    }
+  }
+
+  const handleResetBonus = async (empCode) => {
+    if (!window.confirm(`Reset bonus for ${empCode} to 0?`)) return
+    try {
+      await bonus.set(empCode, 0)
+      fetchData()
+    } catch {
+      // silent
+    }
+  }
+
+  const s = data.summary || {}
+  const employees = data.employees || []
+  const bonused = employees.filter((e) => parseFloat(e.bonus) > 0)
+  const noBonusYet = employees.filter((e) => parseFloat(e.bonus) === 0)
+
+  return (
+    <div className="pageContent bmPage">
+      {/* Header */}
+      <div className="bmHeader">
+        <div>
+          <h2 className="bmTitle">Bonus Manager</h2>
+          <p className="bmSubtitle">Award, track, and manage employee bonuses</p>
+        </div>
+        <button className="bmGiveBtn" onClick={() => { setGiveOpen(!giveOpen); setGiveMsg({ text: '', type: '' }) }}>
+          {giveOpen ? 'Close' : '+ Award Bonus'}
+        </button>
+      </div>
+
+      {/* Give Bonus Panel */}
+      {giveOpen && (
+        <div className="bmGivePanel card">
+          <h3 className="bmGivePanelTitle">Award Bonus to Employee</h3>
+          <div className="bmGiveGrid">
+            <div className="bmGiveField">
+              <label className="bmFieldLabel">Search Employee</label>
+              <input
+                type="text"
+                className="bmInput"
+                placeholder="Type emp code or name..."
+                value={giveSearch}
+                onChange={(e) => { setGiveSearch(e.target.value); setSelectedEmp(null) }}
+              />
+              {giveSearch && !selectedEmp && (
+                <div className="bmDropdown">
+                  {giveSearching && <div className="bmDropItem bmDropMuted">Searching...</div>}
+                  {!giveSearching && giveResults.length === 0 && giveSearch.length > 1 && <div className="bmDropItem bmDropMuted">No employees found</div>}
+                  {giveResults.slice(0, 8).map((emp) => (
+                    <div
+                      key={emp.emp_code}
+                      className="bmDropItem"
+                      onClick={() => { setSelectedEmp(emp); setGiveSearch(`${emp.emp_code} - ${emp.name}`); setGiveResults([]) }}
+                    >
+                      <span className="bmDropCode">{emp.emp_code}</span>
+                      <span className="bmDropName">{emp.name}</span>
+                      <span className="bmDropDept">{emp.dept_name || ''}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {selectedEmp && (
+                <div className="bmSelectedEmp">
+                  <div className="bmSelectedAvatar">
+                    {(selectedEmp.name || '?').split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()}
+                  </div>
+                  <div>
+                    <div className="bmSelectedName">{selectedEmp.name}</div>
+                    <div className="bmSelectedMeta">{selectedEmp.emp_code} &middot; {selectedEmp.dept_name || '—'} &middot; {selectedEmp.designation || '—'}</div>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="bmGiveField">
+              <label className="bmFieldLabel">Bonus Hours</label>
+              <input
+                type="number"
+                className="bmInput"
+                placeholder="e.g. 5"
+                min="0"
+                step="1"
+                value={giveHours}
+                onChange={(e) => setGiveHours(e.target.value)}
+              />
+            </div>
+            <div className="bmGiveField bmGiveFieldBtn">
+              <button
+                className="bmAwardBtn"
+                disabled={giveLoading || !selectedEmp || !giveHours}
+                onClick={handleGiveBonus}
+              >
+                {giveLoading ? 'Awarding...' : 'Award Bonus'}
+              </button>
+            </div>
+          </div>
+          {giveMsg.text && <div className={`bmGiveMsg ${giveMsg.type}`}>{giveMsg.text}</div>}
+        </div>
+      )}
+
+      {/* Filters */}
+      <div className="card filterCard bmFilterCard">
+        <div className="filterBar">
+          <div className="filterGroup">
+            <label className="label">Month</label>
+            <select className="input" value={month} onChange={(e) => setMonth(Number(e.target.value))}>
+              {[1,2,3,4,5,6,7,8,9,10,11,12].map((m) => (
+                <option key={m} value={m}>{monthNames[m]}</option>
+              ))}
+            </select>
+          </div>
+          <div className="filterGroup">
+            <label className="label">Year</label>
+            <input type="number" className="input" value={year} onChange={(e) => setYear(Number(e.target.value))} min={2020} max={2030} style={{ width: 90 }} />
+          </div>
+          <div className="filterGroup">
+            <label className="label">Search</label>
+            <input type="text" className="input" placeholder="Emp code or name..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ minWidth: 180 }} />
+          </div>
+        </div>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="bmSummary">
+        <div className="bmSumCard bmSumTotal">
+          <div className="bmSumIcon">&#127873;</div>
+          <div className="bmSumContent">
+            <span className="bmSumNum">{s.total_bonus_hours || 0}h</span>
+            <span className="bmSumLabel">Total Bonus Awarded</span>
+          </div>
+        </div>
+        <div className="bmSumCard bmSumCount">
+          <div className="bmSumIcon">&#128101;</div>
+          <div className="bmSumContent">
+            <span className="bmSumNum">{s.employees_with_bonus || 0} / {s.total_employees || 0}</span>
+            <span className="bmSumLabel">Employees with Bonus</span>
+          </div>
+        </div>
+        <div className="bmSumCard bmSumHigh">
+          <div className="bmSumIcon">&#11088;</div>
+          <div className="bmSumContent">
+            <span className="bmSumNum">{s.highest_bonus || 0}h</span>
+            <span className="bmSumLabel">Highest Bonus</span>
+          </div>
+        </div>
+        <div className="bmSumCard bmSumAvg">
+          <div className="bmSumIcon">&#128200;</div>
+          <div className="bmSumContent">
+            <span className="bmSumNum">{s.avg_bonus || 0}h</span>
+            <span className="bmSumLabel">Average Bonus</span>
+          </div>
+        </div>
+      </div>
+
+      {loading ? <p className="muted">Loading...</p> : (
+        <>
+          {/* Bonus Recipients */}
+          {bonused.length > 0 && (
+            <div className="bmSection">
+              <h3 className="bmSectionTitle">Bonus Recipients <span className="bmSectionCount">{bonused.length}</span></h3>
+              <div className="card tableCard">
+                <table className="bmTable">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Employee</th>
+                      <th>Department</th>
+                      <th>Bonus (hrs)</th>
+                      <th>OT (hrs)</th>
+                      <th>Monthly Hrs</th>
+                      <th>Streaks</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {bonused.map((emp, i) => (
+                      <>
+                        <tr key={emp.emp_code} className="bmRow">
+                          <td><span className="bmRowNum">{i + 1}</span></td>
+                          <td>
+                            <div className="bmEmpCell">
+                              <div className="bmEmpAvatar">
+                                {(emp.name || '?').split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()}
+                              </div>
+                              <div className="bmEmpInfo">
+                                <span className="bmEmpName">{emp.name || emp.emp_code}</span>
+                                <span className="bmEmpCode">{emp.emp_code}{emp.designation ? ` \u00B7 ${emp.designation}` : ''}</span>
+                              </div>
+                            </div>
+                          </td>
+                          <td><span className="bmDept">{emp.dept_name || '—'}</span></td>
+                          <td>
+                            {editId === emp.emp_code ? (
+                              <div className="bmEditInline">
+                                <input type="number" className="bmEditInput" value={editVal} onChange={(e) => setEditVal(e.target.value)} min="0" step="1" autoFocus />
+                                <button className="bmEditSave" disabled={editLoading} onClick={() => handleSetBonus(emp.emp_code)}>{editLoading ? '...' : '\u2713'}</button>
+                                <button className="bmEditCancel" onClick={() => { setEditId(null); setEditVal('') }}>\u2717</button>
+                              </div>
+                            ) : (
+                              <span className="bmBonusVal" onClick={() => { setEditId(emp.emp_code); setEditVal(emp.bonus) }} title="Click to edit">
+                                {Number(emp.bonus).toFixed(1)}h
+                              </span>
+                            )}
+                          </td>
+                          <td><span className="bmChip bmChipPurple">{Number(emp.overtime_hours || 0).toFixed(1)}h</span></td>
+                          <td>{Number(emp.month_hours || 0).toFixed(0)}h</td>
+                          <td>
+                            {emp.streak_count > 0 ? (
+                              <span className="bmChip bmChipGreen">{emp.streak_count}x</span>
+                            ) : '—'}
+                          </td>
+                          <td>
+                            <div className="bmActions">
+                              <button className="bmActionBtn bmActionExpand" onClick={() => setExpanded(expanded === emp.emp_code ? null : emp.emp_code)}>
+                                {expanded === emp.emp_code ? 'Close' : 'Details'}
+                              </button>
+                              <button className="bmActionBtn bmActionReset" onClick={() => handleResetBonus(emp.emp_code)}>Reset</button>
+                              <Link to={`/employees/${emp.emp_code}/profile`} className="bmActionBtn bmActionProfile">Profile</Link>
+                            </div>
+                          </td>
+                        </tr>
+                        {expanded === emp.emp_code && (
+                          <tr key={`d-${emp.emp_code}`} className="bmDetailRow">
+                            <td colSpan={8}>
+                              <div className="bmDetailPanel">
+                                <div className="bmDetailGrid">
+                                  <div className="bmDetailItem">
+                                    <span className="bmDetailLabel">Shift</span>
+                                    <span className="bmDetailValue">{emp.shift || '—'}{emp.shift_from && emp.shift_to ? ` (${emp.shift_from}–${emp.shift_to})` : ''}</span>
+                                  </div>
+                                  <div className="bmDetailItem">
+                                    <span className="bmDetailLabel">Days Present</span>
+                                    <span className="bmDetailValue">{emp.month_days || emp.days_present || 0} days</span>
+                                  </div>
+                                  <div className="bmDetailItem">
+                                    <span className="bmDetailLabel">Total Working Hrs</span>
+                                    <span className="bmDetailValue bmDetailHighlight">{Number(emp.total_working_hours || 0).toFixed(1)}h</span>
+                                  </div>
+                                  <div className="bmDetailItem">
+                                    <span className="bmDetailLabel">Overtime</span>
+                                    <span className="bmDetailValue">{Number(emp.overtime_hours || 0).toFixed(1)}h</span>
+                                  </div>
+                                  <div className="bmDetailItem">
+                                    <span className="bmDetailLabel">Base Salary</span>
+                                    <span className="bmDetailValue">{'\u20B9'}{Number(emp.base_salary || 0).toLocaleString('en-IN')}</span>
+                                  </div>
+                                  <div className="bmDetailItem">
+                                    <span className="bmDetailLabel">Salary Type</span>
+                                    <span className="bmDetailValue">{emp.salary_type || '—'}</span>
+                                  </div>
+                                </div>
+                                <div className="bmDetailQuickBonus">
+                                  <span className="bmDetailLabel">Quick Add Bonus</span>
+                                  <div className="bmQuickBonusRow">
+                                    {[1, 2, 5, 10].map((h) => (
+                                      <button key={h} className="bmQuickBtn" onClick={async () => { await bonus.give(emp.emp_code, h); fetchData() }}>+{h}h</button>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Employees without bonus */}
+          {noBonusYet.length > 0 && (
+            <div className="bmSection">
+              <h3 className="bmSectionTitle">No Bonus Yet <span className="bmSectionCount bmSectionCountMuted">{noBonusYet.length}</span></h3>
+              <div className="card tableCard">
+                <table className="bmTable bmTableMuted">
+                  <thead>
+                    <tr>
+                      <th>Employee</th>
+                      <th>Department</th>
+                      <th>Monthly Hrs</th>
+                      <th>OT</th>
+                      <th>Streaks</th>
+                      <th>Days</th>
+                      <th>Quick Bonus</th>
+                      <th>Profile</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {noBonusYet.map((emp) => (
+                      <tr key={emp.emp_code}>
+                        <td>
+                          <div className="bmEmpCell">
+                            <div className="bmEmpInfo">
+                              <span className="bmEmpName">{emp.name || emp.emp_code}</span>
+                              <span className="bmEmpCode">{emp.emp_code}</span>
+                            </div>
+                          </div>
+                        </td>
+                        <td>{emp.dept_name || '—'}</td>
+                        <td>{Number(emp.month_hours || 0).toFixed(0)}h</td>
+                        <td>{Number(emp.overtime_hours || 0).toFixed(1)}h</td>
+                        <td>{emp.streak_count > 0 ? <span className="bmChip bmChipGreen">{emp.streak_count}x</span> : '—'}</td>
+                        <td>{emp.month_days || emp.days_present || 0}</td>
+                        <td>
+                          <div className="bmQuickBonusRow">
+                            {[1, 2, 5].map((h) => (
+                              <button key={h} className="bmQuickBtnSmall" onClick={async () => { await bonus.give(emp.emp_code, h); fetchData() }}>+{h}h</button>
+                            ))}
+                          </div>
+                        </td>
+                        <td><Link to={`/employees/${emp.emp_code}/profile`} className="bmTableLink">View</Link></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {employees.length === 0 && <p className="muted">No salary data found for {monthNames[month]} {year}.</p>}
+        </>
+      )}
+    </div>
+  )
+}

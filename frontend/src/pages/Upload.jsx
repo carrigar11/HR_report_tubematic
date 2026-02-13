@@ -122,13 +122,13 @@ function UploadCard({ title, icon: Icon, hint, accept, onPreview, onConfirm, typ
                 </>
               ) : type === 'shift' ? (
                 <>
-                  <div className="previewStat new">
-                    <span className="statNum">{preview.created}</span>
-                    <span className="statLabel">New records to create</span>
-                  </div>
                   <div className="previewStat update">
                     <span className="statNum">{preview.updated}</span>
-                    <span className="statLabel">Records to update</span>
+                    <span className="statLabel">Employees to assign/update</span>
+                  </div>
+                  <div className="previewStat skip">
+                    <span className="statNum">{preview.skipped}</span>
+                    <span className="statLabel">Unchanged / not found</span>
                   </div>
                 </>
               ) : (
@@ -212,28 +212,28 @@ function UploadCard({ title, icon: Icon, hint, accept, onPreview, onConfirm, typ
             </div>
           )}
 
-          {type === 'shift' && preview.to_create?.length > 0 && (
+          {type === 'shift' && preview.to_update?.length > 0 && (
             <div className="uploadPreviewTable">
-              <h5>New Shift Records ({preview.to_create.length}{preview.has_more ? '+' : ''})</h5>
+              <h5>Shift Assignments ({preview.to_update.length}{preview.has_more ? '+' : ''} employees)</h5>
               <div className="previewTableWrap">
                 <table>
                   <thead>
                     <tr>
                       <th>Emp Code</th>
-                      <th>Date</th>
-                      <th>Shift</th>
-                      <th>From</th>
-                      <th>To</th>
+                      <th>Name</th>
+                      <th>Old Shift</th>
+                      <th>New Shift</th>
+                      <th>Attendance Records</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {preview.to_create.map((rec, i) => (
+                    {preview.to_update.map((upd, i) => (
                       <tr key={i}>
-                        <td>{rec.emp_code}</td>
-                        <td>{rec.date}</td>
-                        <td>{rec.shift || '—'}</td>
-                        <td>{rec.shift_from?.slice(0, 5) || '—'}</td>
-                        <td>{rec.shift_to?.slice(0, 5) || '—'}</td>
+                        <td>{upd.emp_code}</td>
+                        <td>{upd.name || '—'}</td>
+                        <td className="oldValue">{upd.old_shift ? `${upd.old_shift} (${upd.old_from?.slice(0,5) || '?'}–${upd.old_to?.slice(0,5) || '?'})` : '— none —'}</td>
+                        <td className="newValue">{upd.new_shift} ({upd.new_from?.slice(0,5) || '?'}–{upd.new_to?.slice(0,5) || '?'})</td>
+                        <td>{upd.attendance_records} records will update</td>
                       </tr>
                     ))}
                   </tbody>
@@ -242,28 +242,20 @@ function UploadCard({ title, icon: Icon, hint, accept, onPreview, onConfirm, typ
             </div>
           )}
 
-          {type === 'shift' && preview.to_update?.length > 0 && (
+          {type === 'shift' && preview.to_skip?.length > 0 && (
             <div className="uploadPreviewTable">
-              <h5>Updated Shift Records ({preview.to_update.length}{preview.has_more ? '+' : ''})</h5>
+              <h5>Skipped ({preview.to_skip.length})</h5>
               <div className="previewTableWrap">
                 <table>
                   <thead>
-                    <tr>
-                      <th>Emp Code</th>
-                      <th>Date</th>
-                      <th>Shift</th>
-                      <th>From</th>
-                      <th>To</th>
-                    </tr>
+                    <tr><th>Emp Code</th><th>Name</th><th>Reason</th></tr>
                   </thead>
                   <tbody>
-                    {preview.to_update.map((upd, i) => (
+                    {preview.to_skip.map((s, i) => (
                       <tr key={i}>
-                        <td>{upd.emp_code}</td>
-                        <td>{upd.date}</td>
-                        <td>{upd.new?.shift || '—'}</td>
-                        <td>{upd.new?.shift_from?.slice(0, 5) || '—'}</td>
-                        <td>{upd.new?.shift_to?.slice(0, 5) || '—'}</td>
+                        <td>{s.emp_code}</td>
+                        <td>{s.name || '—'}</td>
+                        <td>{s.reason}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -414,8 +406,9 @@ function UploadCard({ title, icon: Icon, hint, accept, onPreview, onConfirm, typ
               </>
             ) : type === 'shift' ? (
               <>
-                <span>Created: {result.created}</span>
-                <span>Updated: {result.updated}</span>
+                <span>Employees updated: {result.updated}</span>
+                <span>Skipped: {result.skipped}</span>
+                {result.attendance_updated > 0 && <span>Attendance OT recalculated: {result.attendance_updated}</span>}
                 {result.errors > 0 && <span className="errorStat">Errors: {result.errors}</span>}
               </>
             ) : type === 'forcePunch' ? (
@@ -469,9 +462,9 @@ export default function Upload() {
           onConfirm={(file) => upload.attendance(file, false)}
         />
         <UploadCard
-          title="Upload shift-wise attendance"
+          title="Upload Employee Shifts"
           icon={IconClock}
-          hint="Required: Emp Id, Date, Shift. Optional: From, To. Takes shift, from, to from Excel and connects to attendance by employee id. Use shift_wise_attendance.xlsx format."
+          hint="Assigns shift to employees permanently. Required: Emp Id, Shift, From, To. Shift is fixed per employee until a new one is uploaded. All past & future attendance records will be updated."
           accept=".xlsx,.xls"
           type="shift"
           onPreview={(file) => upload.shift(file, true)}

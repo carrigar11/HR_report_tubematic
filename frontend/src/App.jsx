@@ -7,6 +7,7 @@ import AttendanceTable from './pages/AttendanceTable'
 import EmployeeMaster from './pages/EmployeeMaster'
 import SalaryReport from './pages/SalaryReport'
 import Leaderboard from './pages/Leaderboard'
+import BonusManagement from './pages/BonusManagement'
 import AbsenteeAlert from './pages/AbsenteeAlert'
 import AdjustmentPanel from './pages/AdjustmentPanel'
 import HolidayCalendar from './pages/HolidayCalendar'
@@ -33,6 +34,7 @@ export default function App() {
           <Route path="employees/:empCode/profile" element={<EmployeeProfile />} />
           <Route path="salary" element={<SalaryReport />} />
           <Route path="leaderboard" element={<Leaderboard />} />
+          <Route path="bonus" element={<BonusManagement />} />
           <Route path="absentee-alert" element={<AbsenteeAlert />} />
           <Route path="adjustments" element={<AdjustmentPanel />} />
           <Route path="holidays" element={<HolidayCalendar />} />

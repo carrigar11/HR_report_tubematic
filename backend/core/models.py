@@ -38,6 +38,9 @@ class Employee(models.Model):
     employment_type = models.CharField(max_length=20, choices=EMPLOYMENT_TYPE_CHOICES, default='Full-time')
     salary_type = models.CharField(max_length=20, choices=SALARY_TYPE_CHOICES, default='Monthly')
     base_salary = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    shift = models.CharField(max_length=100, blank=True, help_text='Assigned shift name (e.g. General Shift)')
+    shift_from = models.TimeField(null=True, blank=True, help_text='Shift start time')
+    shift_to = models.TimeField(null=True, blank=True, help_text='Shift end time')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -101,6 +104,8 @@ class Salary(models.Model):
     base_salary = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0'))
     overtime_hours = models.DecimalField(max_digits=6, decimal_places=2, default=Decimal('0'))
     bonus = models.DecimalField(max_digits=6, decimal_places=2, default=Decimal('0'))
+    total_working_hours = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal('0'), help_text='Total hours worked in the month')
+    days_present = models.PositiveSmallIntegerField(default=0, help_text='Days marked Present in the month')
     month = models.PositiveSmallIntegerField()
     year = models.PositiveIntegerField()
     created_at = models.DateTimeField(auto_now_add=True)

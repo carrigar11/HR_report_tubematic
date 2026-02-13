@@ -212,11 +212,33 @@
   overflow-x: auto;
 }
 
+.attTableMeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
 .attSortHint {
   margin: 0;
-  padding: 0.7rem 1rem;
   font-size: 0.82rem;
-  border-bottom: 1px solid var(--border);
+}
+
+.attRecordCount {
+  font-size: 0.82rem;
+  color: var(--textMuted);
+  font-weight: 500;
+}
+
+/* Date column — fixed width, no wrapping */
+.attDateCol {
+  min-width: 120px;
+}
+
+.attDateCell {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .attTable {
@@ -363,13 +385,3 @@
   }
 }
 
-@media (max-width: 640px) {
-  .attPagination {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .attPaginationButtons {
-    justify-content: center;
-  }
-}

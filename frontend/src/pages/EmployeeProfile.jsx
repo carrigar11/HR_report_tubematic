@@ -42,8 +42,19 @@ export default function EmployeeProfile() {
     </div>
   )
 
+  const expectedHours = (() => {
+    if (!emp?.shift_from || !emp?.shift_to) return null
+    const [fh, fm] = String(emp.shift_from).split(':').map(Number)
+    const [th, tm] = String(emp.shift_to).split(':').map(Number)
+    let fromMin = fh * 60 + fm
+    let toMin = th * 60 + tm
+    if (toMin <= fromMin) toMin += 24 * 60
+    return ((toMin - fromMin) / 60).toFixed(1)
+  })()
+
   return (
     <div className="pageContent profilePage">
+      {/* Header */}
       <div className="profileHeader">
         <div className="profileAvatar">{initials}</div>
         <div className="profileHeaderInfo">
@@ -55,6 +66,38 @@ export default function EmployeeProfile() {
         </div>
       </div>
 
+      {/* Shift & Work Banner */}
+      <div className="profileShiftBanner">
+        <div className="shiftBannerItem">
+          <span className="shiftBannerIcon">&#128336;</span>
+          <div className="shiftBannerText">
+            <span className="shiftBannerLabel">Assigned Shift</span>
+            <span className="shiftBannerValue">{emp?.shift || 'Not assigned'}</span>
+          </div>
+        </div>
+        <div className="shiftBannerDivider" />
+        <div className="shiftBannerItem">
+          <span className="shiftBannerIcon">&#128197;</span>
+          <div className="shiftBannerText">
+            <span className="shiftBannerLabel">Shift Timing</span>
+            <span className="shiftBannerValue">
+              {emp?.shift_from && emp?.shift_to
+                ? `${String(emp.shift_from).slice(0, 5)} – ${String(emp.shift_to).slice(0, 5)}`
+                : '—'}
+            </span>
+          </div>
+        </div>
+        <div className="shiftBannerDivider" />
+        <div className="shiftBannerItem">
+          <span className="shiftBannerIcon">&#9201;</span>
+          <div className="shiftBannerText">
+            <span className="shiftBannerLabel">Expected Hours</span>
+            <span className="shiftBannerValue shiftBannerHighlight">{expectedHours ? `${expectedHours}h / day` : '—'}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Details Card */}
       <div className="card profileDetailsCard">
         <h3 className="profileDetailsTitle">Details</h3>
         <div className="profileDetailsGrid">
@@ -76,14 +119,12 @@ export default function EmployeeProfile() {
       <div className="card tableCard profileCard">
         <table>
           <thead>
-            <tr><th>Date</th><th>Shift</th><th>From–To</th><th>Punch In</th><th>Punch Out</th><th>Hrs</th><th>Status</th><th>OT</th></tr>
+            <tr><th>Date</th><th>Punch In</th><th>Punch Out</th><th>Hrs</th><th>Status</th><th>OT</th></tr>
           </thead>
           <tbody>
             {att.slice(0, 20).map((row) => (
               <tr key={row.id}>
                 <td>{row.date}</td>
-                <td>{row.shift || '—'}</td>
-                <td>{row.shift_from && row.shift_to ? `${String(row.shift_from).slice(0, 5)}–${String(row.shift_to).slice(0, 5)}` : '—'}</td>
                 <td>{row.punch_in ? String(row.punch_in).slice(0, 5) : '—'}</td>
                 <td>{row.punch_out ? `${String(row.punch_out).slice(0, 5)}${row.punch_spans_next_day ? ' (next day)' : ''}` : '—'}</td>
                 <td>{Number(row.total_working_hours || 0).toFixed(2)}</td>

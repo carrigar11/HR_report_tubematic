@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { salary } from '../api'
 import './Table.css'
+import './SalaryReport.css'
 
 const now = new Date()
 const currentMonth = now.getMonth() + 1
@@ -24,8 +25,6 @@ export default function SalaryReport() {
 
   useEffect(() => {
     setLoading(true)
-    const params = { month, year }
-    if (searchDebounced) params.search = searchDebounced
     salary.monthly(month, year, searchDebounced || undefined)
       .then((r) => setList(Array.isArray(r.data) ? r.data : []))
       .catch(() => setList([]))
@@ -63,18 +62,22 @@ export default function SalaryReport() {
       </div>
       <div className="card tableCard">
         {loading ? (
-          <p className="muted">Loading…</p>
+          <p className="muted">Loading...</p>
         ) : (
-          <table>
+          <table className="salTable">
             <thead>
               <tr>
-                <th>Period (Month / Year)</th>
+                <th>Period</th>
                 <th>Emp Code</th>
+                <th>Name</th>
                 <th>Salary Type</th>
                 <th>Base Salary</th>
+                <th>Days Present</th>
+                <th>Today's Hrs</th>
+                <th>Total Monthly Hrs</th>
                 <th>Overtime Hrs</th>
-                <th>Bonus (hourly)</th>
-                <th>Profile</th>
+                <th>Bonus</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -82,17 +85,30 @@ export default function SalaryReport() {
                 <tr key={row.id}>
                   <td>{monthNames[row.month]} {row.year}</td>
                   <td><Link to={`/employees/${row.emp_code}/profile`}>{row.emp_code}</Link></td>
+                  <td>{row.name || '—'}</td>
                   <td>{row.salary_type}</td>
                   <td>{Number(row.base_salary || 0).toFixed(2)}</td>
+                  <td>{row.days_present ?? 0}</td>
+                  <td>
+                    <span className={`salTodayHrs ${!row.today_punch_out && row.today_punch_in ? 'salLive' : ''}`}>
+                      {Number(row.today_hours || 0).toFixed(2)}
+                      {!row.today_punch_out && row.today_punch_in ? ' *' : ''}
+                    </span>
+                  </td>
+                  <td>{Number(row.total_working_hours || 0).toFixed(2)}</td>
                   <td>{Number(row.overtime_hours || 0).toFixed(2)}</td>
                   <td>{Number(row.bonus || 0).toFixed(2)}</td>
-                  <td><Link to={`/employees/${row.emp_code}/profile`}>View</Link></td>
+                  <td>
+                    <Link to={`/employees/${row.emp_code}/profile`} className="salViewBtn">
+                      View Details
+                    </Link>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
-        {!loading && list.length === 0 && <p className="muted">No salary data for this period. Ensure employees and attendance are uploaded and run salary from Settings if needed.</p>}
+        {!loading && list.length === 0 && <p className="muted">No salary data for this period.</p>}
       </div>
     </div>
   )

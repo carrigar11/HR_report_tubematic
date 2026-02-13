@@ -90,6 +90,13 @@ class UploadAttendanceView(APIView):
         result = upload_attendance_excel(f, preview=preview)
         if not result.get('success'):
             return Response(result, status=400)
+        # Auto-run reward engine after actual upload (not preview)
+        if not preview:
+            try:
+                reward_result = run_reward_engine()
+                result['rewards'] = reward_result
+            except Exception:
+                pass
         return Response(result)
 
 
@@ -115,6 +122,12 @@ class UploadForcePunchView(APIView):
         result = upload_force_punch_excel(f, preview=preview)
         if not result.get('success'):
             return Response(result, status=400)
+        if not preview:
+            try:
+                reward_result = run_reward_engine()
+                result['rewards'] = reward_result
+            except Exception:
+                pass
         return Response(result)
 
 
@@ -168,6 +181,18 @@ class AttendanceViewSet(viewsets.ReadOnlyModelViewSet):
                 qs = qs.filter(punch_in__isnull=True)
         if status_filter:
             qs = qs.filter(status=status_filter)
+        # Server-side sorting
+        ordering = self.request.query_params.get('ordering', '').strip()
+        allowed_sort = {
+            'date': 'date', '-date': '-date',
+            'emp_code': 'emp_code', '-emp_code': '-emp_code',
+            'total_working_hours': 'total_working_hours', '-total_working_hours': '-total_working_hours',
+            'over_time': 'over_time', '-over_time': '-over_time',
+            'status': 'status', '-status': '-status',
+            'punch_in': 'punch_in', '-punch_in': '-punch_in',
+        }
+        if ordering and ordering in allowed_sort:
+            return qs.order_by(allowed_sort[ordering], 'emp_code' if not ordering.endswith('emp_code') else 'date')
         return qs.order_by('-date', 'emp_code')
 
 
@@ -288,9 +313,20 @@ class AttendanceAdjustView(APIView):
             att.punch_in = data['punch_in']
         if data.get('punch_out') is not None:
             att.punch_out = data['punch_out']
-        # Auto-calculate overtime when punch_in and punch_out are set (from shift)
-        if punch_in and punch_out and att.shift_from and att.shift_to:
-            att.over_time = _calc_overtime_from_punch(punch_in, punch_out, att.shift_from, att.shift_to)
+        # Auto-calculate overtime when punch_in and punch_out are set
+        # Use shift from attendance record, or fallback to employee's assigned shift
+        shift_from = att.shift_from
+        shift_to = att.shift_to
+        if not shift_from or not shift_to:
+            emp = Employee.objects.filter(emp_code=emp_code).values('shift', 'shift_from', 'shift_to').first()
+            if emp and emp.get('shift_from') and emp.get('shift_to'):
+                shift_from = emp['shift_from']
+                shift_to = emp['shift_to']
+                att.shift = emp.get('shift', '')
+                att.shift_from = shift_from
+                att.shift_to = shift_to
+        if punch_in and punch_out and shift_from and shift_to:
+            att.over_time = _calc_overtime_from_punch(punch_in, punch_out, shift_from, shift_to)
             # Also update total_working_hours and punch_spans_next_day from punch times
             in_h = _time_to_decimal_hours(punch_in)
             out_h = _time_to_decimal_hours(punch_out)
@@ -321,8 +357,17 @@ class AttendanceAdjustView(APIView):
 
 # ---------- Dashboard ----------
 class DashboardView(APIView):
+    _last_reward_run_date = None  # class-level cache to avoid running every request
+
     def get(self, request):
         today = timezone.localdate()
+        # Auto-run reward engine once per day on first dashboard load
+        if DashboardView._last_reward_run_date != today:
+            try:
+                run_reward_engine(today)
+                DashboardView._last_reward_run_date = today
+            except Exception:
+                pass
         total_employees = Employee.objects.filter(status='Active').count()
         Attendance.objects.filter(
             date=today,
@@ -384,29 +429,123 @@ class SalaryMonthlyView(APIView):
                 Q(emp_code__icontains=search) | Q(name__icontains=search)
             ).values_list('emp_code', flat=True)
             salaries = salaries.filter(emp_code__in=emp_codes)
-        return Response(SalarySerializer(salaries.order_by('emp_code'), many=True).data)
+        data = SalarySerializer(salaries.order_by('emp_code'), many=True).data
+        # Attach today's working hours per employee (live calc if still punched in)
+        today = timezone.localdate()
+        now_time = timezone.localtime().time()
+        today_att = {}
+        for a in Attendance.objects.filter(date=today).values('emp_code', 'total_working_hours', 'punch_in', 'punch_out'):
+            twh = a['total_working_hours'] or Decimal('0')
+            # If punched in but not out yet, calculate live hours
+            if a['punch_in'] and not a['punch_out'] and twh == 0:
+                punch_h = a['punch_in'].hour + a['punch_in'].minute / 60
+                now_h = now_time.hour + now_time.minute / 60
+                diff = now_h - punch_h
+                if diff < 0:
+                    diff += 24
+                twh = Decimal(str(round(diff, 2)))
+            today_att[a['emp_code']] = twh
+        # Attach employee details and today's hours
+        emp_lookup = {}
+        emp_codes_list = [r['emp_code'] for r in data]
+        if emp_codes_list:
+            for e in Employee.objects.filter(emp_code__in=emp_codes_list).values(
+                'emp_code', 'name', 'dept_name', 'designation', 'shift', 'shift_from', 'shift_to'
+            ):
+                emp_lookup[e['emp_code']] = e
+        # Today's punch status
+        today_punch = {}
+        for a in Attendance.objects.filter(date=today).values('emp_code', 'punch_in', 'punch_out', 'status'):
+            today_punch[a['emp_code']] = a
+        for row in data:
+            ec = row['emp_code']
+            emp = emp_lookup.get(ec, {})
+            punch = today_punch.get(ec, {})
+            row['today_hours'] = str(today_att.get(ec, 0))
+            row['name'] = emp.get('name', '')
+            row['dept_name'] = emp.get('dept_name', '')
+            row['designation'] = emp.get('designation', '')
+            row['shift'] = emp.get('shift', '')
+            row['shift_from'] = str(emp['shift_from'])[:5] if emp.get('shift_from') else None
+            row['shift_to'] = str(emp['shift_to'])[:5] if emp.get('shift_to') else None
+            row['today_punch_in'] = str(punch['punch_in'])[:5] if punch.get('punch_in') else None
+            row['today_punch_out'] = str(punch['punch_out'])[:5] if punch.get('punch_out') else None
+            row['today_status'] = punch.get('status', '')
+            # Avg daily hours
+            dp = row.get('days_present', 0)
+            twh = float(row.get('total_working_hours', 0) or 0)
+            row['avg_daily_hours'] = str(round(twh / dp, 2)) if dp > 0 else '0'
+        return Response(data)
 
 
 # ---------- Leaderboard ----------
 class LeaderboardView(APIView):
     def get(self, request):
+        today = timezone.localdate()
+        month_start = today.replace(day=1)
+        week_start = today - timedelta(days=6)
+
         rewards = PerformanceReward.objects.filter(
             is_on_leaderboard=True, entry_type='REWARD'
         ).order_by('-created_at')[:50]
-        
-        # Get employee names for display
-        reward_list = list(rewards.values('id', 'emp_code', 'entry_type', 'trigger_reason', 
-                                          'metric_data', 'is_on_leaderboard', 'admin_action_status', 
+
+        reward_list = list(rewards.values('id', 'emp_code', 'entry_type', 'trigger_reason',
+                                          'metric_data', 'is_on_leaderboard', 'admin_action_status',
                                           'created_at'))
-        if reward_list:
-            emp_codes = [r['emp_code'] for r in reward_list]
-            emp_lookup = {
-                e['emp_code']: e.get('name', '')
-                for e in Employee.objects.filter(emp_code__in=emp_codes).values('emp_code', 'name')
-            }
-            for r in reward_list:
-                r['name'] = emp_lookup.get(r['emp_code'], '')
-        
+        emp_codes = list(set(r['emp_code'] for r in reward_list))
+
+        # Employee details
+        emp_lookup = {}
+        if emp_codes:
+            for e in Employee.objects.filter(emp_code__in=emp_codes).values(
+                'emp_code', 'name', 'dept_name', 'designation', 'shift', 'shift_from', 'shift_to'
+            ):
+                emp_lookup[e['emp_code']] = e
+
+        # Monthly stats per employee
+        monthly_stats = {}
+        for a in Attendance.objects.filter(
+            emp_code__in=emp_codes, date__gte=month_start, date__lte=today
+        ).values('emp_code').annotate(
+            total_hours=Sum('total_working_hours'),
+            total_ot=Sum('over_time'),
+            days_present=Count('id', filter=Q(status='Present')),
+        ):
+            monthly_stats[a['emp_code']] = a
+
+        # Streak count per employee (how many streak rewards this month)
+        streak_counts = {}
+        for r in PerformanceReward.objects.filter(
+            emp_code__in=emp_codes,
+            entry_type='REWARD',
+            trigger_reason__icontains='Streak',
+            created_at__date__gte=month_start,
+        ).values('emp_code').annotate(count=Count('id')):
+            streak_counts[r['emp_code']] = r['count']
+
+        # Bonus hours from Salary for current month
+        bonus_lookup = {}
+        for s in Salary.objects.filter(
+            emp_code__in=emp_codes, month=today.month, year=today.year
+        ).values('emp_code', 'bonus'):
+            bonus_lookup[s['emp_code']] = s['bonus']
+
+        for r in reward_list:
+            ec = r['emp_code']
+            emp = emp_lookup.get(ec, {})
+            stats = monthly_stats.get(ec, {})
+            r['name'] = emp.get('name', '')
+            r['dept_name'] = emp.get('dept_name', '')
+            r['designation'] = emp.get('designation', '')
+            r['shift'] = emp.get('shift', '')
+            r['shift_from'] = str(emp['shift_from'])[:5] if emp.get('shift_from') else None
+            r['shift_to'] = str(emp['shift_to'])[:5] if emp.get('shift_to') else None
+            r['month_hours'] = str(stats.get('total_hours') or 0)
+            r['month_ot'] = str(stats.get('total_ot') or 0)
+            r['days_present'] = stats.get('days_present', 0)
+            r['streak_count'] = streak_counts.get(ec, 0)
+            r['bonus_hours'] = str(bonus_lookup.get(ec, 0))
+
         return Response(reward_list)
 
 
@@ -418,6 +557,155 @@ class AbsenteeAlertView(APIView):
             trigger_reason__icontains='Absent'
         ).order_by('-created_at')
         return Response(PerformanceRewardSerializer(items, many=True).data)
+
+
+# ---------- Give bonus hours ----------
+class GiveBonusView(APIView):
+    def post(self, request):
+        emp_code = request.data.get('emp_code')
+        bonus_hours = request.data.get('bonus_hours')
+        if not emp_code or bonus_hours is None:
+            return Response({'error': 'emp_code and bonus_hours required'}, status=400)
+        try:
+            bonus_hours = Decimal(str(bonus_hours))
+        except Exception:
+            return Response({'error': 'Invalid bonus_hours'}, status=400)
+        today = timezone.localdate()
+        sal, created = Salary.objects.get_or_create(
+            emp_code=emp_code, month=today.month, year=today.year,
+            defaults={'salary_type': 'Monthly', 'base_salary': Decimal('0')}
+        )
+        sal.bonus = sal.bonus + bonus_hours
+        sal.save()
+        return Response({'success': True, 'emp_code': emp_code, 'new_bonus': str(sal.bonus)})
+
+
+# ---------- Bonus Management ----------
+class BonusOverviewView(APIView):
+    """Comprehensive bonus data for the Bonus Management page."""
+    def get(self, request):
+        today = timezone.localdate()
+        month = int(request.query_params.get('month', today.month))
+        year = int(request.query_params.get('year', today.year))
+        search = request.query_params.get('search', '').strip()
+
+        from .salary_logic import ensure_monthly_salaries
+        ensure_monthly_salaries(year, month)
+
+        salaries = Salary.objects.filter(month=month, year=year)
+        if search:
+            emp_codes = Employee.objects.filter(
+                Q(emp_code__icontains=search) | Q(name__icontains=search)
+            ).values_list('emp_code', flat=True)
+            salaries = salaries.filter(emp_code__in=emp_codes)
+
+        sal_list = list(salaries.order_by('-bonus', 'emp_code').values(
+            'id', 'emp_code', 'bonus', 'overtime_hours', 'total_working_hours',
+            'days_present', 'base_salary', 'salary_type', 'month', 'year'
+        ))
+
+        emp_codes_list = [s['emp_code'] for s in sal_list]
+        emp_lookup = {}
+        if emp_codes_list:
+            for e in Employee.objects.filter(emp_code__in=emp_codes_list).values(
+                'emp_code', 'name', 'dept_name', 'designation', 'shift', 'shift_from', 'shift_to'
+            ):
+                emp_lookup[e['emp_code']] = e
+
+        # Compute monthly attendance stats for bonus recipients
+        month_start = date(year, month, 1)
+        if month == 12:
+            month_end = date(year + 1, 1, 1) - timedelta(days=1)
+        else:
+            month_end = date(year, month + 1, 1) - timedelta(days=1)
+
+        att_stats = {}
+        for a in Attendance.objects.filter(
+            emp_code__in=emp_codes_list, date__gte=month_start, date__lte=month_end
+        ).values('emp_code').annotate(
+            total_hours=Sum('total_working_hours'),
+            total_ot=Sum('over_time'),
+            days=Count('id', filter=Q(status='Present')),
+        ):
+            att_stats[a['emp_code']] = a
+
+        # Streak count per employee for this month
+        streak_counts = {}
+        for r in PerformanceReward.objects.filter(
+            emp_code__in=emp_codes_list,
+            entry_type='REWARD',
+            trigger_reason__icontains='Streak',
+            created_at__date__gte=month_start,
+            created_at__date__lte=month_end,
+        ).values('emp_code').annotate(count=Count('id')):
+            streak_counts[r['emp_code']] = r['count']
+
+        # Summary stats
+        bonused = [s for s in sal_list if float(s['bonus'] or 0) > 0]
+        total_bonus = sum(float(s['bonus'] or 0) for s in sal_list)
+        highest_bonus = max((float(s['bonus'] or 0) for s in sal_list), default=0)
+        avg_bonus = round(total_bonus / len(bonused), 2) if bonused else 0
+
+        # Enrich each salary record
+        employees = []
+        for s in sal_list:
+            ec = s['emp_code']
+            emp = emp_lookup.get(ec, {})
+            stats = att_stats.get(ec, {})
+            employees.append({
+                'id': s['id'],
+                'emp_code': ec,
+                'name': emp.get('name', ''),
+                'dept_name': emp.get('dept_name', ''),
+                'designation': emp.get('designation', ''),
+                'shift': emp.get('shift', ''),
+                'shift_from': str(emp['shift_from'])[:5] if emp.get('shift_from') else None,
+                'shift_to': str(emp['shift_to'])[:5] if emp.get('shift_to') else None,
+                'bonus': str(s['bonus']),
+                'overtime_hours': str(s['overtime_hours']),
+                'total_working_hours': str(s['total_working_hours']),
+                'days_present': s['days_present'],
+                'base_salary': str(s['base_salary']),
+                'salary_type': s['salary_type'],
+                'month_hours': str(stats.get('total_hours') or 0),
+                'month_ot': str(stats.get('total_ot') or 0),
+                'month_days': stats.get('days', 0),
+                'streak_count': streak_counts.get(ec, 0),
+            })
+
+        return Response({
+            'summary': {
+                'total_bonus_hours': round(total_bonus, 2),
+                'employees_with_bonus': len(bonused),
+                'total_employees': len(sal_list),
+                'highest_bonus': round(highest_bonus, 2),
+                'avg_bonus': avg_bonus,
+            },
+            'employees': employees,
+        })
+
+
+class SetBonusView(APIView):
+    """Set bonus to an exact value (overwrite) or reset to 0."""
+    def post(self, request):
+        emp_code = request.data.get('emp_code')
+        bonus_hours = request.data.get('bonus_hours')
+        if not emp_code or bonus_hours is None:
+            return Response({'error': 'emp_code and bonus_hours required'}, status=400)
+        try:
+            bonus_hours = Decimal(str(bonus_hours))
+        except Exception:
+            return Response({'error': 'Invalid bonus_hours'}, status=400)
+        if bonus_hours < 0:
+            return Response({'error': 'bonus_hours cannot be negative'}, status=400)
+        today = timezone.localdate()
+        sal, created = Salary.objects.get_or_create(
+            emp_code=emp_code, month=today.month, year=today.year,
+            defaults={'salary_type': 'Monthly', 'base_salary': Decimal('0')}
+        )
+        sal.bonus = bonus_hours
+        sal.save()
+        return Response({'success': True, 'emp_code': emp_code, 'new_bonus': str(sal.bonus)})
 
 
 # ---------- Run reward engine (manual trigger) ----------

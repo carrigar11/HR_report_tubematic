@@ -61,6 +61,12 @@ export const salary = {
 
 export const rewards = () => api.get('/rewards/')
 export const leaderboard = () => api.get('/leaderboard/')
+export const giveBonus = (emp_code, bonus_hours) => api.post('/leaderboard/bonus/', { emp_code, bonus_hours })
+export const bonus = {
+  overview: (month, year, search = '') => api.get('/bonus/overview/', { params: { month, year, ...(search ? { search } : {}) } }),
+  give: (emp_code, bonus_hours) => api.post('/leaderboard/bonus/', { emp_code, bonus_hours }),
+  set: (emp_code, bonus_hours) => api.post('/bonus/set/', { emp_code, bonus_hours }),
+}
 export const absenteeAlert = () => api.get('/absentee-alert/')
 
 export const adjustments = {

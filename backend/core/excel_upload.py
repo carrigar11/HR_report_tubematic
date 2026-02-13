@@ -326,12 +326,21 @@ def upload_attendance_excel(file, preview=False) -> dict:
             key = (att['emp_code'], att['date'])
             existing_attendance[key] = att
     
-    # Get employee names for new records
+    # Get employee names and shift data for records
     emp_codes = list(set([e[0] for e in emp_dates]))
     employee_names = {}
+    employee_shifts = {}
     if emp_codes:
-        for emp in Employee.objects.filter(emp_code__in=emp_codes).values('emp_code', 'name'):
+        for emp in Employee.objects.filter(emp_code__in=emp_codes).values(
+            'emp_code', 'name', 'shift', 'shift_from', 'shift_to'
+        ):
             employee_names[emp['emp_code']] = emp['name']
+            if emp.get('shift_from') and emp.get('shift_to'):
+                employee_shifts[emp['emp_code']] = {
+                    'shift': emp.get('shift', ''),
+                    'shift_from': emp['shift_from'],
+                    'shift_to': emp['shift_to'],
+                }
 
     for row, emp_code, att_date in rows_data:
         if not emp_code:
@@ -344,6 +353,9 @@ def upload_attendance_excel(file, preview=False) -> dict:
         name = _safe_str(row.get(col_map.get('name', ''), ''), 255)
         punch_in = _safe_time(row.get(col_map.get('punch in', '')))
         punch_out = _safe_time(row.get(col_map.get('punch out', '')))
+        # If punch_out == punch_in, treat as no punch_out (employee hasn't left yet)
+        if punch_in and punch_out and punch_in == punch_out:
+            punch_out = None
         # Total working hours: from attendance Excel only (e.g. "8h", "11h 59m")
         total_working = _parse_working_hours(row.get(col_map.get('total working hours', '')))
         if total_working is None:
@@ -358,6 +370,9 @@ def upload_attendance_excel(file, preview=False) -> dict:
         # Resolve punch_in, punch_out: from Excel or existing
         eff_punch_in = punch_in or (existing.get('punch_in') if existing else None)
         eff_punch_out = punch_out or (existing.get('punch_out') if existing else None)
+        # Also check existing: if punch_out == punch_in, treat as no punch_out
+        if eff_punch_in and eff_punch_out and eff_punch_in == eff_punch_out:
+            eff_punch_out = None
 
         # Auto status: If punched in, mark as Present
         if punch_in or eff_punch_in:
@@ -369,6 +384,24 @@ def upload_attendance_excel(file, preview=False) -> dict:
         
         punch_spans_next_day = _punch_spans_next_day(eff_punch_in, eff_punch_out)
 
+        # Auto-apply employee shift to attendance record
+        emp_shift = employee_shifts.get(emp_code)
+        shift_name = ''
+        shift_from_val = None
+        shift_to_val = None
+        if existing and existing.get('shift_from') and existing.get('shift_to'):
+            shift_name = existing.get('shift', '')
+            shift_from_val = existing['shift_from']
+            shift_to_val = existing['shift_to']
+        elif emp_shift:
+            shift_name = emp_shift['shift']
+            shift_from_val = emp_shift['shift_from']
+            shift_to_val = emp_shift['shift_to']
+
+        # Calculate OT using shift
+        if shift_from_val and shift_to_val and total_working and total_working > 0:
+            over_time = _calc_overtime(total_working, shift_from_val, shift_to_val)
+
         att_data = {
             'emp_code': emp_code,
             'date': str(att_date),
@@ -376,6 +409,9 @@ def upload_attendance_excel(file, preview=False) -> dict:
             'punch_in': str(eff_punch_in) if eff_punch_in else None,
             'punch_out': str(eff_punch_out) if eff_punch_out else None,
             'punch_spans_next_day': punch_spans_next_day,
+            'shift': shift_name,
+            'shift_from': str(shift_from_val) if shift_from_val else None,
+            'shift_to': str(shift_to_val) if shift_to_val else None,
             'total_working_hours': str(total_working) if total_working is not None else '0',
             'total_break': str(total_break),
             'status': status,
@@ -391,10 +427,6 @@ def upload_attendance_excel(file, preview=False) -> dict:
                 do_update = True  # Fill missing punch_out
 
             if do_update:
-                # Recalc overtime if record has shift (total_working from attendance Excel)
-                if existing.get('shift_from') and existing.get('shift_to') and total_working and total_working > 0:
-                    over_time = _calc_overtime(total_working, existing['shift_from'], existing['shift_to'])
-                    att_data['over_time'] = str(over_time)
                 to_update.append({
                     'emp_code': emp_code,
                     'date': str(att_date),
@@ -441,6 +473,9 @@ def upload_attendance_excel(file, preview=False) -> dict:
             punch_in=data.get('punch_in'),
             punch_out=data.get('punch_out') or update_data.get('new_punch_out'),
             punch_spans_next_day=data.get('punch_spans_next_day', False),
+            shift=data.get('shift', ''),
+            shift_from=data.get('shift_from'),
+            shift_to=data.get('shift_to'),
             total_working_hours=data['total_working_hours'],
             total_break=data['total_break'],
             over_time=data['over_time'],
@@ -458,143 +493,124 @@ def upload_attendance_excel(file, preview=False) -> dict:
 
 def upload_shift_excel(file, preview=False) -> dict:
     """
-    Upload shift-wise attendance (shift, from, to). Matches by Emp Id and Date.
-    Updates existing attendance records or creates new ones with shift info.
-    Excel columns: Emp Id, Date, Shift, From, To. Connects by emp_code.
+    Upload shift assignment per employee. Shift is assigned to the Employee and
+    propagated to ALL their attendance records (past, present, future).
+    Excel columns: Emp Id, Shift, From, To (Date is optional, kept for reference).
+    If shift changed from old, overwrites old data.
     """
     df = pd.read_excel(file)
     col_map = map_columns_to_schema(df.columns.tolist(), SHIFT_COLUMN_ALIASES)
-    required = ['emp id', 'date', 'shift']
+    required = ['emp id', 'shift']
     for r in required:
         if r not in col_map:
             return {'success': False, 'error': f'Missing required column: {r}. Found: {list(df.columns)}'}
 
-    updated = created = errors = 0
-    to_update = []
-    to_create = []
-
-    emp_codes = set()
-    rows_data = []
+    errors = 0
+    # Deduplicate: take the last row per emp_code (latest shift wins)
+    emp_shift_map = {}
     for _, row in df.iterrows():
         emp_code = _safe_str(row.get(col_map['emp id'], ''), 50)
-        att_date = _safe_date(row.get(col_map['date']))
-        if emp_code and att_date:
-            emp_codes.add(emp_code)
-        rows_data.append((row, emp_code, att_date))
-
-    existing_attendance = {}
-    if rows_data:
-        emp_list = [r[1] for r in rows_data if r[1]]
-        date_list = [r[2] for r in rows_data if r[2]]
-        for att in Attendance.objects.filter(
-            emp_code__in=emp_list,
-            date__in=date_list
-        ).values('emp_code', 'date', 'shift', 'shift_from', 'shift_to', 'name', 'punch_in', 'punch_out', 'total_working_hours'):
-            key = (att['emp_code'], att['date'])
-            existing_attendance[key] = att
-
-    employee_names = {}
-    if emp_codes:
-        for emp in Employee.objects.filter(emp_code__in=emp_codes).values('emp_code', 'name'):
-            employee_names[emp['emp_code']] = emp['name']
-
-    for row, emp_code, att_date in rows_data:
-        if not emp_code or not att_date:
+        if not emp_code:
             errors += 1
             continue
-
         shift = _safe_str(row.get(col_map['shift'], ''), 100)
         shift_from = _safe_time(row.get(col_map.get('shift_from', '')))
         shift_to = _safe_time(row.get(col_map.get('shift_to', '')))
-        punch_in = _safe_time(row.get(col_map.get('punch in', '')))
-        punch_out = _safe_time(row.get(col_map.get('punch out', '')))
-
-        key = (emp_code, att_date)
-        existing = existing_attendance.get(key)
-
-        # Total working hours: from attendance sheet only (existing record). For new records, from shift Excel if present.
-        if existing:
-            total_working_hours = Decimal(str(existing.get('total_working_hours') or 0))
-        else:
-            total_working_hours = _parse_working_hours(row.get(col_map.get('total working hours', '')))
-            total_working_hours = total_working_hours if total_working_hours is not None else Decimal('0')
-
-        # Overtime = total_working - expected shift hours (hours only, no minutes)
-        over_time = _calc_overtime(total_working_hours, shift_from, shift_to) if shift_from and shift_to else Decimal('0')
-
-        eff_punch_in = punch_in or (existing.get('punch_in') if existing else None)
-        eff_punch_out = punch_out or (existing.get('punch_out') if existing else None)
-        punch_spans_next_day = _punch_spans_next_day(eff_punch_in, eff_punch_out)
-
-        att_data = {
-            'emp_code': emp_code,
-            'date': str(att_date),
-            'name': employee_names.get(emp_code, ''),
+        if not shift:
+            errors += 1
+            continue
+        emp_shift_map[emp_code] = {
             'shift': shift,
-            'shift_from': str(shift_from) if shift_from else None,
-            'shift_to': str(shift_to) if shift_to else None,
-            'total_working_hours': str(total_working_hours),
-            'over_time': str(over_time),
-            'punch_spans_next_day': punch_spans_next_day,
+            'shift_from': shift_from,
+            'shift_to': shift_to,
         }
-        if punch_in and punch_out:
-            att_data['punch_in'] = str(punch_in)
-            att_data['punch_out'] = str(punch_out)
-        elif existing:
-            att_data['punch_in'] = str(existing['punch_in']) if existing.get('punch_in') else None
-            att_data['punch_out'] = str(existing['punch_out']) if existing.get('punch_out') else None
 
-        if existing:
-            to_update.append({
-                'emp_code': emp_code,
-                'date': str(att_date),
-                'old': {'shift': existing.get('shift'), 'shift_from': existing.get('shift_from'), 'shift_to': existing.get('shift_to')},
-                'new': att_data,
-            })
-            updated += 1
+    # Get existing employee shift data for comparison
+    existing_employees = {}
+    if emp_shift_map:
+        for emp in Employee.objects.filter(emp_code__in=emp_shift_map.keys()).values(
+            'emp_code', 'name', 'shift', 'shift_from', 'shift_to'
+        ):
+            existing_employees[emp['emp_code']] = emp
+
+    to_assign = []  # new or changed
+    to_skip = []    # same as current
+    for emp_code, new_shift in emp_shift_map.items():
+        old = existing_employees.get(emp_code)
+        if not old:
+            to_skip.append({'emp_code': emp_code, 'reason': 'Employee not found'})
+            continue
+        old_shift = old.get('shift') or ''
+        old_from = old.get('shift_from')
+        old_to = old.get('shift_to')
+        changed = (
+            new_shift['shift'] != old_shift or
+            new_shift['shift_from'] != old_from or
+            new_shift['shift_to'] != old_to
+        )
+        att_count = Attendance.objects.filter(emp_code=emp_code).count()
+        entry = {
+            'emp_code': emp_code,
+            'name': old.get('name', ''),
+            'old_shift': old_shift,
+            'old_from': str(old_from) if old_from else None,
+            'old_to': str(old_to) if old_to else None,
+            'new_shift': new_shift['shift'],
+            'new_from': str(new_shift['shift_from']) if new_shift['shift_from'] else None,
+            'new_to': str(new_shift['shift_to']) if new_shift['shift_to'] else None,
+            'attendance_records': att_count,
+            'changed': changed,
+        }
+        if changed:
+            to_assign.append(entry)
         else:
-            to_create.append(att_data)
-            created += 1
+            to_skip.append({'emp_code': emp_code, 'name': old.get('name', ''), 'reason': 'Shift unchanged'})
 
     if preview:
         return {
             'success': True,
             'preview': True,
-            'created': created,
-            'updated': updated,
+            'updated': len(to_assign),
+            'skipped': len(to_skip),
             'errors': errors,
-            'to_create': to_create[:20],
-            'to_update': to_update[:20],
-            'has_more': len(to_create) > 20 or len(to_update) > 20,
+            'to_update': to_assign[:20],
+            'to_skip': to_skip[:10],
+            'has_more': len(to_assign) > 20,
         }
 
-    for att_data in to_create:
-        Attendance.objects.create(**att_data)
-
-    for upd in to_update:
-        upd_data = upd['new']
-        update_kw = {
-            'shift': upd_data['shift'],
-            'shift_from': upd_data['shift_from'],
-            'shift_to': upd_data['shift_to'],
-            'total_working_hours': upd_data['total_working_hours'],
-            'over_time': upd_data['over_time'],
-            'punch_spans_next_day': upd_data.get('punch_spans_next_day', False),
-        }
-        if upd_data.get('punch_in') is not None:
-            update_kw['punch_in'] = upd_data['punch_in']
-        if upd_data.get('punch_out') is not None:
-            update_kw['punch_out'] = upd_data['punch_out']
-        Attendance.objects.filter(
-            emp_code=upd['emp_code'],
-            date=upd['date']
-        ).update(**update_kw)
+    # Apply: update Employee + propagate to all Attendance + recalc OT
+    total_att_updated = 0
+    for entry in to_assign:
+        emp_code = entry['emp_code']
+        new = emp_shift_map[emp_code]
+        # 1. Update Employee
+        Employee.objects.filter(emp_code=emp_code).update(
+            shift=new['shift'],
+            shift_from=new['shift_from'],
+            shift_to=new['shift_to'],
+        )
+        # 2. Propagate to ALL attendance records
+        Attendance.objects.filter(emp_code=emp_code).update(
+            shift=new['shift'],
+            shift_from=new['shift_from'],
+            shift_to=new['shift_to'],
+        )
+        # 3. Recalculate OT for attendance records with total_working_hours > 0
+        if new['shift_from'] and new['shift_to']:
+            for att in Attendance.objects.filter(
+                emp_code=emp_code, total_working_hours__gt=0
+            ).only('id', 'total_working_hours', 'over_time'):
+                ot = _calc_overtime(att.total_working_hours, new['shift_from'], new['shift_to'])
+                if ot != att.over_time:
+                    Attendance.objects.filter(id=att.id).update(over_time=ot)
+                    total_att_updated += 1
 
     return {
         'success': True,
-        'created': created,
-        'updated': updated,
+        'updated': len(to_assign),
+        'skipped': len(to_skip),
         'errors': errors,
+        'attendance_updated': total_att_updated,
     }
 
 

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { employees } from '../api'
 import './Table.css'
+import './EmployeeMaster.css'
 
 export default function EmployeeMaster() {
   const [list, setList] = useState([])
@@ -61,6 +62,7 @@ export default function EmployeeMaster() {
                 <th>Name</th>
                 <th>Mobile</th>
                 <th>Email</th>
+                <th>Shift</th>
                 <th>Dept</th>
                 <th>Designation</th>
                 <th>Status</th>
@@ -75,6 +77,18 @@ export default function EmployeeMaster() {
                   <td>{row.name || '—'}</td>
                   <td>{row.mobile || '—'}</td>
                   <td>{row.email || '—'}</td>
+                  <td>
+                    {row.shift ? (
+                      <div className="empShiftCell">
+                        <span className="empShiftName">{row.shift}</span>
+                        {row.shift_from && row.shift_to && (
+                          <span className="empShiftTime">{String(row.shift_from).slice(0,5)} – {String(row.shift_to).slice(0,5)}</span>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="empShiftNone">Not assigned</span>
+                    )}
+                  </td>
                   <td>{row.dept_name || '—'}</td>
                   <td>{row.designation || '—'}</td>
                   <td><span className={`badge badge-${row.status === 'Active' ? 'success' : 'warn'}`}>{row.status}</span></td>

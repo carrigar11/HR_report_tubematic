@@ -5,7 +5,15 @@ import './Table.css'
 import './AttendanceTable.css'
 
 const today = new Date().toISOString().slice(0, 10)
-const PAGE_SIZE = 25
+const PAGE_SIZE = 50
+
+/** Format "2026-02-12" → "12 Feb 2026" */
+function formatDate(dateStr) {
+  if (!dateStr) return '—'
+  const d = new Date(dateStr + 'T00:00:00')
+  if (isNaN(d)) return dateStr
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+}
 
 export default function AttendanceTable() {
   const [dateFrom, setDateFrom] = useState(today)
@@ -14,14 +22,12 @@ export default function AttendanceTable() {
   const [showAllDates, setShowAllDates] = useState(false)
   const [search, setSearch] = useState('')
   const [searchDebounced, setSearchDebounced] = useState('')
-  const [punchinFilter, setPunchinFilter] = useState('')  // 'yes', 'no', '' (all)
-  const [statusFilter, setStatusFilter] = useState('')    // 'Present', 'Absent', 'Weekoff', '' (all)
+  const [punchinFilter, setPunchinFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
   const [list, setList] = useState([])
   const [loading, setLoading] = useState(false)
   const [page, setPage] = useState(1)
   const [count, setCount] = useState(0)
-  const [nextUrl, setNextUrl] = useState(null)
-  const [prevUrl, setPrevUrl] = useState(null)
   const [sortBy, setSortBy] = useState('date')
   const [sortOrder, setSortOrder] = useState('desc')
 
@@ -30,13 +36,15 @@ export default function AttendanceTable() {
     return () => clearTimeout(t)
   }, [search])
 
+  // Reset to page 1 when filters or sort change
   useEffect(() => {
     setPage(1)
-  }, [dateFrom, dateTo, useRange, showAllDates, searchDebounced, punchinFilter, statusFilter])
+  }, [dateFrom, dateTo, useRange, showAllDates, searchDebounced, punchinFilter, statusFilter, sortBy, sortOrder])
 
   useEffect(() => {
     setLoading(true)
-    const params = { page: page, page_size: PAGE_SIZE }
+    const ordering = sortOrder === 'desc' ? `-${sortBy}` : sortBy
+    const params = { page, page_size: PAGE_SIZE, ordering }
     if (searchDebounced) params.search = searchDebounced
     if (!showAllDates) {
       if (useRange) {
@@ -53,17 +61,13 @@ export default function AttendanceTable() {
         const data = r.data
         setList(Array.isArray(data.results) ? data.results : (Array.isArray(data) ? data : []))
         setCount(typeof data.count === 'number' ? data.count : (data.results?.length ?? 0))
-        setNextUrl(data.next || null)
-        setPrevUrl(data.previous || null)
       })
       .catch(() => {
         setList([])
         setCount(0)
-        setNextUrl(null)
-        setPrevUrl(null)
       })
       .finally(() => setLoading(false))
-  }, [page, dateFrom, dateTo, useRange, showAllDates, searchDebounced, punchinFilter, statusFilter])
+  }, [page, dateFrom, dateTo, useRange, showAllDates, searchDebounced, punchinFilter, statusFilter, sortBy, sortOrder])
 
   const totalPages = Math.max(1, Math.ceil(count / PAGE_SIZE))
   const from = count === 0 ? 0 : (page - 1) * PAGE_SIZE + 1
@@ -82,49 +86,6 @@ export default function AttendanceTable() {
     if (sortBy !== field) return '↕'
     return sortOrder === 'asc' ? '↑' : '↓'
   }
-
-  const sortedList = [...(Array.isArray(list) ? list : [])].sort((a, b) => {
-    if (sortBy === 'emp_code') {
-      const aCode = String(a.emp_code || '')
-      const bCode = String(b.emp_code || '')
-      return sortOrder === 'asc'
-        ? aCode.localeCompare(bCode, undefined, { numeric: true, sensitivity: 'base' })
-        : bCode.localeCompare(aCode, undefined, { numeric: true, sensitivity: 'base' })
-    }
-    if (sortBy === 'date') {
-      const aDate = String(a.date || '')
-      const bDate = String(b.date || '')
-      const aParts = aDate.split('-')
-      const bParts = bDate.split('-')
-      if (aParts.length === 3 && bParts.length === 3) {
-        const aMonthDay = `${aParts[1]}-${aParts[2]}`
-        const bMonthDay = `${bParts[1]}-${bParts[2]}`
-        return sortOrder === 'asc' ? aMonthDay.localeCompare(bMonthDay) : bMonthDay.localeCompare(aMonthDay)
-      }
-      return sortOrder === 'asc' ? aDate.localeCompare(bDate) : bDate.localeCompare(aDate)
-    }
-    if (sortBy === 'punch_in') {
-      const aVal = a.punch_in ? 1 : 0
-      const bVal = b.punch_in ? 1 : 0
-      return sortOrder === 'asc' ? aVal - bVal : bVal - aVal
-    }
-    if (sortBy === 'status') {
-      const aVal = String(a.status || '')
-      const bVal = String(b.status || '')
-      return sortOrder === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal)
-    }
-    if (sortBy === 'total_working_hours') {
-      const aVal = Number(a.total_working_hours || 0)
-      const bVal = Number(b.total_working_hours || 0)
-      return sortOrder === 'asc' ? aVal - bVal : bVal - aVal
-    }
-    if (sortBy === 'over_time') {
-      const aVal = Number(a.over_time || 0)
-      const bVal = Number(b.over_time || 0)
-      return sortOrder === 'asc' ? aVal - bVal : bVal - aVal
-    }
-    return 0
-  })
 
   return (
     <div className="pageContent attendancePage">
@@ -187,6 +148,8 @@ export default function AttendanceTable() {
               <option value="Present">Present</option>
               <option value="Absent">Absent</option>
               <option value="Weekoff">Weekoff</option>
+              <option value="FD">FD</option>
+              <option value="Half-Day">Half-Day</option>
             </select>
           </div>
           <div className="attFilterGroup attFilterGroupDate">
@@ -242,7 +205,10 @@ export default function AttendanceTable() {
           <p className="muted attLoading">Loading…</p>
         ) : (
           <>
-            <p className="muted attSortHint">Click column headers to sort ↑↓ (Emp Code, Date, Punch In, Working Hrs, Status, OT)</p>
+            <div className="attTableMeta">
+              <p className="muted attSortHint">Click column headers to sort ↑↓</p>
+              <span className="attRecordCount">{count} records total — showing {from}–{to}</span>
+            </div>
             <div className="attTableWrap">
               <table className="attTable">
                 <thead>
@@ -252,7 +218,7 @@ export default function AttendanceTable() {
                       <span className="sortIcon sortIconSmall">{getSortIcon('emp_code')}</span>
                     </th>
                     <th>Name</th>
-                    <th className="sortableHeader" onClick={() => handleSort('date')}>
+                    <th className="sortableHeader attDateCol" onClick={() => handleSort('date')}>
                       <span className="sortLabel">Date</span>
                       <span className="sortIcon sortIconSmall">{getSortIcon('date')}</span>
                     </th>
@@ -278,11 +244,11 @@ export default function AttendanceTable() {
                   </tr>
                 </thead>
                 <tbody>
-                  {sortedList.map((row) => (
+                  {list.map((row) => (
                     <tr key={row.id}>
                       <td><Link to={`/employees/${row.emp_code}/profile`}>{row.emp_code}</Link></td>
                       <td>{row.name || '—'}</td>
-                      <td>{row.date}</td>
+                      <td className="attDateCell">{formatDate(row.date)}</td>
                       <td>{row.shift || '—'}</td>
                       <td>{row.shift_from && row.shift_to ? `${String(row.shift_from).slice(0, 5)}–${String(row.shift_to).slice(0, 5)}` : '—'}</td>
                       <td>{row.punch_in ? String(row.punch_in).slice(0, 5) : '—'}</td>
@@ -296,28 +262,41 @@ export default function AttendanceTable() {
               </table>
             </div>
 
-            {list.length > 0 && (
+            {totalPages > 1 && (
               <div className="attPagination">
-                <span className="attPaginationInfo">
-                  Showing {from}–{to} of {count}
-                </span>
                 <div className="attPaginationButtons">
                   <button
                     type="button"
                     className="btn btn-secondary attPageBtn"
-                    disabled={!prevUrl || loading}
+                    disabled={page <= 1 || loading}
+                    onClick={() => setPage(1)}
+                  >
+                    First
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary attPageBtn"
+                    disabled={page <= 1 || loading}
                     onClick={() => setPage((p) => Math.max(1, p - 1))}
                   >
-                    Previous
+                    Prev
                   </button>
                   <span className="attPageNum">Page {page} of {totalPages}</span>
                   <button
                     type="button"
                     className="btn btn-secondary attPageBtn"
-                    disabled={!nextUrl || loading}
+                    disabled={page >= totalPages || loading}
                     onClick={() => setPage((p) => p + 1)}
                   >
                     Next
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary attPageBtn"
+                    disabled={page >= totalPages || loading}
+                    onClick={() => setPage(totalPages)}
+                  >
+                    Last
                   </button>
                 </div>
               </div>
