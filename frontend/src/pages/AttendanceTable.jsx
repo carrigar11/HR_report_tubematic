@@ -229,6 +229,7 @@ export default function AttendanceTable() {
                       <span className="sortIcon sortIconSmall">{getSortIcon('punch_in')}</span>
                     </th>
                     <th>Punch Out</th>
+                    <th className="attNextDayCol">Next Day</th>
                     <th className="sortableHeader" onClick={() => handleSort('total_working_hours')}>
                       <span className="sortLabel">Working Hrs</span>
                       <span className="sortIcon sortIconSmall">{getSortIcon('total_working_hours')}</span>
@@ -252,7 +253,14 @@ export default function AttendanceTable() {
                       <td>{row.shift || '—'}</td>
                       <td>{row.shift_from && row.shift_to ? `${String(row.shift_from).slice(0, 5)}–${String(row.shift_to).slice(0, 5)}` : '—'}</td>
                       <td>{row.punch_in ? String(row.punch_in).slice(0, 5) : '—'}</td>
-                      <td>{row.punch_out ? `${String(row.punch_out).slice(0, 5)}${row.punch_spans_next_day ? ' (next day)' : ''}` : '—'}</td>
+                      <td>{row.punch_out ? String(row.punch_out).slice(0, 5) : '—'}</td>
+                      <td className="attNextDayCell">
+                        {row.punch_spans_next_day ? (
+                          <span className="attNextDayBadge" title="Punched out / worked into next day">Yes</span>
+                        ) : (
+                          <span className="attNextDayNo">—</span>
+                        )}
+                      </td>
                       <td className="num">{Number(row.total_working_hours || 0).toFixed(2)}</td>
                       <td><span className={`badge badge-${row.status === 'Present' ? 'success' : row.status === 'Absent' ? 'danger' : 'warn'}`}>{row.status}</span></td>
                       <td className="num">{Number(row.over_time || 0).toFixed(2)}</td>

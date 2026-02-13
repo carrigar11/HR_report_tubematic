@@ -241,6 +241,32 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Next day column — worked / punched out into next day */
+.attNextDayCol {
+  white-space: nowrap;
+  font-size: 0.75rem;
+  color: var(--textMuted);
+}
+.attNextDayCell {
+  text-align: center;
+  white-space: nowrap;
+}
+.attNextDayBadge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: rgba(168, 85, 247, 0.12);
+  color: #a855f7;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.attNextDayNo {
+  color: var(--textMuted);
+  font-size: 0.85rem;
+}
+
 .attTable {
   width: 100%;
   border-collapse: collapse;
