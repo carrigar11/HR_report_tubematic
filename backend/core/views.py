@@ -142,9 +142,87 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         qs = super().get_queryset()
         search = self.request.query_params.get('search', '').strip()
         if search:
-            from django.db.models import Q
             qs = qs.filter(Q(emp_code__icontains=search) | Q(name__icontains=search))
+        # Extra filters
+        dept = self.request.query_params.get('department', '').strip()
+        if dept:
+            qs = qs.filter(dept_name__iexact=dept)
+        designation = self.request.query_params.get('designation', '').strip()
+        if designation:
+            qs = qs.filter(designation__iexact=designation)
+        salary_type = self.request.query_params.get('salary_type', '').strip()
+        if salary_type:
+            qs = qs.filter(salary_type=salary_type)
+        shift = self.request.query_params.get('shift', '').strip()
+        if shift:
+            if shift == 'none':
+                qs = qs.filter(Q(shift='') | Q(shift__isnull=True))
+            else:
+                qs = qs.filter(shift__iexact=shift)
+        gender = self.request.query_params.get('gender', '').strip()
+        if gender:
+            qs = qs.filter(gender__iexact=gender)
+        # Joined filters
+        joined_month = self.request.query_params.get('joined_month', '').strip()
+        if joined_month:
+            qs = qs.filter(created_at__month=int(joined_month))
+        joined_year = self.request.query_params.get('joined_year', '').strip()
+        if joined_year:
+            qs = qs.filter(created_at__year=int(joined_year))
         return qs
+
+    def list(self, request, *args, **kwargs):
+        response = super().list(request, *args, **kwargs)
+        data = response.data
+        # If paginated, results are under 'results'
+        emp_list = data.get('results', data) if isinstance(data, dict) else data
+
+        # Attach current month total hours from Attendance
+        today = timezone.localdate()
+        month_start = today.replace(day=1)
+        emp_codes = [e['emp_code'] for e in emp_list]
+        hours_map = {}
+        if emp_codes:
+            for a in Attendance.objects.filter(
+                emp_code__in=emp_codes, date__gte=month_start, date__lte=today
+            ).values('emp_code').annotate(
+                total_hours=Sum('total_working_hours'),
+                days_present=Count('id', filter=Q(status='Present')),
+            ):
+                hours_map[a['emp_code']] = {
+                    'month_hours': str(a['total_hours'] or 0),
+                    'month_days': a['days_present'] or 0,
+                }
+        for e in emp_list:
+            stats = hours_map.get(e['emp_code'], {})
+            e['month_hours'] = stats.get('month_hours', '0')
+            e['month_days'] = stats.get('month_days', 0)
+
+        # Also return distinct filter options
+        if request.query_params.get('include_filters', '').lower() == 'true':
+            all_emps = Employee.objects.filter(status='Active')
+            departments = sorted(set(all_emps.values_list('dept_name', flat=True).distinct()) - {''})
+            designations = sorted(set(all_emps.values_list('designation', flat=True).distinct()) - {''})
+            shifts = sorted(set(all_emps.exclude(shift='').values_list('shift', flat=True).distinct()))
+            genders = sorted(set(all_emps.values_list('gender', flat=True).distinct()) - {''})
+            join_years = sorted(set(
+                Employee.objects.dates('created_at', 'year').values_list('created_at__year', flat=True)
+            ))
+            filter_data = {
+                'departments': departments,
+                'designations': designations,
+                'shifts': shifts,
+                'genders': genders,
+                'join_years': join_years,
+            }
+            if isinstance(data, dict):
+                data['filters'] = filter_data
+            else:
+                response.data = {
+                    'results': data,
+                    'filters': filter_data,
+                }
+        return response
 
 
 class AttendanceViewSet(viewsets.ReadOnlyModelViewSet):

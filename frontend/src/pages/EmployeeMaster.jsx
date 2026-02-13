@@ -4,56 +4,185 @@ import { employees } from '../api'
 import './Table.css'
 import './EmployeeMaster.css'
 
+const monthNames = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+const formatJoined = (d) => {
+  if (!d) return '—'
+  const dt = new Date(d)
+  if (isNaN(dt)) return '—'
+  return `${dt.getDate()} ${monthNames[dt.getMonth() + 1]} ${dt.getFullYear()}`
+}
+
 export default function EmployeeMaster() {
   const [list, setList] = useState([])
   const [loading, setLoading] = useState(true)
-  const [statusFilter, setStatusFilter] = useState('')
   const [search, setSearch] = useState('')
   const [searchDebounced, setSearchDebounced] = useState('')
+
+  // Filters
+  const [statusFilter, setStatusFilter] = useState('')
+  const [deptFilter, setDeptFilter] = useState('')
+  const [designationFilter, setDesignationFilter] = useState('')
+  const [shiftFilter, setShiftFilter] = useState('')
+  const [genderFilter, setGenderFilter] = useState('')
+  const [salaryTypeFilter, setSalaryTypeFilter] = useState('')
+  const [joinedMonthFilter, setJoinedMonthFilter] = useState('')
+  const [joinedYearFilter, setJoinedYearFilter] = useState('')
+
+  // Filter options from backend
+  const [filterOptions, setFilterOptions] = useState({
+    departments: [],
+    designations: [],
+    shifts: [],
+    genders: [],
+    join_years: [],
+  })
 
   useEffect(() => {
     const t = setTimeout(() => setSearchDebounced(search.trim()), 300)
     return () => clearTimeout(t)
   }, [search])
 
+  // Fetch filter options once
+  useEffect(() => {
+    employees.list({ include_filters: 'true' })
+      .then((r) => {
+        const d = r.data
+        if (d.filters) setFilterOptions(d.filters)
+      })
+      .catch(() => {})
+  }, [])
+
   useEffect(() => {
     setLoading(true)
-    const params = {}
+    const params = { include_filters: 'false' }
     if (statusFilter) params.status = statusFilter
     if (searchDebounced) params.search = searchDebounced
+    if (deptFilter) params.department = deptFilter
+    if (designationFilter) params.designation = designationFilter
+    if (shiftFilter) params.shift = shiftFilter
+    if (genderFilter) params.gender = genderFilter
+    if (salaryTypeFilter) params.salary_type = salaryTypeFilter
+    if (joinedMonthFilter) params.joined_month = joinedMonthFilter
+    if (joinedYearFilter) params.joined_year = joinedYearFilter
     employees.list(params)
-      .then((r) => setList(r.data.results ?? r.data ?? []))
+      .then((r) => {
+        const d = r.data
+        setList(d.results ?? d ?? [])
+      })
       .catch(() => setList([]))
       .finally(() => setLoading(false))
-  }, [statusFilter, searchDebounced])
+  }, [statusFilter, searchDebounced, deptFilter, designationFilter, shiftFilter, genderFilter, salaryTypeFilter, joinedMonthFilter, joinedYearFilter])
+
+  const hasFilters = statusFilter || deptFilter || designationFilter || shiftFilter || genderFilter || salaryTypeFilter || joinedMonthFilter || joinedYearFilter
+  const clearFilters = () => {
+    setStatusFilter('')
+    setDeptFilter('')
+    setDesignationFilter('')
+    setShiftFilter('')
+    setGenderFilter('')
+    setSalaryTypeFilter('')
+    setJoinedMonthFilter('')
+    setJoinedYearFilter('')
+  }
 
   return (
     <div className="pageContent">
+      {/* Filter Bar */}
       <div className="card filterCard">
         <div className="filterBar">
           <div className="filterGroup searchInput">
-            <label className="label">Search by Emp Code or Name</label>
+            <label className="label">Search</label>
             <input
               type="text"
               className="input"
-              placeholder="Type emp code or name..."
+              placeholder="Emp code or name..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
           <div className="filterGroup">
             <label className="label">Status</label>
-            <select className="input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ minWidth: 140 }}>
+            <select className="input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
               <option value="">All</option>
               <option value="Active">Active</option>
               <option value="Inactive">Inactive</option>
             </select>
           </div>
+          <div className="filterGroup">
+            <label className="label">Department</label>
+            <select className="input" value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)}>
+              <option value="">All</option>
+              {filterOptions.departments.map((d) => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </div>
+          <div className="filterGroup">
+            <label className="label">Designation</label>
+            <select className="input" value={designationFilter} onChange={(e) => setDesignationFilter(e.target.value)}>
+              <option value="">All</option>
+              {filterOptions.designations.map((d) => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </div>
+          <div className="filterGroup">
+            <label className="label">Shift</label>
+            <select className="input" value={shiftFilter} onChange={(e) => setShiftFilter(e.target.value)}>
+              <option value="">All</option>
+              <option value="none">Not Assigned</option>
+              {filterOptions.shifts.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div className="filterGroup">
+            <label className="label">Gender</label>
+            <select className="input" value={genderFilter} onChange={(e) => setGenderFilter(e.target.value)}>
+              <option value="">All</option>
+              {filterOptions.genders.map((g) => <option key={g} value={g}>{g}</option>)}
+            </select>
+          </div>
+          <div className="filterGroup">
+            <label className="label">Salary Type</label>
+            <select className="input" value={salaryTypeFilter} onChange={(e) => setSalaryTypeFilter(e.target.value)}>
+              <option value="">All</option>
+              <option value="Monthly">Monthly</option>
+              <option value="Hourly">Hourly</option>
+            </select>
+          </div>
+          <div className="filterGroup">
+            <label className="label">Joined Month</label>
+            <select className="input" value={joinedMonthFilter} onChange={(e) => setJoinedMonthFilter(e.target.value)}>
+              <option value="">All</option>
+              {[1,2,3,4,5,6,7,8,9,10,11,12].map((m) => (
+                <option key={m} value={m}>{monthNames[m]}</option>
+              ))}
+            </select>
+          </div>
+          <div className="filterGroup">
+            <label className="label">Joined Year</label>
+            <select className="input" value={joinedYearFilter} onChange={(e) => setJoinedYearFilter(e.target.value)}>
+              <option value="">All</option>
+              {(filterOptions.join_years || []).map((y) => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+          </div>
+          {hasFilters && (
+            <div className="filterGroup" style={{ alignSelf: 'flex-end' }}>
+              <button className="empClearBtn" onClick={clearFilters}>Clear Filters</button>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Count badge */}
+      {!loading && (
+        <div className="empCountBar">
+          <span className="empCountBadge">{Array.isArray(list) ? list.length : 0} employees</span>
+        </div>
+      )}
+
+      {/* Table */}
       <div className="card tableCard">
         {loading ? (
-          <p className="muted">Loading…</p>
+          <p className="muted">Loading...</p>
         ) : (
           <table>
             <thead>
@@ -62,11 +191,12 @@ export default function EmployeeMaster() {
                 <th>Name</th>
                 <th>Mobile</th>
                 <th>Email</th>
+                <th>Monthly Hrs</th>
+                <th>Joined</th>
                 <th>Shift</th>
                 <th>Dept</th>
                 <th>Designation</th>
                 <th>Status</th>
-                <th>Salary Type</th>
                 <th>Profile</th>
               </tr>
             </thead>
@@ -77,6 +207,17 @@ export default function EmployeeMaster() {
                   <td>{row.name || '—'}</td>
                   <td>{row.mobile || '—'}</td>
                   <td>{row.email || '—'}</td>
+                  <td>
+                    <div className="empHoursCell">
+                      <span className="empHoursVal">{Number(row.month_hours || 0).toFixed(1)}h</span>
+                      {(row.month_days || 0) > 0 && (
+                        <span className="empHoursDays">{row.month_days}d</span>
+                      )}
+                    </div>
+                  </td>
+                  <td>
+                    <span className="empJoined">{formatJoined(row.created_at)}</span>
+                  </td>
                   <td>
                     {row.shift ? (
                       <div className="empShiftCell">
@@ -92,7 +233,6 @@ export default function EmployeeMaster() {
                   <td>{row.dept_name || '—'}</td>
                   <td>{row.designation || '—'}</td>
                   <td><span className={`badge badge-${row.status === 'Active' ? 'success' : 'warn'}`}>{row.status}</span></td>
-                  <td>{row.salary_type || '—'}</td>
                   <td><Link to={`/employees/${row.emp_code}/profile`}>View</Link></td>
                 </tr>
               ))}
@@ -100,7 +240,7 @@ export default function EmployeeMaster() {
           </table>
         )}
         {!loading && Array.isArray(list) && list.length === 0 && (
-          <p className="muted">No employees match your search.</p>
+          <p className="muted">No employees match your filters.</p>
         )}
       </div>
     </div>
