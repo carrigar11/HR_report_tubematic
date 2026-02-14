@@ -82,6 +82,7 @@ export const salary = {
 export const advance = {
   list: (month, year) => api.get('/advance/', { params: { month, year } }),
   create: (data) => api.post('/advance/', data),
+  delete: (id) => api.delete(`/advance/${id}/`),
 }
 
 export const rewards = () => api.get('/rewards/')

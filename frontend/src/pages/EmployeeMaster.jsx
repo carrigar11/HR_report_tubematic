@@ -116,7 +116,9 @@ export default function EmployeeMaster() {
             <select className="input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
               <option value="">All</option>
               <option value="Active">Active</option>
-              <option value="Inactive">Inactive</option>
+              <option value="Inactive">Inactive (Left)</option>
+              <option value="Week off">Week off</option>
+              <option value="Holiday">Holiday</option>
             </select>
           </div>
           <div className="filterGroup">
@@ -251,7 +253,7 @@ export default function EmployeeMaster() {
                   </td>
                   <td>{row.dept_name || '—'}</td>
                   <td>{row.designation || '—'}</td>
-                  <td><span className={`badge badge-${row.status === 'Active' ? 'success' : 'warn'}`}>{row.status}</span></td>
+                  <td><span className={`badge badge-${row.status === 'Active' ? 'success' : row.status === 'Inactive' ? 'warn' : row.status === 'Week off' ? 'info' : 'neutral'}`}>{row.status}</span></td>
                   <td><Link to={`/employees/${row.emp_code}/profile`}>View</Link></td>
                 </tr>
               ))}

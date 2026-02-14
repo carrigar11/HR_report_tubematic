@@ -174,6 +174,12 @@ export default function SalaryReport() {
               <div className="salModalField">
                 <label className="label">Amount</label>
                 <input type="number" className="input" step="0.01" min="0.01" value={advanceAmount} onChange={(e) => setAdvanceAmount(e.target.value)} placeholder="0.00" required />
+                {advanceEmpCode && (() => {
+                  const row = sortedList.find((r) => r.emp_code === advanceEmpCode)
+                  return row && row.earned_so_far != null ? (
+                    <p className="salModalEarnedSoFar">Earned so far this month: <strong>{Number(row.earned_so_far).toFixed(2)}</strong> (from hours worked)</p>
+                  ) : null
+                })()}
               </div>
               <div className="salModalField">
                 <label className="label">Note (optional)</label>
@@ -209,6 +215,7 @@ export default function SalaryReport() {
                 <th>Total Monthly Hrs</th>
                 <th>Overtime Hrs</th>
                 <th>Bonus</th>
+                <th>Earned so far</th>
                 <th>Advance</th>
                 <th>Gross</th>
                 <th>Net Pay</th>
@@ -232,6 +239,7 @@ export default function SalaryReport() {
                   <td>{Number(row.total_working_hours || 0).toFixed(2)}</td>
                   <td>{Number(row.overtime_hours || 0).toFixed(2)}</td>
                   <td>{Number(row.bonus || 0).toFixed(2)}</td>
+                  <td title="From hours worked (1st of month to today)">{Number(row.earned_so_far || 0).toFixed(2)}</td>
                   <td>{Number(row.advance_total || 0).toFixed(2)}</td>
                   <td>{Number(row.gross_salary || 0).toFixed(2)}</td>
                   <td className="salNetPay">{Number(row.net_pay || 0).toFixed(2)}</td>

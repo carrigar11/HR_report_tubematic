@@ -24,6 +24,7 @@ urlpatterns = [
     path('dashboard/', views.DashboardView.as_view()),
     path('salary/monthly/', views.SalaryMonthlyView.as_view()),
     path('advance/', views.SalaryAdvanceListCreateView.as_view()),
+    path('advance/<int:pk>/', views.SalaryAdvanceDetailView.as_view()),
     path('leaderboard/', views.LeaderboardView.as_view()),
     path('absentee-alert/', views.AbsenteeAlertView.as_view()),
     path('attendance/adjust/', views.AttendanceAdjustView.as_view()),

@@ -121,3 +121,14 @@
   margin-top: 1rem;
   justify-content: flex-end;
 }
+
+.salModalEarnedSoFar {
+  margin: 0.4rem 0 0;
+  font-size: 0.8rem;
+  color: var(--textMuted);
+}
+
+.salModalEarnedSoFar strong {
+  color: var(--accent);
+  font-weight: 600;
+}

@@ -225,7 +225,8 @@ def upload_employees_excel(file, preview=False) -> dict:
             except Exception:
                 pass
 
-        if status not in ('Active', 'Inactive'):
+        valid_statuses = ('Active', 'Inactive', 'Week off', 'Holiday')
+        if status not in valid_statuses:
             status = 'Active'
         if emp_type not in ('Full-time', 'Hourly'):
             emp_type = 'Full-time'

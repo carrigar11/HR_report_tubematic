@@ -31,7 +31,6 @@ export default function ManageAdmins() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
-  const [savingId, setSavingId] = useState(null)
   const [deletingId, setDeletingId] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState(null)
 
@@ -48,8 +47,18 @@ export default function ManageAdmins() {
   const [createError, setCreateError] = useState('')
   const [showCreatePassword, setShowCreatePassword] = useState(false)
 
-  // Modal for editing access (preset only)
-  const [accessModalAdmin, setAccessModalAdmin] = useState(null)
+  // Edit profile (name, email, password, department, role, access)
+  const [editProfileAdmin, setEditProfileAdmin] = useState(null)
+  const [editName, setEditName] = useState('')
+  const [editEmail, setEditEmail] = useState('')
+  const [editPhone, setEditPhone] = useState('')
+  const [editPassword, setEditPassword] = useState('')
+  const [editDepartment, setEditDepartment] = useState('')
+  const [editRole, setEditRole] = useState('dept_admin')
+  const [editAccess, setEditAccess] = useState({ ...DEPT_ADMIN_ACCESS })
+  const [showEditPassword, setShowEditPassword] = useState(false)
+  const [editLoading, setEditLoading] = useState(false)
+  const [editError, setEditError] = useState('')
 
   const loadList = () => {
     adminsApi
@@ -120,28 +129,6 @@ export default function ManageAdmins() {
     setCreateAccess(role === 'super_admin' ? { ...SUPER_ADMIN_ACCESS } : { ...DEPT_ADMIN_ACCESS })
   }
 
-  const handleSave = async (admin) => {
-    if (admin.id === 1) return
-    setSavingId(admin.id)
-    setMessage('')
-    try {
-      const payload = {}
-      if (admin.department !== undefined) payload.department = admin.department
-      if (admin.role !== undefined) payload.role = admin.role
-      if (admin.access !== undefined) payload.access = admin.access
-      await adminsApi.updateAccess(admin.id, payload)
-      setList((prev) =>
-        prev.map((a) => (a.id === admin.id ? { ...a, ...payload } : a))
-      )
-      setMessage('Saved.')
-      setAccessModalAdmin(null)
-    } catch (err) {
-      setMessage(err.response?.data?.error || 'Save failed')
-    } finally {
-      setSavingId(null)
-    }
-  }
-
   const handleDelete = async (admin) => {
     if (admin.id === 1) return
     setConfirmDelete(admin)
@@ -163,29 +150,55 @@ export default function ManageAdmins() {
     }
   }
 
-  const updateLocal = (id, field, value) => {
-    setList((prev) =>
-      prev.map((a) => (a.id === id ? { ...a, [field]: value } : a))
-    )
+  const openEditProfile = (admin) => {
+    setEditProfileAdmin(admin)
+    setEditName(admin.name || '')
+    setEditEmail(admin.email || '')
+    setEditPhone(admin.phone || '')
+    setEditPassword('')
+    setEditDepartment(admin.department || '')
+    setEditRole(admin.role || 'dept_admin')
+    setEditAccess(admin.access && typeof admin.access === 'object' ? { ...DEFAULT_ACCESS_OBJ, ...admin.access } : { ...DEPT_ADMIN_ACCESS })
+    setShowEditPassword(false)
+    setEditError('')
   }
 
-  const toggleAccess = (admin, key) => {
-    if (admin.id === 1) return
-    const access = { ...(admin.access || {}), [key]: !admin.access?.[key] }
-    updateLocal(admin.id, 'access', access)
+  const applyEditAccessPreset = (role) => {
+    setEditAccess(role === 'super_admin' ? { ...SUPER_ADMIN_ACCESS } : { ...DEPT_ADMIN_ACCESS })
+    setEditRole(role)
   }
 
-  const setAccessAll = (admin, value) => {
-    if (admin.id === 1) return
-    const access = {}
-    ACCESS_OPTIONS.forEach(({ key }) => { access[key] = value })
-    updateLocal(admin.id, 'access', access)
-  }
-
-  const applyRolePresetToAdmin = (admin, role) => {
-    if (admin.id === 1) return
-    const access = role === 'super_admin' ? { ...SUPER_ADMIN_ACCESS } : { ...DEPT_ADMIN_ACCESS }
-    updateLocal(admin.id, 'access', access)
+  const handleEditProfile = async (e) => {
+    e.preventDefault()
+    if (!editProfileAdmin) return
+    setEditError('')
+    setEditLoading(true)
+    try {
+      const payload = { name: editName.trim(), email: editEmail.trim(), phone: (editPhone || '').trim() }
+      if (editPassword.trim()) payload.password = editPassword
+      await adminsApi.update(editProfileAdmin.id, payload)
+      if (editProfileAdmin.id !== 1) {
+        await adminsApi.updateAccess(editProfileAdmin.id, {
+          department: editDepartment.trim(),
+          role: editRole,
+          access: editAccess,
+        })
+      }
+      setList((prev) =>
+        prev.map((a) =>
+          a.id === editProfileAdmin.id
+            ? { ...a, name: payload.name, email: payload.email, phone: payload.phone, department: editDepartment.trim(), role: editRole, access: editAccess }
+            : a
+        )
+      )
+      setMessage('Profile and access updated.')
+      setEditProfileAdmin(null)
+    } catch (err) {
+      const msg = err.response?.data?.email?.[0] || err.response?.data?.error || 'Update failed'
+      setEditError(msg)
+    } finally {
+      setEditLoading(false)
+    }
   }
 
   const applyPresetAndSave = async (admin, role) => {
@@ -400,32 +413,9 @@ export default function ManageAdmins() {
                   </td>
                   <td><span className="manageAdminsEmail">{admin.email}</span></td>
                   <td>{admin.phone || '—'}</td>
+                  <td>{admin.id === 1 ? <span className="muted">—</span> : (admin.department || '—')}</td>
                   <td>
-                    {admin.id === 1 ? (
-                      <span className="muted">—</span>
-                    ) : (
-                      <input
-                        type="text"
-                        className="input inputSm"
-                        value={admin.department || ''}
-                        onChange={(e) => updateLocal(admin.id, 'department', e.target.value)}
-                        placeholder="Dept"
-                      />
-                    )}
-                  </td>
-                  <td>
-                    {admin.id === 1 ? (
-                      <strong>Super Admin</strong>
-                    ) : (
-                      <select
-                        className="input inputSm"
-                        value={admin.role || 'dept_admin'}
-                        onChange={(e) => updateLocal(admin.id, 'role', e.target.value)}
-                      >
-                        <option value="dept_admin">Dept Admin</option>
-                        <option value="super_admin">Super Admin</option>
-                      </select>
-                    )}
+                    {admin.id === 1 ? <strong>Super Admin</strong> : (admin.role === 'super_admin' ? 'Super Admin' : 'Dept Admin')}
                   </td>
                   <td>
                     {admin.id === 1 ? (
@@ -435,38 +425,30 @@ export default function ManageAdmins() {
                     ) : (
                       <span className="manageAdminsAccessLabel dept">Dept access</span>
                     )}
-                    {admin.id !== 1 && (
-                      <button
-                        type="button"
-                        className="btn btn-secondary btnSm"
-                        style={{ marginLeft: '0.5rem' }}
-                        onClick={() => setAccessModalAdmin(admin)}
-                      >
-                        Change
-                      </button>
-                    )}
                   </td>
                   <td>
-                    {admin.id !== 1 && (
-                      <span className="manageAdminsActions">
-                        <button
-                          type="button"
-                          className="btn btn-primary btnSm"
-                          disabled={savingId === admin.id}
-                          onClick={() => handleSave(admin)}
-                        >
-                          {savingId === admin.id ? '…' : 'Save'}
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-secondary btnSm btnDanger"
-                          disabled={deletingId === admin.id}
-                          onClick={() => handleDelete(admin)}
-                        >
-                          {deletingId === admin.id ? '…' : 'Delete'}
-                        </button>
-                      </span>
-                    )}
+                    <div className="manageAdminsActions">
+                      <button
+                        type="button"
+                        className="maActionBtn maActionEdit"
+                        onClick={() => openEditProfile(admin)}
+                      >
+                        Edit
+                      </button>
+                      {admin.id !== 1 && (
+                        <>
+                          <span className="maActionDivider" aria-hidden />
+                          <button
+                            type="button"
+                            className="maActionBtn maActionDelete"
+                            disabled={deletingId === admin.id}
+                            onClick={() => handleDelete(admin)}
+                          >
+                            {deletingId === admin.id ? '…' : 'Delete'}
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </td>
                 </tr>
               </Fragment>
@@ -479,23 +461,112 @@ export default function ManageAdmins() {
         )}
       </section>
 
-      {accessModalAdmin && (
-        <div className="manageAdminsModalBackdrop" onClick={() => setAccessModalAdmin(null)}>
-          <div className="card manageAdminsModal manageAdminsModalAccess" onClick={(e) => e.stopPropagation()}>
-            <h3 className="manageAdminsModalTitle">Change access</h3>
-            <p className="manageAdminsModalUser">{accessModalAdmin.name} <span className="muted">({accessModalAdmin.email})</span></p>
-            <p className="manageAdminsAccessDesc" style={{ marginBottom: '1rem' }}>
-              Department admins get all modules except Manage Admins &amp; Settings. Super Admin gets full access.
-            </p>
-            <div className="manageAdminsModalActions" style={{ flexWrap: 'wrap', gap: '0.5rem' }}>
-              <button type="button" className="btn btn-primary" disabled={savingId === accessModalAdmin.id} onClick={() => applyPresetAndSave(accessModalAdmin, 'dept_admin')}>
-                {savingId === accessModalAdmin.id ? 'Saving…' : 'Set Dept Admin access'}
-              </button>
-              <button type="button" className="btn btn-secondary" disabled={savingId === accessModalAdmin.id} onClick={() => applyPresetAndSave(accessModalAdmin, 'super_admin')}>
-                Set Super Admin access
-              </button>
-              <button type="button" className="btn btn-secondary" onClick={() => setAccessModalAdmin(null)}>Cancel</button>
-            </div>
+      {editProfileAdmin && (
+        <div className="manageAdminsModalBackdrop" onClick={() => !editLoading && setEditProfileAdmin(null)}>
+          <div className="card manageAdminsModal" onClick={(e) => e.stopPropagation()}>
+            <h3 className="manageAdminsModalTitle">Edit profile</h3>
+            <p className="manageAdminsModalUser muted">ID {editProfileAdmin.id}</p>
+            <form onSubmit={handleEditProfile}>
+              {editError && <p className="exportError">{editError}</p>}
+              <div className="manageAdminsField">
+                <label>Name *</label>
+                <input
+                  type="text"
+                  className="input"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  required
+                  placeholder="Full name"
+                />
+              </div>
+              <div className="manageAdminsField">
+                <label>Email *</label>
+                <input
+                  type="email"
+                  className="input"
+                  value={editEmail}
+                  onChange={(e) => setEditEmail(e.target.value)}
+                  required
+                  placeholder="admin@example.com"
+                />
+              </div>
+              <div className="manageAdminsField">
+                <label>Phone</label>
+                <input
+                  type="tel"
+                  className="input"
+                  value={editPhone}
+                  onChange={(e) => setEditPhone(e.target.value)}
+                  placeholder="e.g. 9876543210"
+                />
+              </div>
+              <div className="manageAdminsField">
+                <label>New password</label>
+                <div className="manageAdminsPasswordWrap">
+                  <input
+                    type={showEditPassword ? 'text' : 'password'}
+                    className="input"
+                    value={editPassword}
+                    onChange={(e) => setEditPassword(e.target.value)}
+                    placeholder="Leave blank to keep current"
+                  />
+                  <button
+                    type="button"
+                    className="manageAdminsEyeBtn"
+                    onClick={() => setShowEditPassword((v) => !v)}
+                    aria-label={showEditPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showEditPassword ? <IconEyeOff /> : <IconEye />}
+                  </button>
+                </div>
+              </div>
+              {editProfileAdmin.id !== 1 && (
+                <>
+                  <hr className="manageAdminsEditDivider" />
+                  <h4 className="manageAdminsEditSectionTitle">Department &amp; Access</h4>
+                  <div className="manageAdminsField">
+                    <label>Department</label>
+                    <input
+                      type="text"
+                      className="input"
+                      value={editDepartment}
+                      onChange={(e) => setEditDepartment(e.target.value)}
+                      placeholder="e.g. HR, Production"
+                    />
+                  </div>
+                  <div className="manageAdminsField">
+                    <label>Role &amp; access preset</label>
+                    <p className="manageAdminsAccessDesc" style={{ marginBottom: '0.5rem' }}>
+                      Dept Admin: all modules except Manage Admins &amp; Settings. Super Admin: full access.
+                    </p>
+                    <div className="manageAdminsEditAccessBtns">
+                      <button
+                        type="button"
+                        className={`btn ${editRole === 'dept_admin' ? 'btn-primary manageAdminsRoleBtnActive' : 'btn-secondary'}`}
+                        onClick={() => applyEditAccessPreset('dept_admin')}
+                      >
+                        Dept Admin
+                      </button>
+                      <button
+                        type="button"
+                        className={`btn ${editRole === 'super_admin' ? 'btn-primary manageAdminsRoleBtnActive' : 'btn-secondary'}`}
+                        onClick={() => applyEditAccessPreset('super_admin')}
+                      >
+                        Super Admin
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+              <div className="manageAdminsModalActions">
+                <button type="button" className="btn btn-secondary" onClick={() => setEditProfileAdmin(null)} disabled={editLoading}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={editLoading}>
+                  {editLoading ? 'Saving…' : 'Save changes'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -98,9 +98,14 @@ class AdminProfileView(APIView):
         if 'name' in ser.validated_data:
             admin.name = ser.validated_data['name']
         if 'email' in ser.validated_data:
-            admin.email = ser.validated_data['email']
+            new_email = ser.validated_data['email']
+            if Admin.objects.filter(email__iexact=new_email).exclude(pk=admin.pk).exists():
+                return Response({'error': 'This email is already used by another admin.'}, status=400)
+            admin.email = new_email
         if 'password' in ser.validated_data:
             admin.password = ser.validated_data['password']
+        if 'phone' in ser.validated_data:
+            admin.phone = (ser.validated_data['phone'] or '')[:20]
         admin.save()
         log_activity(request, 'update', 'admins', 'admin', str(pk), details={'updated': list(ser.validated_data.keys())})
         return Response(AdminProfileSerializer(admin).data)
@@ -338,7 +343,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
 
         # Also return distinct filter options
         if request.query_params.get('include_filters', '').lower() == 'true':
-            all_emps = self.get_queryset().filter(status='Active')
+            all_emps = self.get_queryset().filter(status__in=Employee.EMPLOYED_STATUSES)
             departments = sorted(set(all_emps.values_list('dept_name', flat=True).distinct()) - {''})
             designations = sorted(set(all_emps.values_list('designation', flat=True).distinct()) - {''})
             shifts = sorted(set(all_emps.exclude(shift='').values_list('shift', flat=True).distinct()))
@@ -656,7 +661,7 @@ class DashboardView(APIView):
                     DashboardView._last_reward_run_date = today
                 except Exception:
                     pass
-        total_employees = Employee.objects.filter(status='Active').filter(emp_filter).count()
+        total_employees = Employee.objects.filter(status__in=Employee.EMPLOYED_STATUSES).filter(emp_filter).count()
         att_qs = Attendance.objects.filter(date=today)
         if allowed_emp_codes is not None:
             att_qs = att_qs.filter(emp_filter)
@@ -728,8 +733,28 @@ class SalaryMonthlyView(APIView):
         advance_by_emp = get_advance_totals_by_emp(month=month, year=year)
         if allowed_emp_codes is not None:
             advance_by_emp = {k: v for k, v in advance_by_emp.items() if k in allowed_emp_codes} if allowed_emp_codes else {}
-        # Attach today's working hours per employee (live calc if still punched in)
         today = timezone.localdate()
+        # Earned so far (money from hours worked from 1st of month up to today)
+        from calendar import monthrange
+        first_day = date(year, month, 1)
+        _, last_day_num = monthrange(year, month)
+        last_day = date(year, month, last_day_num)
+        end_date_so_far = today if (first_day <= today <= last_day) else last_day
+        att_so_far = Attendance.objects.filter(
+            date__gte=first_day, date__lte=end_date_so_far
+        ).values('emp_code').annotate(
+            total_hrs=Sum('total_working_hours'),
+            total_ot=Sum('over_time'),
+        )
+        earned_so_far_by_emp = {}
+        for r in att_so_far:
+            earned_so_far_by_emp[r['emp_code']] = {
+                'total_hrs': r['total_hrs'] or Decimal('0'),
+                'total_ot': r['total_ot'] or Decimal('0'),
+            }
+        if allowed_emp_codes is not None:
+            earned_so_far_by_emp = {k: v for k, v in earned_so_far_by_emp.items() if k in allowed_emp_codes} if allowed_emp_codes else {}  # noqa: E501
+        # Attach today's working hours per employee (live calc if still punched in)
         now_time = timezone.localtime().time()
         today_att = {}
         att_today_qs = Attendance.objects.filter(date=today)
@@ -785,12 +810,18 @@ class SalaryMonthlyView(APIView):
             ot_hrs = Decimal(str(row.get('overtime_hours') or 0))
             total_hrs = Decimal(str(row.get('total_working_hours') or 0))
             if (row.get('salary_type') or '').strip() == 'Hourly':
+                hourly_rate = base
                 gross = (total_hrs * base) + bonus
             else:
                 hourly_rate = base / Decimal('208') if base else Decimal('0')  # 26*8
                 gross = (total_hrs * hourly_rate) + bonus + (ot_hrs * hourly_rate)
             row['gross_salary'] = str(round(gross, 2))
             row['net_pay'] = str(round(gross - advance_total, 2))
+            # Earned so far (from 1st of month up to today, based on hours worked)
+            so_far = earned_so_far_by_emp.get(ec, {'total_hrs': Decimal('0'), 'total_ot': Decimal('0')})
+            hrs_so_far = so_far['total_hrs'] + so_far['total_ot']
+            earned_so_far = (hrs_so_far * hourly_rate).quantize(Decimal('0.01'))
+            row['earned_so_far'] = str(earned_so_far)
         return Response(data)
 
 
@@ -838,6 +869,23 @@ class SalaryAdvanceListCreateView(APIView):
             'amount': str(obj.amount), 'month': obj.month, 'year': obj.year
         })
         return Response(SalaryAdvanceSerializer(obj).data, status=201)
+
+
+class SalaryAdvanceDetailView(APIView):
+    """Get or delete a single advance record."""
+    def delete(self, request, pk):
+        _, allowed_emp_codes = get_request_admin(request)
+        try:
+            obj = SalaryAdvance.objects.get(pk=pk)
+        except SalaryAdvance.DoesNotExist:
+            return Response({'error': 'Not found'}, status=404)
+        if allowed_emp_codes is not None and obj.emp_code not in allowed_emp_codes:
+            return Response({'error': 'Not allowed to remove this advance'}, status=403)
+        emp_code = obj.emp_code
+        details = {'amount': str(obj.amount), 'month': obj.month, 'year': obj.year}
+        obj.delete()
+        log_activity(request, 'delete', 'salary', 'advance', emp_code, details=details)
+        return Response(status=204)
 
 
 # ---------- Leaderboard ----------

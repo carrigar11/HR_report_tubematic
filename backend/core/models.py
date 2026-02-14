@@ -44,7 +44,19 @@ class Admin(models.Model):
 
 class Employee(models.Model):
     """Master employee table - source of truth. Linked by emp_code."""
-    STATUS_CHOICES = [('Active', 'Active'), ('Inactive', 'Inactive')]
+    STATUS_ACTIVE = 'Active'
+    STATUS_INACTIVE = 'Inactive'      # left the work
+    STATUS_WEEK_OFF = 'Week off'
+    STATUS_HOLIDAY = 'Holiday'
+    STATUS_CHOICES = [
+        (STATUS_ACTIVE, 'Active'),
+        (STATUS_INACTIVE, 'Inactive'),   # left the company
+        (STATUS_WEEK_OFF, 'Week off'),
+        (STATUS_HOLIDAY, 'Holiday'),
+    ]
+    # Statuses that mean still employed (exclude from salary/lists when filtering "current" only)
+    EMPLOYED_STATUSES = (STATUS_ACTIVE, STATUS_WEEK_OFF, STATUS_HOLIDAY)
+
     EMPLOYMENT_TYPE_CHOICES = [('Full-time', 'Full-time'), ('Hourly', 'Hourly')]
     SALARY_TYPE_CHOICES = [('Monthly', 'Monthly'), ('Hourly', 'Hourly')]
 
@@ -55,7 +67,7 @@ class Employee(models.Model):
     gender = models.CharField(max_length=20, blank=True)
     dept_name = models.CharField(max_length=100, blank=True)
     designation = models.CharField(max_length=100, blank=True)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Active')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_ACTIVE)
     employment_type = models.CharField(max_length=20, choices=EMPLOYMENT_TYPE_CHOICES, default='Full-time')
     salary_type = models.CharField(max_length=20, choices=SALARY_TYPE_CHOICES, default='Monthly')
     base_salary = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)

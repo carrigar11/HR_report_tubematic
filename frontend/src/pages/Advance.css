@@ -58,6 +58,17 @@
   align-self: flex-end;
 }
 
+.advanceEarnedSoFar {
+  margin: 0.4rem 0 0;
+  font-size: 0.8rem;
+  color: var(--textMuted);
+}
+
+.advanceEarnedSoFar strong {
+  color: var(--accent);
+  font-weight: 600;
+}
+
 .advanceError {
   color: var(--danger);
   font-size: 0.85rem;
@@ -114,4 +125,27 @@
 
 .advanceTotal strong {
   color: var(--accent);
+}
+
+.advanceRemoveBtn {
+  padding: 0.3rem 0.6rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--danger);
+  background: transparent;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.advanceRemoveBtn:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: var(--danger);
+}
+
+.advanceRemoveBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }

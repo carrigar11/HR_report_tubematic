@@ -54,6 +54,7 @@ class AdminUpdateSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=255, required=False)
     email = serializers.EmailField(required=False)
     password = serializers.CharField(max_length=255, required=False)
+    phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
 
 
 class AdminListSerializer(serializers.ModelSerializer):

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { advance as advanceApi, employees } from '../api'
+import { advance as advanceApi, employees, salary } from '../api'
 import './Table.css'
 import './Advance.css'
 
@@ -21,11 +21,26 @@ export default function Advance() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [employeeOptions, setEmployeeOptions] = useState([])
+  const [deletingId, setDeletingId] = useState(null)
+  const [earnedByEmp, setEarnedByEmp] = useState({})  // emp_code -> earned_so_far for selected month
 
   useEffect(() => {
     advanceApi.list(month, year)
       .then((r) => setList(Array.isArray(r.data) ? r.data : []))
       .catch(() => setList([]))
+  }, [month, year])
+
+  useEffect(() => {
+    salary.monthly(month, year)
+      .then((r) => {
+        const arr = Array.isArray(r.data) ? r.data : []
+        const map = {}
+        arr.forEach((row) => {
+          map[row.emp_code] = parseFloat(row.earned_so_far) || 0
+        })
+        setEarnedByEmp(map)
+      })
+      .catch(() => setEarnedByEmp({}))
   }, [month, year])
 
   useEffect(() => {
@@ -76,6 +91,19 @@ export default function Advance() {
   const periodLabel = `${monthNames[month]} ${year}`
   const totalAdvance = list.reduce((s, r) => s + parseFloat(r.amount || 0), 0)
 
+  const handleRemoveAdvance = (row) => {
+    if (!window.confirm(`Remove advance of ${Number(row.amount || 0).toFixed(2)} for ${row.emp_code}?`)) return
+    setDeletingId(row.id)
+    advanceApi.delete(row.id)
+      .then(() => {
+        setSuccess('Advance removed.')
+        advanceApi.list(month, year).then((r) => setList(Array.isArray(r.data) ? r.data : []))
+        setTimeout(() => setSuccess(''), 2000)
+      })
+      .catch((err) => setError(err.response?.data?.error || err.message || 'Failed to remove'))
+      .finally(() => setDeletingId(null))
+  }
+
   return (
     <div className="pageContent advancePage">
       <h2 className="advanceTitle">Advance</h2>
@@ -113,6 +141,9 @@ export default function Advance() {
               <div className="advanceFormField">
                 <label className="label">Amount</label>
                 <input type="number" className="input" step="0.01" min="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" required />
+                {empCode && earnedByEmp[empCode] != null && (
+                  <p className="advanceEarnedSoFar">Earned so far this month: <strong>{Number(earnedByEmp[empCode]).toFixed(2)}</strong> (from hours worked)</p>
+                )}
               </div>
               <div className="advanceFormField">
                 <label className="label">Note (optional)</label>
@@ -141,6 +172,7 @@ export default function Advance() {
                     <th>Date given</th>
                     <th>Note</th>
                     <th>Created</th>
+                    <th></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -151,6 +183,11 @@ export default function Advance() {
                       <td>{row.date_given || '—'}</td>
                       <td>{row.note || '—'}</td>
                       <td>{row.created_at ? new Date(row.created_at).toLocaleString() : '—'}</td>
+                      <td>
+                        <button type="button" className="advanceRemoveBtn" onClick={() => handleRemoveAdvance(row)} disabled={deletingId === row.id} title="Remove advance">
+                          {deletingId === row.id ? 'Removing…' : 'Remove'}
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

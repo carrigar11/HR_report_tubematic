@@ -31,7 +31,7 @@ def ensure_monthly_salaries(year, month):
             'present_days': r['present_days'] or 0,
         }
 
-    for emp in Employee.objects.filter(status='Active'):
+    for emp in Employee.objects.filter(status__in=Employee.EMPLOYED_STATUSES):
         base = emp.base_salary or Decimal('0')
         stats = stats_by_emp.get(emp.emp_code, {})
         overtime_hours = stats.get('total_ot', Decimal('0'))
