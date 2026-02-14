@@ -27,6 +27,7 @@ urlpatterns = [
     path('leaderboard/bonus/', views.GiveBonusView.as_view()),
     path('bonus/overview/', views.BonusOverviewView.as_view()),
     path('bonus/set/', views.SetBonusView.as_view()),
+    path('export/payroll-excel/', views.ExportPayrollExcelView.as_view()),
     path('export/', views.ExportView.as_view()),
     path('employees/<str:emp_code>/profile/', views.EmployeeProfileView.as_view()),
     path('', include(router.urls)),

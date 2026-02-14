@@ -22,6 +22,7 @@ from .serializers import (
 )
 from .excel_upload import upload_employees_excel, upload_attendance_excel, upload_shift_excel, upload_force_punch_excel
 from .reward_engine import run_reward_engine
+from .export_excel import generate_payroll_excel, generate_payroll_excel_previous_day
 
 
 # ---------- Auth ----------
@@ -794,6 +795,71 @@ class RunRewardEngineView(APIView):
 
 
 # ---------- Export ----------
+class ExportPayrollExcelView(APIView):
+    """Export payroll-style Excel (Department, Status, date columns = daily earnings, TOTAL, Advance)."""
+    def get(self, request):
+        from django.http import HttpResponse
+        previous_day = request.query_params.get('previous_day', '').strip().lower() in ('1', 'true', 'yes')
+        if previous_day:
+            try:
+                buf = generate_payroll_excel_previous_day()
+            except Exception as e:
+                return Response({'error': str(e)}, status=500)
+            from django.utils import timezone
+            yesterday = timezone.localdate() - timedelta(days=1)
+            filename = f'payroll_previous_day_{yesterday.isoformat()}.xlsx'
+            response = HttpResponse(buf.getvalue(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            response['Content-Disposition'] = f'attachment; filename="{filename}"'
+            return response
+
+        month = request.query_params.get('month', '').strip()
+        year = request.query_params.get('year', '').strip()
+        single_date = request.query_params.get('date', '').strip()
+        date_from = request.query_params.get('date_from', '').strip()
+        date_to = request.query_params.get('date_to', '').strip()
+
+        month = int(month) if month else None
+        year = int(year) if year else None
+        d_from = None
+        d_to = None
+        d_single = None
+        if single_date:
+            try:
+                d_single = date.fromisoformat(single_date)
+            except ValueError:
+                pass
+        if date_from:
+            try:
+                d_from = date.fromisoformat(date_from)
+            except ValueError:
+                pass
+        if date_to:
+            try:
+                d_to = date.fromisoformat(date_to)
+            except ValueError:
+                pass
+
+        try:
+            buf = generate_payroll_excel(
+                date_from=d_from, date_to=d_to, single_date=d_single,
+                month=month, year=year
+            )
+        except Exception as e:
+            return Response({'error': str(e)}, status=500)
+
+        filename = 'payroll_export.xlsx'
+        if month and year:
+            filename = f'payroll_{year}_{month:02d}.xlsx'
+        elif d_single:
+            filename = f'payroll_{d_single.isoformat()}.xlsx'
+        elif d_from or d_to:
+            filename = 'payroll_range.xlsx'
+
+        response = HttpResponse(buf.getvalue(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
+
+
 class ExportView(APIView):
     def get(self, request):
         export_type = request.query_params.get('type', 'csv')

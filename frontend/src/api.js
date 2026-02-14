@@ -87,6 +87,12 @@ export const settings = {
 
 export const exportReport = (params) => api.get('/export/', { params, responseType: 'blob' })
 
+/** Payroll Excel: params = { month, year } or { date } or { date_from, date_to } or {} for all */
+export const exportPayrollExcel = (params) => api.get('/export/payroll-excel/', { params, responseType: 'blob' })
+
+/** Previous day report: daily data = yesterday, Total Salary = current month */
+export const exportPayrollPreviousDay = () => api.get('/export/payroll-excel/', { params: { previous_day: '1' }, responseType: 'blob' })
+
 export const runRewardEngine = () => api.post('/reward-engine/run/')
 
 export default api
