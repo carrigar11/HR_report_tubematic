@@ -5,6 +5,18 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
+// Send X-Admin-Id so backend can filter by department for dept admins
+api.interceptors.request.use((config) => {
+  try {
+    const stored = localStorage.getItem('hr_admin')
+    if (stored) {
+      const admin = JSON.parse(stored)
+      if (admin && admin.id != null) config.headers['X-Admin-Id'] = String(admin.id)
+    }
+  } catch (_) {}
+  return config
+})
+
 export const auth = {
   login: (email, password) => api.post('/auth/login/', { email, password }),
 }
@@ -12,6 +24,14 @@ export const auth = {
 export const admins = {
   get: (id) => api.get(`/admins/${id}/`),
   update: (id, data) => api.patch(`/admins/${id}/`, data),
+  list: () => api.get('/admins/'),
+  create: (data) => api.post('/admins/', data),
+  delete: (id) => api.delete(`/admins/${id}/`),
+  updateAccess: (id, data) => api.patch(`/admins/${id}/access/`, data),
+}
+
+export const auditLog = {
+  list: (params) => api.get('/audit-log/', { params }),
 }
 
 export const upload = {
@@ -57,6 +77,11 @@ export const attendance = {
 export const salary = {
   monthly: (month, year, search = '') => api.get('/salary/monthly/', { params: { month, year, ...(search ? { search } : {}) } }),
   list: (params) => api.get('/salary/', { params }),
+}
+
+export const advance = {
+  list: (month, year) => api.get('/advance/', { params: { month, year } }),
+  create: (data) => api.post('/advance/', data),
 }
 
 export const rewards = () => api.get('/rewards/')

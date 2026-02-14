@@ -1,6 +1,28 @@
 /* Salary Report */
 .salTable { width: 100%; }
 
+/* Period shown once above table */
+.salPeriodHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+.salPeriodLabel {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--textMuted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.salPeriodValue {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
 /* Today's hours - live indicator */
 .salTodayHrs {
   font-variant-numeric: tabular-nums;
@@ -28,4 +50,74 @@
 .salViewBtn:hover {
   background: var(--accent);
   color: #fff;
+}
+
+.salNetPay {
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* Add Advance modal */
+.salModalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.salModal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem 1.5rem;
+  min-width: 320px;
+  max-width: 96%;
+}
+
+.salModalTitle {
+  margin: 0 0 0.25rem;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.salModalDesc {
+  margin: 0 0 1rem;
+  font-size: 0.85rem;
+  color: var(--textMuted);
+}
+
+.salModalField {
+  margin-bottom: 0.85rem;
+}
+
+.salModalField .label {
+  display: block;
+  margin-bottom: 0.3rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--textMuted);
+}
+
+.salModalError {
+  color: var(--danger);
+  font-size: 0.85rem;
+  margin: 0 0 0.5rem;
+}
+
+.salModalSuccess {
+  color: var(--accent);
+  font-size: 0.85rem;
+  margin: 0 0 0.5rem;
+  font-weight: 500;
+}
+
+.salModalActions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  justify-content: flex-end;
 }

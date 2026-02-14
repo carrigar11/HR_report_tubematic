@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Admin, Employee, Attendance, Salary, Adjustment, PerformanceReward, Holiday, SystemSetting
+from .models import Admin, Employee, Attendance, Salary, SalaryAdvance, Adjustment, PerformanceReward, Holiday, SystemSetting
 
 
 @admin.register(Admin)
@@ -23,6 +23,12 @@ class AttendanceAdmin(admin.ModelAdmin):
 @admin.register(Salary)
 class SalaryAdmin(admin.ModelAdmin):
     list_display = ('emp_code', 'month', 'year', 'base_salary', 'overtime_hours', 'bonus')
+
+
+@admin.register(SalaryAdvance)
+class SalaryAdvanceAdmin(admin.ModelAdmin):
+    list_display = ('emp_code', 'amount', 'month', 'year', 'date_given', 'note', 'created_at')
+    list_filter = ('year', 'month')
 
 
 @admin.register(Adjustment)

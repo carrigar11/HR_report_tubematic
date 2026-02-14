@@ -178,7 +178,7 @@ export default function EmployeeProfile() {
       <div className="card tableCard profileCard">
         <table>
           <thead>
-            <tr><th>Month</th><th>Year</th><th>Base</th><th>OT Hrs</th><th>Bonus</th></tr>
+            <tr><th>Month</th><th>Year</th><th>Base</th><th>OT Hrs</th><th>Bonus</th><th>Advance</th><th>Gross</th><th>Net Pay</th></tr>
           </thead>
           <tbody>
             {salaries.map((row) => (
@@ -188,6 +188,9 @@ export default function EmployeeProfile() {
                 <td>{formatCurrency(row.base_salary)}</td>
                 <td>{Number(row.overtime_hours || 0).toFixed(2)}</td>
                 <td>{formatCurrency(row.bonus)}</td>
+                <td>{formatCurrency(row.advance_total)}</td>
+                <td>{formatCurrency(row.gross_salary)}</td>
+                <td>{formatCurrency(row.net_pay)}</td>
               </tr>
             ))}
           </tbody>

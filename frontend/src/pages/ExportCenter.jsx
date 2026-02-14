@@ -17,6 +17,7 @@ export default function ExportCenter() {
   const [report, setReport] = useState('attendance')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
+  const [empCode, setEmpCode] = useState('') // optional: export only this employee
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
@@ -45,11 +46,13 @@ export default function ExportCenter() {
         if (dateFrom) params.date_from = dateFrom
         if (dateTo) params.date_to = dateTo
       }
+      if (empCode.trim()) params.emp_code = empCode.trim()
       const { data } = await exportReport(params)
       const url = URL.createObjectURL(data)
       const a = document.createElement('a')
       a.href = url
-      a.download = `${report}_export.${type === 'csv' ? 'csv' : 'json'}`
+      const baseName = empCode.trim() ? `${report}_${empCode.trim()}_export` : `${report}_export`
+      a.download = `${baseName}.${type === 'csv' ? 'csv' : 'json'}`
       a.click()
       URL.revokeObjectURL(url)
       setSuccessMsg('Download started. If the file has only headers, upload data first or adjust filters.')
@@ -121,116 +124,139 @@ export default function ExportCenter() {
 
   return (
     <div className="pageContent exportPage">
-      <h2 className="exportTitle">Export Center</h2>
-      <p className="exportIntro">Download reports and payroll data. Choose the type and date range below.</p>
+      <header className="exportHero">
+        <div className="exportHeroIcon" aria-hidden>↓</div>
+        <h1 className="exportTitle">Export Center</h1>
+        <p className="exportIntro">Download payroll Excel and raw CSV reports. Pick a report type and options below.</p>
+      </header>
 
-      {/* Payroll Excel section */}
-      <div className="card exportCard exportCardPayroll">
-        <h3 className="exportCardTitle">Export Payroll to Excel</h3>
-        <p className="exportCardDesc">
-          Download an Excel file with <strong>Department</strong>, <strong>Status</strong>, and one column per day showing <strong>daily earnings</strong> (rate × hours worked). Includes <strong>TOTAL</strong> per employee and a <strong>Total</strong> row at the bottom. One main sheet + one sheet per department.
-        </p>
-        <div className="exportPayrollOptions">
-          <label className="exportLabel">What dates do you want?</label>
-          <div className="exportRadioGroup">
-            <label className="exportRadio">
-              <input type="radio" name="payrollMode" value="all" checked={payrollMode === 'all'} onChange={() => setPayrollMode('all')} />
-              <span>All dates (full data)</span>
-            </label>
-            <label className="exportRadio">
-              <input type="radio" name="payrollMode" value="month" checked={payrollMode === 'month'} onChange={() => setPayrollMode('month')} />
-              <span>By month & year</span>
-            </label>
-            <label className="exportRadio">
-              <input type="radio" name="payrollMode" value="single" checked={payrollMode === 'single'} onChange={() => setPayrollMode('single')} />
-              <span>Single day</span>
-            </label>
-            <label className="exportRadio">
-              <input type="radio" name="payrollMode" value="range" checked={payrollMode === 'range'} onChange={() => setPayrollMode('range')} />
-              <span>Date range (from – to)</span>
-            </label>
+      <div className="exportGrid">
+        {/* Payroll Excel card */}
+        <section className="card exportCard exportCardPayroll">
+          <div className="exportCardHead">
+            <span className="exportCardBadge exportCardBadgeExcel" aria-hidden>📊</span>
+            <h2 className="exportCardTitle">Payroll to Excel</h2>
           </div>
-          {payrollMode === 'month' && (
-            <div className="exportPayrollFields">
+          <p className="exportCardDesc">
+            Excel file with <strong>Department</strong>, <strong>Status</strong>, daily earnings per day, <strong>TOTAL</strong> per employee, and one sheet per department.
+          </p>
+          <div className="exportSection">
+            <span className="exportLabel">Date range</span>
+            <div className="exportRadioGroup">
+              <label className="exportRadio">
+                <input type="radio" name="payrollMode" value="all" checked={payrollMode === 'all'} onChange={() => setPayrollMode('all')} />
+                <span>All dates</span>
+              </label>
+              <label className="exportRadio">
+                <input type="radio" name="payrollMode" value="month" checked={payrollMode === 'month'} onChange={() => setPayrollMode('month')} />
+                <span>Month & year</span>
+              </label>
+              <label className="exportRadio">
+                <input type="radio" name="payrollMode" value="single" checked={payrollMode === 'single'} onChange={() => setPayrollMode('single')} />
+                <span>Single day</span>
+              </label>
+              <label className="exportRadio">
+                <input type="radio" name="payrollMode" value="range" checked={payrollMode === 'range'} onChange={() => setPayrollMode('range')} />
+                <span>From – to</span>
+              </label>
+            </div>
+            {(payrollMode === 'month' || payrollMode === 'single' || payrollMode === 'range') && (
+              <div className="exportRow">
+                {payrollMode === 'month' && (
+                  <>
+                    <div className="exportField">
+                      <label className="exportFieldLabel">Month</label>
+                      <select className="input exportInput" value={payrollMonth} onChange={(e) => setPayrollMonth(Number(e.target.value))}>
+                        {MONTHS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                      </select>
+                    </div>
+                    <div className="exportField">
+                      <label className="exportFieldLabel">Year</label>
+                      <select className="input exportInput" value={payrollYear} onChange={(e) => setPayrollYear(Number(e.target.value))}>
+                        {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
+                      </select>
+                    </div>
+                  </>
+                )}
+                {payrollMode === 'single' && (
+                  <div className="exportField">
+                    <label className="exportFieldLabel">Date</label>
+                    <input type="date" className="input exportInput" value={payrollSingleDate} onChange={(e) => setPayrollSingleDate(e.target.value)} />
+                  </div>
+                )}
+                {payrollMode === 'range' && (
+                  <>
+                    <div className="exportField">
+                      <label className="exportFieldLabel">From</label>
+                      <input type="date" className="input exportInput" value={payrollDateFrom} onChange={(e) => setPayrollDateFrom(e.target.value)} />
+                    </div>
+                    <div className="exportField">
+                      <label className="exportFieldLabel">To</label>
+                      <input type="date" className="input exportInput" value={payrollDateTo} onChange={(e) => setPayrollDateTo(e.target.value)} />
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+          {payrollError && <p className="exportMessage exportError">{payrollError}</p>}
+          {payrollSuccess && <p className="exportMessage exportSuccess">{payrollSuccess}</p>}
+          <button type="button" className="btn btn-primary exportCardBtn" onClick={handlePayrollExcel} disabled={payrollLoading}>
+            {payrollLoading ? 'Generating…' : 'Download Excel'}
+          </button>
+
+          <div className="exportDivider" />
+          <div className="exportSubCard">
+            <h3 className="exportSubCardTitle">Previous day</h3>
+            <p className="exportSubCardDesc">Yesterday’s report; Total Salary = current month.</p>
+            {prevDayError && <p className="exportMessage exportError">{prevDayError}</p>}
+            {prevDaySuccess && <p className="exportMessage exportSuccess">{prevDaySuccess}</p>}
+            <button type="button" className="btn btn-secondary exportCardBtn exportCardBtnSm" onClick={handlePreviousDayReport} disabled={prevDayLoading}>
+              {prevDayLoading ? 'Generating…' : 'Download Previous Day'}
+            </button>
+          </div>
+        </section>
+
+        {/* CSV export card */}
+        <section className="card exportCard exportCardCsv">
+          <div className="exportCardHead">
+            <span className="exportCardBadge exportCardBadgeCsv" aria-hidden>📄</span>
+            <h2 className="exportCardTitle">Raw data to CSV</h2>
+          </div>
+          <p className="exportCardDesc">Employees or attendance as CSV. Optional date range and single-employee filter.</p>
+          <div className="exportSection">
+            <div className="exportRow">
               <div className="exportField">
-                <label className="exportLabel">Month</label>
-                <select className="input exportInput" value={payrollMonth} onChange={(e) => setPayrollMonth(Number(e.target.value))}>
-                  {MONTHS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                <label className="exportFieldLabel">Report</label>
+                <select className="input exportInput" value={report} onChange={(e) => setReport(e.target.value)}>
+                  <option value="employees">Employees</option>
+                  <option value="attendance">Attendance</option>
                 </select>
               </div>
               <div className="exportField">
-                <label className="exportLabel">Year</label>
-                <select className="input exportInput" value={payrollYear} onChange={(e) => setPayrollYear(Number(e.target.value))}>
-                  {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
-                </select>
+                <label className="exportFieldLabel">Emp code (optional)</label>
+                <input type="text" className="input exportInput" value={empCode} onChange={(e) => setEmpCode(e.target.value)} placeholder="e.g. EMP001" />
               </div>
             </div>
-          )}
-          {payrollMode === 'single' && (
-            <div className="exportPayrollFields">
-              <div className="exportField">
-                <label className="exportLabel">Select date</label>
-                <input type="date" className="input exportInput" value={payrollSingleDate} onChange={(e) => setPayrollSingleDate(e.target.value)} />
+            {report === 'attendance' && (
+              <div className="exportRow">
+                <div className="exportField">
+                  <label className="exportFieldLabel">Date from</label>
+                  <input type="date" className="input exportInput" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+                </div>
+                <div className="exportField">
+                  <label className="exportFieldLabel">Date to</label>
+                  <input type="date" className="input exportInput" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+                </div>
               </div>
-            </div>
-          )}
-          {payrollMode === 'range' && (
-            <div className="exportPayrollFields">
-              <div className="exportField">
-                <label className="exportLabel">From date</label>
-                <input type="date" className="input exportInput" value={payrollDateFrom} onChange={(e) => setPayrollDateFrom(e.target.value)} />
-              </div>
-              <div className="exportField">
-                <label className="exportLabel">To date</label>
-                <input type="date" className="input exportInput" value={payrollDateTo} onChange={(e) => setPayrollDateTo(e.target.value)} />
-              </div>
-            </div>
-          )}
-        </div>
-        {payrollError && <p className="exportError">{payrollError}</p>}
-        {payrollSuccess && <p className="exportSuccess">{payrollSuccess}</p>}
-        <button type="button" className="btn btn-primary exportBtn" onClick={handlePayrollExcel} disabled={payrollLoading}>
-          {payrollLoading ? 'Generating…' : 'Download Payroll Excel'}
-        </button>
-
-        <p className="exportCardDesc" style={{ marginTop: '1.25rem', marginBottom: '0.5rem' }}>
-          <strong>Previous day report:</strong> Same report for yesterday only. Daily columns and metrics are for that day; <strong>Total Salary</strong> is for the current month.
-        </p>
-        {prevDayError && <p className="exportError">{prevDayError}</p>}
-        {prevDaySuccess && <p className="exportSuccess">{prevDaySuccess}</p>}
-        <button type="button" className="btn btn-secondary exportBtn" onClick={handlePreviousDayReport} disabled={prevDayLoading}>
-          {prevDayLoading ? 'Generating…' : 'Download Previous Day Report'}
-        </button>
-      </div>
-
-      {/* CSV export section */}
-      <div className="card exportCard">
-        <h3 className="exportCardTitle">Export to CSV</h3>
-        <p className="exportCardDesc">Download raw data as CSV. For attendance, use the date range below or leave empty for all records.</p>
-        <div style={{ marginBottom: '1rem' }}>
-          <label className="exportLabel">Report</label>
-          <select className="input exportInput" value={report} onChange={(e) => setReport(e.target.value)} style={{ maxWidth: 200 }}>
-            <option value="employees">Employees</option>
-            <option value="attendance">Attendance</option>
-          </select>
-        </div>
-        {report === 'attendance' && (
-          <div className="exportPayrollFields">
-            <div className="exportField">
-              <label className="exportLabel">Date from (optional)</label>
-              <input type="date" className="input exportInput" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-            </div>
-            <div className="exportField">
-              <label className="exportLabel">Date to (optional)</label>
-              <input type="date" className="input exportInput" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
-            </div>
+            )}
           </div>
-        )}
-        {error && <p className="exportError">{error}</p>}
-        {successMsg && <p className="exportSuccess">{successMsg}</p>}
-        <button type="button" className="btn btn-secondary exportBtn" onClick={() => handleExport('csv')} disabled={loading}>
-          {loading ? 'Exporting…' : 'Download CSV'}
-        </button>
+          {error && <p className="exportMessage exportError">{error}</p>}
+          {successMsg && <p className="exportMessage exportSuccess">{successMsg}</p>}
+          <button type="button" className="btn btn-secondary exportCardBtn" onClick={() => handleExport('csv')} disabled={loading}>
+            {loading ? 'Exporting…' : 'Download CSV'}
+          </button>
+        </section>
       </div>
     </div>
   )

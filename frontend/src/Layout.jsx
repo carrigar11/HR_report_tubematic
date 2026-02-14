@@ -16,22 +16,26 @@ import {
   IconUser,
   IconChevronDown,
   IconGift,
+  IconClock,
 } from './components/Icons'
 import './Layout.css'
 
 const nav = [
-  { to: '/', label: 'Dashboard', icon: IconDashboard },
-  { to: '/upload', label: 'Upload', icon: IconUpload },
-  { to: '/attendance', label: 'Attendance', icon: IconCalendar },
-  { to: '/employees', label: 'Employee Master', icon: IconUsers },
-  { to: '/salary', label: 'Salary Report', icon: IconMoney },
-  { to: '/leaderboard', label: 'Leaderboard', icon: IconTrophy },
-  { to: '/bonus', label: 'Bonus Manager', icon: IconGift },
-  { to: '/absentee-alert', label: 'Absentee Alert', icon: IconAlert },
-  { to: '/adjustments', label: 'Adjustments', icon: IconEdit },
-  { to: '/holidays', label: 'Holidays', icon: IconHoliday },
-  { to: '/settings', label: 'Settings', icon: IconSettings },
-  { to: '/export', label: 'Export', icon: IconExport },
+  { to: '/', label: 'Dashboard', icon: IconDashboard, access: 'dashboard' },
+  { to: '/upload', label: 'Upload', icon: IconUpload, access: 'upload' },
+  { to: '/attendance', label: 'Attendance', icon: IconCalendar, access: 'attendance' },
+  { to: '/employees', label: 'Employee Master', icon: IconUsers, access: 'employees' },
+  { to: '/salary', label: 'Salary Report', icon: IconMoney, access: 'salary' },
+  { to: '/advance', label: 'Advance', icon: IconMoney, access: 'salary' },
+  { to: '/leaderboard', label: 'Leaderboard', icon: IconTrophy, access: 'leaderboard' },
+  { to: '/bonus', label: 'Bonus Manager', icon: IconGift, access: 'bonus' },
+  { to: '/absentee-alert', label: 'Absentee Alert', icon: IconAlert, access: 'absentee_alert' },
+  { to: '/adjustments', label: 'Adjustments', icon: IconEdit, access: 'adjustment' },
+  { to: '/holidays', label: 'Holidays', icon: IconHoliday, access: 'holidays' },
+  { to: '/settings', label: 'Settings', icon: IconSettings, access: 'settings' },
+  { to: '/export', label: 'Export', icon: IconExport, access: 'export' },
+  { to: '/manage-admins', label: 'Manage Admins', icon: IconUser, access: 'manage_admins' },
+  { to: '/activity-log', label: 'Activity Log', icon: IconClock, access: 'manage_admins' },
 ]
 
 const pathToTitle = {
@@ -40,6 +44,7 @@ const pathToTitle = {
   '/attendance': 'Attendance',
   '/employees': 'Employee Master',
   '/salary': 'Salary Report',
+  '/advance': 'Advance',
   '/leaderboard': 'Leaderboard',
   '/bonus': 'Bonus Manager',
   '/absentee-alert': 'Absentee Alert',
@@ -47,6 +52,8 @@ const pathToTitle = {
   '/holidays': 'Holidays',
   '/settings': 'Settings',
   '/export': 'Export',
+  '/manage-admins': 'Manage Admins',
+  '/activity-log': 'Activity Log',
 }
 
 function getPageTitle(pathname) {
@@ -94,11 +101,12 @@ export default function Layout() {
   const location = useLocation()
   const pageTitle = getPageTitle(location.pathname)
 
-  let admin = { name: 'Admin', email: '' }
+  let admin = { name: 'Admin', email: '', role: 'super_admin', access: {} }
   try {
     const stored = localStorage.getItem('hr_admin')
     if (stored) admin = { ...admin, ...JSON.parse(stored) }
   } catch (_) {}
+  const canAccess = (key) => admin.role === 'super_admin' || admin.access?.[key] === true
 
   const logout = () => {
     localStorage.removeItem('hr_admin')
@@ -127,7 +135,7 @@ export default function Layout() {
           </div>
         </div>
         <nav className="sidebarNav">
-          {nav.map(({ to, label, icon: Icon }) => (
+          {nav.filter(({ access }) => canAccess(access)).map(({ to, label, icon: Icon }) => (
             <NavLink
               key={to}
               to={to}
@@ -165,6 +173,11 @@ export default function Layout() {
                       <div>
                         <div className="profileName">{admin.name || 'Admin'}</div>
                         <div className="profileEmail">{admin.email || 'admin@hr.com'}</div>
+                        {admin.role === 'super_admin' ? (
+                          <div className="muted" style={{ fontSize: '0.8rem', marginTop: 2 }}>Super Admin</div>
+                        ) : admin.department ? (
+                          <div className="muted" style={{ fontSize: '0.8rem', marginTop: 2 }}>Dept: {admin.department}</div>
+                        ) : null}
                       </div>
                     </div>
                     <NavLink to="/settings" className="profileDropdownItem" onClick={() => setProfileOpen(false)}>

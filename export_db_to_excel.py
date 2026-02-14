@@ -62,6 +62,7 @@ TABLE_EXPORT_ORDER = [
     ("holidays", "date"),
     ("system_settings", "key"),
     ("admins", "id"),
+    ("audit_log", "created_at DESC"),
 ]
 
 

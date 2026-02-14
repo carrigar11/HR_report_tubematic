@@ -6,13 +6,13 @@ previous_day: daily data = yesterday only, Total Salary = current month (1st thr
 from datetime import date, timedelta
 from io import BytesIO
 
-from django.db.models import Q
+from django.db.models import Q, Sum
 from django.utils import timezone
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 
-from .models import Employee, Attendance
+from .models import Employee, Attendance, SalaryAdvance
 
 
 def _time_to_hours(t):
@@ -52,8 +52,37 @@ def _get_date_filter_queryset(date_from=None, date_to=None, single_date=None, mo
     return qs
 
 
-def build_payroll_rows(employees, attendance_queryset):
-    """Build payroll matrix: one row per employee, date cols = daily earnings (rate × hours)."""
+def _get_advance_by_emp(month=None, year=None, date_from=None, date_to=None, allowed_emp_codes=None):
+    """Return dict emp_code -> total advance (float) for the given period."""
+    qs = SalaryAdvance.objects.values('emp_code').annotate(total=Sum('amount'))
+    if month is not None and year is not None:
+        qs = qs.filter(month=month, year=year)
+    elif date_from or date_to:
+        from calendar import monthrange
+        months_years = set()
+        start = date_from or date(2000, 1, 1)
+        end = date_to or date(2100, 12, 31)
+        d = start.replace(day=1)
+        while d <= end:
+            months_years.add((d.month, d.year))
+            _, last = monthrange(d.year, d.month)
+            d = d.replace(day=last) + timedelta(days=1)
+        if months_years:
+            q = Q()
+            for m, y in months_years:
+                q = q | Q(month=m, year=y)
+            qs = qs.filter(q)
+    else:
+        return {}
+    if allowed_emp_codes is not None:
+        qs = qs.filter(emp_code__in=allowed_emp_codes) if allowed_emp_codes else qs.none()
+    return {r['emp_code']: float(r['total'] or 0) for r in qs}
+
+
+def build_payroll_rows(employees, attendance_queryset, advance_by_emp=None):
+    """Build payroll matrix: one row per employee, date cols = daily earnings (rate × hours). advance_by_emp: dict emp_code -> advance amount."""
+    if advance_by_emp is None:
+        advance_by_emp = {}
     # (emp_code, date) -> total_working_hours
     att_list = list(attendance_queryset.values('emp_code', 'date', 'total_working_hours'))
     att_map = {}
@@ -74,6 +103,7 @@ def build_payroll_rows(employees, attendance_queryset):
         else:
             hourly_rate = base / (26 * 8) if base else 0.0
         du = _shift_hours(emp.shift_from, emp.shift_to)
+        advance_val = round(advance_by_emp.get(emp.emp_code, 0), 2)
 
         row = {
             'emp_code': emp.emp_code,
@@ -84,7 +114,7 @@ def build_payroll_rows(employees, attendance_queryset):
             'department': emp.dept_name or '',
             'sala': round(hourly_rate, 2),
             'du': du,
-            'advance': 0,
+            'advance': advance_val,
         }
         day_totals = []
         row_total = 0.0
@@ -285,20 +315,31 @@ def write_plant_report_sheet(ws, sorted_dates, plant_rows):
         ws.column_dimensions[get_column_letter(col_idx)].width = 14
 
 
-def generate_payroll_excel_previous_day():
+def generate_payroll_excel_previous_day(allowed_emp_codes=None):
     """
     Report for previous day only: all daily data (date col, man hrs, present, absent, avg salary, avg/hr, absenteeism)
     for yesterday. Total Salary column = current month (1st through yesterday) for each employee/department.
+    allowed_emp_codes: if set, only these employees (dept admin filter).
     """
     today = timezone.localdate()
     yesterday = today - timedelta(days=1)
     month_start = yesterday.replace(day=1)
     att_yesterday = _get_date_filter_queryset(single_date=yesterday)
     att_month = Attendance.objects.filter(date__gte=month_start, date__lte=yesterday)
+    if allowed_emp_codes is not None:
+        att_yesterday = att_yesterday.filter(emp_code__in=allowed_emp_codes)
+        att_month = att_month.filter(emp_code__in=allowed_emp_codes)
 
-    employees = list(Employee.objects.all().order_by('dept_name', 'emp_code'))
-    sorted_dates, payroll_rows = build_payroll_rows(employees, att_yesterday)
-    _, payroll_month = build_payroll_rows(employees, att_month)
+    emp_qs = Employee.objects.all().order_by('dept_name', 'emp_code')
+    if allowed_emp_codes is not None:
+        emp_qs = emp_qs.filter(emp_code__in=allowed_emp_codes) if allowed_emp_codes else emp_qs.none()
+    employees = list(emp_qs)
+    advance_by_emp = _get_advance_by_emp(
+        month=yesterday.month, year=yesterday.year,
+        allowed_emp_codes=allowed_emp_codes
+    )
+    sorted_dates, payroll_rows = build_payroll_rows(employees, att_yesterday, advance_by_emp=advance_by_emp)
+    _, payroll_month = build_payroll_rows(employees, att_month, advance_by_emp=advance_by_emp)
     emp_to_month_total = {r['emp_code']: r['total'] for r in payroll_month}
     for row in payroll_rows:
         row['total'] = emp_to_month_total.get(row['emp_code'], 0)
@@ -341,16 +382,37 @@ def _write_payroll_workbook(sorted_dates, payroll_rows, plant_rows):
     return buf
 
 
-def generate_payroll_excel(date_from=None, date_to=None, single_date=None, month=None, year=None):
+def generate_payroll_excel(date_from=None, date_to=None, single_date=None, month=None, year=None, allowed_emp_codes=None):
     """
     Generate payroll Excel workbook. Returns BytesIO.
     Filter: single_date (one day), or month+year, or date_from/date_to (range), or all if none set.
+    allowed_emp_codes: if set, only these employees (dept admin filter).
     """
     att_qs = _get_date_filter_queryset(
         date_from=date_from, date_to=date_to,
         single_date=single_date, month=month, year=year
     )
-    employees = list(Employee.objects.all().order_by('dept_name', 'emp_code'))
-    sorted_dates, payroll_rows = build_payroll_rows(employees, att_qs)
+    if allowed_emp_codes is not None:
+        att_qs = att_qs.filter(emp_code__in=allowed_emp_codes) if allowed_emp_codes else att_qs.none()
+    emp_qs = Employee.objects.all().order_by('dept_name', 'emp_code')
+    if allowed_emp_codes is not None:
+        emp_qs = emp_qs.filter(emp_code__in=allowed_emp_codes) if allowed_emp_codes else emp_qs.none()
+    employees = list(emp_qs)
+    if single_date:
+        advance_by_emp = _get_advance_by_emp(
+            month=single_date.month, year=single_date.year,
+            allowed_emp_codes=allowed_emp_codes
+        )
+    elif month is not None and year is not None:
+        advance_by_emp = _get_advance_by_emp(
+            month=month, year=year,
+            allowed_emp_codes=allowed_emp_codes
+        )
+    else:
+        advance_by_emp = _get_advance_by_emp(
+            date_from=date_from, date_to=date_to,
+            allowed_emp_codes=allowed_emp_codes
+        )
+    sorted_dates, payroll_rows = build_payroll_rows(employees, att_qs, advance_by_emp=advance_by_emp)
     plant_rows = build_plant_report_rows(payroll_rows, sorted_dates, att_qs)
     return _write_payroll_workbook(sorted_dates, payroll_rows, plant_rows)

@@ -7,11 +7,22 @@ from decimal import Decimal
 
 
 class Admin(models.Model):
-    """Login system for HR admins."""
+    """Login system for HR admins. id=1 is super admin; others can be department admins."""
+    ROLE_SUPER = 'super_admin'
+    ROLE_DEPT = 'dept_admin'
+    ROLE_CHOICES = [(ROLE_SUPER, 'Super Admin'), (ROLE_DEPT, 'Department Admin')]
+
     name = models.CharField(max_length=255)
     email = models.EmailField(unique=True)
     phone = models.CharField(max_length=20, blank=True)
     password = models.CharField(max_length=255)  # plain text for now as per spec
+    # Department admin: only see data for this department (blank = all for super)
+    department = models.CharField(max_length=100, blank=True)
+    # super_admin = full access; dept_admin = restricted by department + access flags
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default=ROLE_DEPT)
+    # JSON: which modules this admin can use. e.g. {"dashboard": true, "attendance": true, "salary": true, "leaderboard": true, "export": true, "adjustment": true, "manage_admins": false}
+    # Super admin (id=1) ignores this and has full access. Others use this; super can edit.
+    access = models.JSONField(default=dict, blank=True)
 
     class Meta:
         db_table = 'admins'
@@ -19,6 +30,16 @@ class Admin(models.Model):
 
     def __str__(self):
         return self.email
+
+    @property
+    def is_super_admin(self):
+        return self.pk == 1 or self.role == self.ROLE_SUPER
+
+    def can_access(self, module):
+        """Check if this admin can access a module (dashboard, attendance, salary, leaderboard, export, adjustment, manage_admins)."""
+        if self.is_super_admin:
+            return True
+        return self.access.get(module, False)
 
 
 class Employee(models.Model):
@@ -118,6 +139,24 @@ class Salary(models.Model):
         return f"{self.emp_code} {self.year}-{self.month}"
 
 
+class SalaryAdvance(models.Model):
+    """Advance money taken by employee, deducted from that month's salary."""
+    emp_code = models.CharField(max_length=50, db_index=True)
+    amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0'))
+    month = models.PositiveSmallIntegerField(help_text='Salary month this advance is for')
+    year = models.PositiveIntegerField(help_text='Salary year this advance is for')
+    date_given = models.DateField(null=True, blank=True, help_text='Date advance was given')
+    note = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'salary_advances'
+        ordering = ['-year', '-month', '-created_at']
+
+    def __str__(self):
+        return f"{self.emp_code} {self.year}-{self.month} {self.amount}"
+
+
 class Adjustment(models.Model):
     """Manual admin correction log - audit trail."""
     emp_code = models.CharField(max_length=50, db_index=True)
@@ -191,3 +230,27 @@ class SystemSetting(models.Model):
 
     def __str__(self):
         return f"{self.key}={self.value}"
+
+
+class AuditLog(models.Model):
+    """Record of who did what and where in the application."""
+    admin_id = models.IntegerField(null=True, blank=True, db_index=True)  # may be deleted later
+    admin_name = models.CharField(max_length=255, blank=True)
+    admin_email = models.CharField(max_length=254, blank=True)
+    action = models.CharField(max_length=64, db_index=True)  # e.g. login, create, update, delete, export
+    module = models.CharField(max_length=64, db_index=True)  # e.g. auth, attendance, employees, export
+    target_type = models.CharField(max_length=64, blank=True)  # e.g. employee, attendance, admin
+    target_id = models.CharField(max_length=100, blank=True)  # emp_code, id, etc.
+    details = models.JSONField(default=dict, blank=True)  # extra context
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.CharField(max_length=500, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = 'audit_log'
+        ordering = ['-created_at']
+        verbose_name = 'Audit Log'
+        verbose_name_plural = 'Audit Logs'
+
+    def __str__(self):
+        return f"{self.admin_email} {self.action} {self.module} @ {self.created_at}"

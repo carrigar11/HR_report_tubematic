@@ -28,6 +28,7 @@ export default function EmployeeMaster() {
   const [salaryTypeFilter, setSalaryTypeFilter] = useState('')
   const [joinedMonthFilter, setJoinedMonthFilter] = useState('')
   const [joinedYearFilter, setJoinedYearFilter] = useState('')
+  const [sortBy, setSortBy] = useState('emp_code_asc') // emp_code_asc | emp_code_desc | monthly_hrs_desc | monthly_hrs_asc
 
   // Filter options from backend
   const [filterOptions, setFilterOptions] = useState({
@@ -75,6 +76,15 @@ export default function EmployeeMaster() {
   }, [statusFilter, searchDebounced, deptFilter, designationFilter, shiftFilter, genderFilter, salaryTypeFilter, joinedMonthFilter, joinedYearFilter])
 
   const hasFilters = statusFilter || deptFilter || designationFilter || shiftFilter || genderFilter || salaryTypeFilter || joinedMonthFilter || joinedYearFilter
+  const sortedList = (() => {
+    const arr = Array.isArray(list) ? [...list] : []
+    if (sortBy === 'emp_code_asc') return arr.sort((a, b) => (a.emp_code || '').localeCompare(b.emp_code || ''))
+    if (sortBy === 'emp_code_desc') return arr.sort((a, b) => (b.emp_code || '').localeCompare(a.emp_code || ''))
+    if (sortBy === 'monthly_hrs_desc') return arr.sort((a, b) => (parseFloat(b.month_hours) || 0) - (parseFloat(a.month_hours) || 0))
+    if (sortBy === 'monthly_hrs_asc') return arr.sort((a, b) => (parseFloat(a.month_hours) || 0) - (parseFloat(b.month_hours) || 0))
+    return arr
+  })()
+
   const clearFilters = () => {
     setStatusFilter('')
     setDeptFilter('')
@@ -164,6 +174,15 @@ export default function EmployeeMaster() {
               ))}
             </select>
           </div>
+          <div className="filterGroup">
+            <label className="label">Sort by</label>
+            <select className="input" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+              <option value="emp_code_asc">Emp Code (A → Z)</option>
+              <option value="emp_code_desc">Emp Code (Z → A)</option>
+              <option value="monthly_hrs_desc">Monthly Hrs (High → Low)</option>
+              <option value="monthly_hrs_asc">Monthly Hrs (Low → High)</option>
+            </select>
+          </div>
           {hasFilters && (
             <div className="filterGroup" style={{ alignSelf: 'flex-end' }}>
               <button className="empClearBtn" onClick={clearFilters}>Clear Filters</button>
@@ -175,7 +194,7 @@ export default function EmployeeMaster() {
       {/* Count badge */}
       {!loading && (
         <div className="empCountBar">
-          <span className="empCountBadge">{Array.isArray(list) ? list.length : 0} employees</span>
+          <span className="empCountBadge">{sortedList.length} employees</span>
         </div>
       )}
 
@@ -201,7 +220,7 @@ export default function EmployeeMaster() {
               </tr>
             </thead>
             <tbody>
-              {(Array.isArray(list) ? list : []).map((row) => (
+              {sortedList.map((row) => (
                 <tr key={row.id}>
                   <td><Link to={`/employees/${row.emp_code}/profile`}>{row.emp_code}</Link></td>
                   <td>{row.name || '—'}</td>
@@ -239,7 +258,7 @@ export default function EmployeeMaster() {
             </tbody>
           </table>
         )}
-        {!loading && Array.isArray(list) && list.length === 0 && (
+        {!loading && sortedList.length === 0 && (
           <p className="muted">No employees match your filters.</p>
         )}
       </div>

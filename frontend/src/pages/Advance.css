@@ -1,0 +1,117 @@
+.advancePage {
+  max-width: 900px;
+}
+
+.advanceTitle {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 0.35rem;
+}
+
+.advanceIntro {
+  font-size: 0.9rem;
+  color: var(--textMuted);
+  margin: 0 0 1.25rem;
+}
+
+.advanceCard {
+  padding: 1.25rem 1.5rem;
+}
+
+.advanceFilters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.advanceSectionTitle {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 0.75rem;
+}
+
+.advanceAddForm {
+  margin-bottom: 1.5rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.advanceFormRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-end;
+}
+
+.advanceFormField {
+  min-width: 120px;
+}
+
+.advanceFormField.label {
+  display: block;
+}
+
+.advanceFormSubmit {
+  align-self: flex-end;
+}
+
+.advanceError {
+  color: var(--danger);
+  font-size: 0.85rem;
+  margin: 0.5rem 0 0;
+}
+
+.advanceSuccess {
+  color: var(--accent);
+  font-size: 0.85rem;
+  margin: 0.5rem 0 0;
+  font-weight: 500;
+}
+
+.advanceListSection {
+  margin-top: 0.5rem;
+}
+
+.advanceTable {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 0.75rem;
+}
+
+.advanceTable th,
+.advanceTable td {
+  padding: 0.5rem 0.65rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.advanceTable th {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--textMuted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.advanceTable td a {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.advanceTable td a:hover {
+  text-decoration: underline;
+}
+
+.advanceTotal {
+  font-size: 0.9rem;
+  color: var(--text);
+  margin: 0;
+}
+
+.advanceTotal strong {
+  color: var(--accent);
+}

@@ -6,6 +6,7 @@ import Upload from './pages/Upload'
 import AttendanceTable from './pages/AttendanceTable'
 import EmployeeMaster from './pages/EmployeeMaster'
 import SalaryReport from './pages/SalaryReport'
+import Advance from './pages/Advance'
 import Leaderboard from './pages/Leaderboard'
 import BonusManagement from './pages/BonusManagement'
 import AbsenteeAlert from './pages/AbsenteeAlert'
@@ -14,6 +15,8 @@ import HolidayCalendar from './pages/HolidayCalendar'
 import EmployeeProfile from './pages/EmployeeProfile'
 import SystemSettings from './pages/SystemSettings'
 import ExportCenter from './pages/ExportCenter'
+import ManageAdmins from './pages/ManageAdmins'
+import ActivityLog from './pages/ActivityLog'
 
 function PrivateRoute({ children }) {
   const admin = localStorage.getItem('hr_admin')
@@ -33,6 +36,7 @@ export default function App() {
           <Route path="employees" element={<EmployeeMaster />} />
           <Route path="employees/:empCode/profile" element={<EmployeeProfile />} />
           <Route path="salary" element={<SalaryReport />} />
+          <Route path="advance" element={<Advance />} />
           <Route path="leaderboard" element={<Leaderboard />} />
           <Route path="bonus" element={<BonusManagement />} />
           <Route path="absentee-alert" element={<AbsenteeAlert />} />
@@ -40,6 +44,8 @@ export default function App() {
           <Route path="holidays" element={<HolidayCalendar />} />
           <Route path="settings" element={<SystemSettings />} />
           <Route path="export" element={<ExportCenter />} />
+          <Route path="manage-admins" element={<ManageAdmins />} />
+          <Route path="activity-log" element={<ActivityLog />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
