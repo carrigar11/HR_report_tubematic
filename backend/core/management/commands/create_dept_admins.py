@@ -21,6 +21,7 @@ DEPT_ACCESS = {
     'upload': True,
     'employees': True,
     'bonus': True,
+    'penalty': True,
     'absentee_alert': True,
     'holidays': True,
     'settings': False,

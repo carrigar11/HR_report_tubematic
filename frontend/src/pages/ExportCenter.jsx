@@ -63,6 +63,16 @@ export default function ExportCenter() {
     }
   }
 
+  const getBlobError = async (blob) => {
+    try {
+      const text = await blob.text()
+      const j = JSON.parse(text)
+      return j.error || j.detail || text || 'Export failed'
+    } catch {
+      return 'Export failed (server error)'
+    }
+  }
+
   const handlePayrollExcel = async () => {
     setPayrollLoading(true)
     setPayrollError('')
@@ -70,15 +80,21 @@ export default function ExportCenter() {
     try {
       const params = {}
       if (payrollMode === 'month') {
-        params.month = payrollMonth
-        params.year = payrollYear
+        params.month = Number(payrollMonth)
+        params.year = Number(payrollYear)
       } else if (payrollMode === 'single' && payrollSingleDate) {
         params.date = payrollSingleDate
       } else if (payrollMode === 'range') {
         if (payrollDateFrom) params.date_from = payrollDateFrom
         if (payrollDateTo) params.date_to = payrollDateTo
       }
-      const { data } = await exportPayrollExcel(params)
+      const res = await exportPayrollExcel(params)
+      const data = res.data
+      if (data instanceof Blob && data.type && data.type.toLowerCase().includes('json')) {
+        const msg = await getBlobError(data)
+        setPayrollError(msg)
+        return
+      }
       let filename = 'payroll_export.xlsx'
       if (payrollMode === 'month') filename = `payroll_${payrollYear}_${String(payrollMonth).padStart(2, '0')}.xlsx`
       else if (payrollMode === 'single' && payrollSingleDate) filename = `payroll_${payrollSingleDate}.xlsx`
@@ -91,7 +107,12 @@ export default function ExportCenter() {
       URL.revokeObjectURL(url)
       setPayrollSuccess('Payroll Excel downloaded. Check your Downloads folder.')
     } catch (err) {
-      setPayrollError(err.response?.data?.error || err.message || 'Export failed')
+      if (err.response?.data instanceof Blob) {
+        const msg = await getBlobError(err.response.data)
+        setPayrollError(msg)
+      } else {
+        setPayrollError(err.response?.data?.error || err.response?.data?.detail || err.message || 'Export failed')
+      }
     } finally {
       setPayrollLoading(false)
     }
@@ -130,6 +151,25 @@ export default function ExportCenter() {
         <p className="exportIntro">Download payroll Excel and raw CSV reports. Pick a report type and options below.</p>
       </header>
 
+      <details className="exportHowWhereCard">
+        <summary className="exportHowWhereSummary">How it works & where data comes from</summary>
+        <div className="exportHowWhereBody">
+          <p><strong>Data in this app</strong></p>
+          <ul>
+            <li><strong>Employee</strong> — Master data (emp_code, name, dept, salary_type, base_salary, shift). Table: <code>employee</code>.</li>
+            <li><strong>Attendance</strong> — Daily punch-in/out, total_working_hours, status, overtime. Table: <code>attendance</code>.</li>
+            <li><strong>Salary</strong> — Monthly computed salary (gross, OT, bonus, advance, penalty). Table: <code>salary</code>.</li>
+            <li><strong>Salary advance</strong> — Advances taken per month. Table: <code>salary_advance</code>.</li>
+          </ul>
+          <p><strong>Exports</strong></p>
+          <ul>
+            <li><strong>Payroll Excel</strong> — Built from Employee + Attendance (for chosen dates) + SalaryAdvance. Daily columns = rate × hours per day; TOTAL includes bonus when you pick Month & year. API: <code>GET /api/export/payroll-excel/</code>.</li>
+            <li><strong>Previous day</strong> — Same Excel layout: daily data = yesterday only; Total Salary = full month (1st–yesterday) including bonus. Same API with <code>previous_day=1</code>.</li>
+            <li><strong>Raw CSV</strong> — Direct dump from <code>employee</code> or <code>attendance</code> table. API: <code>GET /api/export/?type=csv&report=employees|attendance</code>.</li>
+          </ul>
+        </div>
+      </details>
+
       <div className="exportGrid">
         {/* Payroll Excel card */}
         <section className="card exportCard exportCardPayroll">
@@ -140,6 +180,17 @@ export default function ExportCenter() {
           <p className="exportCardDesc">
             Excel file with <strong>Department</strong>, <strong>Status</strong>, daily earnings per day, <strong>TOTAL</strong> per employee, and one sheet per department.
           </p>
+          <details className="exportDataDetails">
+            <summary>What’s in this file & where it comes from</summary>
+            <ul>
+              <li><strong>Rows:</strong> One per employee (from <code>employee</code> table).</li>
+              <li><strong>Daily columns:</strong> Earnings per day = hourly rate × <code>total_working_hours</code> from <code>attendance</code> for that date.</li>
+              <li><strong>TOTAL:</strong> Sum of daily earnings. If you chose <strong>Month & year</strong>, bonus (from <code>salary</code>) is added so it matches Salary report gross.</li>
+              <li><strong>Advance:</strong> From <code>salary_advance</code> for the period (month or date range).</li>
+              <li><strong>Sheets:</strong> One sheet per department; plus a Plant summary sheet.</li>
+              <li><strong>Backend:</strong> <code>backend/core/export_excel.py</code> → <code>generate_payroll_excel()</code>.</li>
+            </ul>
+          </details>
           <div className="exportSection">
             <span className="exportLabel">Date range</span>
             <div className="exportRadioGroup">
@@ -209,6 +260,14 @@ export default function ExportCenter() {
           <div className="exportSubCard">
             <h3 className="exportSubCardTitle">Previous day</h3>
             <p className="exportSubCardDesc">Yesterday’s report; Total Salary = current month.</p>
+            <details className="exportDataDetails exportDataDetailsSm">
+              <summary>How & where</summary>
+              <ul>
+                <li><strong>Daily columns:</strong> Only yesterday’s date (from <code>attendance</code>).</li>
+                <li><strong>Total Salary:</strong> Full month (1st through yesterday): daily sum + bonus from <code>salary</code>, so it matches Salary report gross.</li>
+                <li><strong>Backend:</strong> <code>export_excel.py</code> → <code>generate_payroll_excel_previous_day()</code>. API: <code>GET /api/export/payroll-excel/?previous_day=1</code>.</li>
+              </ul>
+            </details>
             {prevDayError && <p className="exportMessage exportError">{prevDayError}</p>}
             {prevDaySuccess && <p className="exportMessage exportSuccess">{prevDaySuccess}</p>}
             <button type="button" className="btn btn-secondary exportCardBtn exportCardBtnSm" onClick={handlePreviousDayReport} disabled={prevDayLoading}>
@@ -224,6 +283,15 @@ export default function ExportCenter() {
             <h2 className="exportCardTitle">Raw data to CSV</h2>
           </div>
           <p className="exportCardDesc">Employees or attendance as CSV. Optional date range and single-employee filter.</p>
+          <details className="exportDataDetails">
+            <summary>What’s in the CSV & where it comes from</summary>
+            <ul>
+              <li><strong>Report = Employees:</strong> One row per employee. Columns: emp_code, name, mobile, email, gender, dept_name, designation, status, employment_type, salary_type, base_salary. <strong>Source:</strong> <code>employee</code> table. No date filter.</li>
+              <li><strong>Report = Attendance:</strong> One row per attendance record. Columns: emp_code, name, date, shift, shift_from, shift_to, punch_in, punch_out, total_working_hours, total_break, status, over_time. <strong>Source:</strong> <code>attendance</code> table. Use Date from / to to limit range.</li>
+              <li><strong>Optional Emp code:</strong> Exports only that employee (both report types).</li>
+              <li><strong>Backend:</strong> <code>views.py</code> → <code>ExportView</code>. API: <code>GET /api/export/?type=csv&report=employees|attendance</code>.</li>
+            </ul>
+          </details>
           <div className="exportSection">
             <div className="exportRow">
               <div className="exportField">

@@ -45,6 +45,105 @@
   line-height: 1.5;
 }
 
+/* Page-level: How it works & where data comes from */
+.exportHowWhereCard {
+  max-width: 720px;
+  margin: 0 auto 1.75rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.exportHowWhereSummary {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  list-style: none;
+  padding: 0.2rem 0;
+}
+
+.exportHowWhereSummary::-webkit-details-marker { display: none; }
+
+.exportHowWhereSummary::before {
+  content: '▸ ';
+  display: inline-block;
+  width: 1em;
+  color: var(--textMuted);
+}
+
+.exportHowWhereCard[open] .exportHowWhereSummary::before {
+  content: '▾ ';
+}
+
+.exportHowWhereBody {
+  margin-top: 0.85rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.82rem;
+  color: var(--textMuted);
+  line-height: 1.6;
+}
+
+.exportHowWhereBody p { margin: 0 0 0.5rem; }
+.exportHowWhereBody p:first-child { margin-top: 0; }
+.exportHowWhereBody ul { margin: 0.35rem 0 0 1rem; padding-left: 0.5rem; }
+.exportHowWhereBody li { margin-bottom: 0.35rem; }
+.exportHowWhereBody code {
+  font-size: 0.78em;
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+/* Per-card: What's in this file & where it comes from */
+.exportDataDetails {
+  margin-bottom: 1rem;
+  font-size: 0.8rem;
+  color: var(--textMuted);
+}
+
+.exportDataDetails summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text);
+  list-style: none;
+}
+
+.exportDataDetails summary::-webkit-details-marker { display: none; }
+
+.exportDataDetails[open] summary::after {
+  content: ' (hide)';
+  font-weight: 500;
+  color: var(--textMuted);
+}
+
+.exportDataDetailsSm[open] summary::after {
+  content: ' (hide)';
+  font-weight: 500;
+  color: var(--textMuted);
+}
+
+.exportDataDetails ul {
+  margin: 0.5rem 0 0 1rem;
+  padding-left: 0.5rem;
+  line-height: 1.55;
+}
+
+.exportDataDetails li { margin-bottom: 0.35rem; }
+
+.exportDataDetails code {
+  font-size: 0.85em;
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
 /* Two-column grid on larger screens */
 .exportGrid {
   display: grid;

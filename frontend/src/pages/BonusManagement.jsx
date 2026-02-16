@@ -268,6 +268,7 @@ export default function BonusManagement() {
                       <th>Bonus (hrs)</th>
                       <th>OT (hrs)</th>
                       <th>Monthly Hrs</th>
+                      <th>Shift OT</th>
                       <th>Streaks</th>
                       <th>Actions</th>
                     </tr>
@@ -304,6 +305,7 @@ export default function BonusManagement() {
                           </td>
                           <td><span className="bmChip bmChipPurple">{Number(emp.overtime_hours || 0).toFixed(1)}h</span></td>
                           <td>{Number(emp.month_hours || 0).toFixed(0)}h</td>
+                          <td>{Number(emp.shift_ot_bonus_hours || 0) > 0 ? <span className="bmChip bmChipBlue" title="12h+ shift: 1h bonus per 2h extra">{Number(emp.shift_ot_bonus_hours).toFixed(0)}h</span> : '—'}</td>
                           <td>
                             {emp.streak_count > 0 ? (
                               <span className="bmChip bmChipGreen">{emp.streak_count}x</span>
@@ -321,9 +323,13 @@ export default function BonusManagement() {
                         </tr>
                         {expanded === emp.emp_code && (
                           <tr key={`d-${emp.emp_code}`} className="bmDetailRow">
-                            <td colSpan={8}>
+                            <td colSpan={9}>
                               <div className="bmDetailPanel">
                                 <div className="bmDetailGrid">
+                                  <div className="bmDetailItem">
+                                    <span className="bmDetailLabel">Shift OT bonus (12h+ rule)</span>
+                                    <span className="bmDetailValue">{Number(emp.shift_ot_bonus_hours || 0).toFixed(0)}h</span>
+                                  </div>
                                   <div className="bmDetailItem">
                                     <span className="bmDetailLabel">Shift</span>
                                     <span className="bmDetailValue">{emp.shift || '—'}{emp.shift_from && emp.shift_to ? ` (${emp.shift_from}–${emp.shift_to})` : ''}</span>

@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from .models import (
     Admin, Employee, Attendance, Salary, SalaryAdvance, Adjustment,
-    PerformanceReward, Holiday, SystemSetting, AuditLog
+    Penalty, PerformanceReward, Holiday, SystemSetting, AuditLog
 )
 
 
@@ -21,6 +21,7 @@ DEFAULT_ACCESS = {
     'upload': True,
     'employees': True,
     'bonus': True,
+    'penalty': True,
     'absentee_alert': True,
     'holidays': True,
     'settings': False,
@@ -112,14 +113,44 @@ class EmployeeSerializer(serializers.ModelSerializer):
 
 
 class AttendanceSerializer(serializers.ModelSerializer):
+    shift_ot_bonus_hours = serializers.SerializerMethodField()
+    shift_ot_bonus_description = serializers.SerializerMethodField()
+    penalty_amount = serializers.SerializerMethodField()
+    penalty_description = serializers.SerializerMethodField()
+    penalty_id = serializers.SerializerMethodField()
+
     class Meta:
         model = Attendance
         fields = [
             'id', 'emp_code', 'name', 'date', 'shift', 'shift_from', 'shift_to',
             'punch_in', 'punch_out', 'punch_spans_next_day', 'total_working_hours', 'total_break',
-            'status', 'over_time', 'created_at', 'updated_at'
+            'status', 'over_time', 'shift_ot_bonus_hours', 'shift_ot_bonus_description',
+            'penalty_amount', 'penalty_description', 'penalty_id',
+            'created_at', 'updated_at'
         ]
         read_only_fields = ['created_at', 'updated_at']
+
+    def get_shift_ot_bonus_hours(self, obj):
+        from .models import ShiftOvertimeBonus
+        rec = ShiftOvertimeBonus.objects.filter(emp_code=obj.emp_code, date=obj.date).first()
+        return float(rec.bonus_hours) if rec and rec.bonus_hours else 0
+
+    def get_shift_ot_bonus_description(self, obj):
+        from .models import ShiftOvertimeBonus
+        rec = ShiftOvertimeBonus.objects.filter(emp_code=obj.emp_code, date=obj.date).first()
+        return (rec.description or '') if rec else ''
+
+    def get_penalty_amount(self, obj):
+        rec = Penalty.objects.filter(emp_code=obj.emp_code, date=obj.date).first()
+        return float(rec.deduction_amount) if rec and rec.deduction_amount else 0
+
+    def get_penalty_description(self, obj):
+        rec = Penalty.objects.filter(emp_code=obj.emp_code, date=obj.date).first()
+        return (rec.description or '') if rec else ''
+
+    def get_penalty_id(self, obj):
+        rec = Penalty.objects.filter(emp_code=obj.emp_code, date=obj.date).first()
+        return rec.id if rec else None
 
 
 class SalarySerializer(serializers.ModelSerializer):
@@ -143,6 +174,40 @@ class AdjustmentSerializer(serializers.ModelSerializer):
             'adj_overtime', 'reason', 'created_by_admin', 'created_at'
         ]
         read_only_fields = ['created_at']
+
+
+class PenaltySerializer(serializers.ModelSerializer):
+    punch_in_time = serializers.SerializerMethodField()
+    shift_start_time = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Penalty
+        fields = [
+            'id', 'emp_code', 'date', 'month', 'year', 'minutes_late',
+            'deduction_amount', 'rate_used', 'description', 'is_manual', 'created_at',
+            'punch_in_time', 'shift_start_time'
+        ]
+        read_only_fields = ['created_at']
+
+    def get_punch_in_time(self, obj):
+        if obj.is_manual:
+            return None
+        m = self.context.get('attendance_map') or {}
+        info = m.get((obj.emp_code, str(obj.date)))
+        if not info or not info.get('punch_in'):
+            return None
+        t = info['punch_in']
+        return t.strftime('%I:%M %p').lstrip('0') if t else None  # e.g. 9:23 AM
+
+    def get_shift_start_time(self, obj):
+        if obj.is_manual:
+            return None
+        m = self.context.get('attendance_map') or {}
+        info = m.get((obj.emp_code, str(obj.date)))
+        if not info:
+            return None
+        t = info.get('shift_from')
+        return t.strftime('%I:%M %p').lstrip('0') if t else None  # e.g. 9:00 AM
 
 
 class PerformanceRewardSerializer(serializers.ModelSerializer):

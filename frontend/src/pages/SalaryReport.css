@@ -1,13 +1,174 @@
-/* Salary Report */
-.salTable { width: 100%; }
+/* Salary Report — top bar + table card with clear grid */
+.salReportPage {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  max-width: 1600px;
+  margin: 0 auto;
+  width: 100%;
+  min-width: 0;
+}
 
-/* Period shown once above table */
-.salPeriodHeader {
+.salTopBar {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto auto auto;
+  align-items: end;
+  gap: 1rem 1.25rem;
+  padding: 1rem 1.1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  flex-wrap: wrap;
+}
+
+@media (max-width: 900px) {
+  .salTopBar {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .salTopBar {
+    grid-template-columns: 1fr;
+  }
+}
+
+.salTopGroup {
+  min-width: 0;
+}
+
+.salTopGroup .label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--textMuted);
+  margin-bottom: 0.25rem;
+}
+
+.salMain {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.salReportPage .tableCard {
+  overflow-x: auto;
+  padding: 1rem 1.1rem;
+  border-radius: var(--radius);
+}
+
+.salTable {
+  width: 100%;
+  min-width: 1200px;
+  border-collapse: collapse;
+}
+
+.salTable th,
+.salTable td {
+  padding: 0.5rem 0.6rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.salTable thead th {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--textMuted);
+  white-space: nowrap;
+}
+
+/* Sortable column headers (same design as Attendance page) */
+.salTable .sortableHeader {
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.2s;
+  white-space: nowrap;
+}
+
+.salTable .sortableHeader:hover {
+  background: var(--surface);
+}
+
+.salTable .sortLabel {
+  margin-right: 0.5rem;
+}
+
+.salTable .sortIcon {
+  font-size: 0.85rem;
+  color: var(--textMuted);
+  opacity: 0.6;
+}
+
+.salTable .sortIconSmall {
+  font-size: 0.7rem;
+  margin-left: 0.25rem;
+}
+
+.salTable .sortableHeader:hover .sortIcon {
+  opacity: 1;
+  color: var(--accent);
+}
+
+/* Actions: Salary data + Profile */
+.salActionsCell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.salActionsCell .salViewBtn {
+  margin: 0;
+}
+
+.salProfileBtn {
+  text-decoration: none;
+}
+
+/* Salary detail modal */
+.salDetailModal {
+  min-width: 340px;
+  max-width: 96%;
+}
+
+.salDetailGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem 1.5rem;
+  margin: 1rem 0;
+}
+
+.salDetailItem {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.salDetailLabel {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--textMuted);
+}
+
+.salDetailGross { font-weight: 600; }
+.salDetailNet { font-weight: 700; color: var(--accent); }
+
+.salDetailNote {
+  margin: 0.75rem 0 0 0;
+  font-size: 0.8rem;
+  color: var(--textMuted);
+}
+
+/* Period shown once above table (inside card) */
+.salReportPage .tableCard .salPeriodHeader {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  margin-bottom: 0.75rem;
-  padding-bottom: 0.5rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.6rem;
   border-bottom: 1px solid var(--border);
 }
 .salPeriodLabel {

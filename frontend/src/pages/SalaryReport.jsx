@@ -13,6 +13,8 @@ const monthNames = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 
 const SORT_OPTIONS = [
   { value: 'emp_code_asc', label: 'Emp Code (A → Z)' },
   { value: 'emp_code_desc', label: 'Emp Code (Z → A)' },
+  { value: 'base_salary_desc', label: 'Base Salary (High → Low)' },
+  { value: 'base_salary_asc', label: 'Base Salary (Low → High)' },
   { value: 'today_hrs_desc', label: "Today's Hrs (High → Low)" },
   { value: 'today_hrs_asc', label: "Today's Hrs (Low → High)" },
   { value: 'total_hrs_desc', label: 'Total Hrs (High → Low)' },
@@ -30,9 +32,12 @@ export default function SalaryReport() {
   const [year, setYear] = useState(currentYear)
   const [search, setSearch] = useState('')
   const [searchDebounced, setSearchDebounced] = useState('')
+  const [empCodeFilter, setEmpCodeFilter] = useState('')
+  const [empCodeFilterDebounced, setEmpCodeFilterDebounced] = useState('')
   const [list, setList] = useState([])
   const [loading, setLoading] = useState(false)
-  const [sortBy, setSortBy] = useState('emp_code_asc')
+  const [sortField, setSortField] = useState('emp_code')
+  const [sortOrder, setSortOrder] = useState('asc')
   const [showAdvanceModal, setShowAdvanceModal] = useState(false)
   const [advanceEmpCode, setAdvanceEmpCode] = useState('')
   const [advanceAmount, setAdvanceAmount] = useState('')
@@ -45,10 +50,14 @@ export default function SalaryReport() {
     const t = setTimeout(() => setSearchDebounced(search.trim()), 300)
     return () => clearTimeout(t)
   }, [search])
+  useEffect(() => {
+    const t = setTimeout(() => setEmpCodeFilterDebounced(empCodeFilter.trim()), 300)
+    return () => clearTimeout(t)
+  }, [empCodeFilter])
 
   const fetchList = () => {
     setLoading(true)
-    salary.monthly(month, year, searchDebounced || undefined)
+    salary.monthly(month, year, searchDebounced || undefined, empCodeFilterDebounced || undefined)
       .then((r) => setList(Array.isArray(r.data) ? r.data : []))
       .catch(() => setList([]))
       .finally(() => setLoading(false))
@@ -56,25 +65,44 @@ export default function SalaryReport() {
 
   useEffect(() => {
     fetchList()
-  }, [month, year, searchDebounced])
+  }, [month, year, searchDebounced, empCodeFilterDebounced])
 
   const sortedList = (() => {
     const arr = Array.isArray(list) ? [...list] : []
     const num = (v) => parseFloat(v) || 0
-    if (sortBy === 'emp_code_asc') return arr.sort((a, b) => (a.emp_code || '').localeCompare(b.emp_code || ''))
-    if (sortBy === 'emp_code_desc') return arr.sort((a, b) => (b.emp_code || '').localeCompare(a.emp_code || ''))
-    if (sortBy === 'today_hrs_desc') return arr.sort((a, b) => num(b.today_hours) - num(a.today_hours))
-    if (sortBy === 'today_hrs_asc') return arr.sort((a, b) => num(a.today_hours) - num(b.today_hours))
-    if (sortBy === 'total_hrs_desc') return arr.sort((a, b) => num(b.total_working_hours) - num(a.total_working_hours))
-    if (sortBy === 'total_hrs_asc') return arr.sort((a, b) => num(a.total_working_hours) - num(b.total_working_hours))
-    if (sortBy === 'ot_desc') return arr.sort((a, b) => num(b.overtime_hours) - num(a.overtime_hours))
-    if (sortBy === 'ot_asc') return arr.sort((a, b) => num(a.overtime_hours) - num(b.overtime_hours))
-    if (sortBy === 'advance_desc') return arr.sort((a, b) => num(b.advance_total) - num(a.advance_total))
-    if (sortBy === 'advance_asc') return arr.sort((a, b) => num(a.advance_total) - num(b.advance_total))
-    if (sortBy === 'net_desc') return arr.sort((a, b) => num(b.net_pay) - num(a.net_pay))
-    if (sortBy === 'net_asc') return arr.sort((a, b) => num(a.net_pay) - num(b.net_pay))
+    const mult = sortOrder === 'asc' ? 1 : -1
+    if (sortField === 'emp_code') return arr.sort((a, b) => mult * (a.emp_code || '').localeCompare(b.emp_code || ''))
+    if (sortField === 'base_salary') return arr.sort((a, b) => mult * (num(a.base_salary) - num(b.base_salary)))
+    if (sortField === 'today_hrs') return arr.sort((a, b) => mult * (num(a.today_hours) - num(b.today_hours)))
+    if (sortField === 'total_hrs') return arr.sort((a, b) => mult * (num(a.total_working_hours) - num(b.total_working_hours)))
+    if (sortField === 'ot') return arr.sort((a, b) => mult * (num(a.overtime_hours) - num(b.overtime_hours)))
+    if (sortField === 'advance') return arr.sort((a, b) => mult * (num(a.advance_total) - num(b.advance_total)))
+    if (sortField === 'net') return arr.sort((a, b) => mult * (num(a.net_pay) - num(b.net_pay)))
     return arr
   })()
+
+  const handleSort = (field) => {
+    if (sortField === field) {
+      setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))
+      return
+    }
+    setSortField(field)
+    setSortOrder(field === 'emp_code' ? 'asc' : 'desc')
+  }
+
+  const getSortIcon = (field) => {
+    if (sortField !== field) return '↕'
+    return sortOrder === 'asc' ? '↑' : '↓'
+  }
+
+  const sortByForSelect = `${sortField}_${sortOrder}`
+  const setSortByFromSelect = (value) => {
+    const parts = value.split('_')
+    const order = parts.pop()
+    const field = parts.join('_')
+    setSortField(field)
+    setSortOrder(order === 'asc' ? 'asc' : 'desc')
+  }
 
   const handleAddAdvance = (e) => {
     e.preventDefault()
@@ -114,47 +142,42 @@ export default function SalaryReport() {
   const periodLabel = `${monthNames[month]} ${year}`
 
   return (
-    <div className="pageContent">
-      <div className="card filterCard">
-        <div className="filterBar">
-          <div className="filterGroup">
-            <label className="label">Month</label>
-            <select className="input" value={month} onChange={(e) => setMonth(Number(e.target.value))} style={{ minWidth: 100 }}>
-              {[1,2,3,4,5,6,7,8,9,10,11,12].map((m) => (
-                <option key={m} value={m}>{monthNames[m]} ({m})</option>
-              ))}
-            </select>
-          </div>
-          <div className="filterGroup">
-            <label className="label">Year</label>
-            <input type="number" className="input" value={year} onChange={(e) => setYear(Number(e.target.value))} min={2020} max={2030} style={{ width: 100 }} />
-          </div>
-          <div className="filterGroup searchInput">
-            <label className="label">Search by Emp Code or Name</label>
-            <input
-              type="text"
-              className="input"
-              placeholder="Type emp code or name..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              style={{ minWidth: 200 }}
-            />
-          </div>
-          <div className="filterGroup">
-            <label className="label">Sort by</label>
-            <select className="input" value={sortBy} onChange={(e) => setSortBy(e.target.value)} style={{ minWidth: 180 }}>
-              {SORT_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
-          </div>
-          <div className="filterGroup">
-            <button type="button" className="btn btn-primary" onClick={() => setShowAdvanceModal(true)}>
-              Add Advance
-            </button>
-          </div>
+    <div className="pageContent salReportPage">
+      <div className="salTopBar">
+        <div className="salTopGroup">
+          <label className="label">Year</label>
+          <input type="number" className="input" value={year} onChange={(e) => setYear(Number(e.target.value))} min={2020} max={2030} style={{ width: 88 }} />
+        </div>
+        <div className="salTopGroup">
+          <label className="label">Month</label>
+          <select className="input" value={month} onChange={(e) => setMonth(Number(e.target.value))} style={{ minWidth: 100 }}>
+            {[1,2,3,4,5,6,7,8,9,10,11,12].map((m) => (
+              <option key={m} value={m}>{monthNames[m]}</option>
+            ))}
+          </select>
+        </div>
+        <div className="salTopGroup">
+          <label className="label">Emp code</label>
+          <input type="text" className="input" placeholder="Filter by code" value={empCodeFilter} onChange={(e) => setEmpCodeFilter(e.target.value)} style={{ minWidth: 120 }} title="Filter by employee code" />
+        </div>
+        <div className="salTopGroup">
+          <label className="label">Search</label>
+          <input type="text" className="input" placeholder="Name or code" value={search} onChange={(e) => setSearch(e.target.value)} style={{ minWidth: 140 }} />
+        </div>
+        <div className="salTopGroup">
+          <label className="label">Sort by</label>
+          <select className="input" value={sortByForSelect} onChange={(e) => setSortByFromSelect(e.target.value)} style={{ minWidth: 160 }}>
+            {SORT_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
+        <div className="salTopGroup">
+          <button type="button" className="btn btn-primary" onClick={() => setShowAdvanceModal(true)}>Add Advance</button>
         </div>
       </div>
+
+      <div className="salMain">
 
       {showAdvanceModal && (
         <div className="salModalOverlay" onClick={() => !advanceSubmitting && setShowAdvanceModal(false)}>
@@ -206,19 +229,41 @@ export default function SalaryReport() {
           <table className="salTable">
             <thead>
               <tr>
-                <th>Emp Code</th>
+                <th className="sortableHeader" onClick={() => handleSort('emp_code')}>
+                  <span className="sortLabel">Emp Code</span>
+                  <span className="sortIcon sortIconSmall">{getSortIcon('emp_code')}</span>
+                </th>
                 <th>Name</th>
                 <th>Salary Type</th>
-                <th>Base Salary</th>
+                <th className="sortableHeader" onClick={() => handleSort('base_salary')}>
+                  <span className="sortLabel">Base Salary</span>
+                  <span className="sortIcon sortIconSmall">{getSortIcon('base_salary')}</span>
+                </th>
                 <th>Days Present</th>
-                <th>Today's Hrs</th>
-                <th>Total Monthly Hrs</th>
-                <th>Overtime Hrs</th>
+                <th className="sortableHeader" onClick={() => handleSort('today_hrs')}>
+                  <span className="sortLabel">Today&apos;s Hrs</span>
+                  <span className="sortIcon sortIconSmall">{getSortIcon('today_hrs')}</span>
+                </th>
+                <th className="sortableHeader" onClick={() => handleSort('total_hrs')}>
+                  <span className="sortLabel">Total Monthly Hrs</span>
+                  <span className="sortIcon sortIconSmall">{getSortIcon('total_hrs')}</span>
+                </th>
+                <th className="sortableHeader" onClick={() => handleSort('ot')}>
+                  <span className="sortLabel">Overtime Hrs</span>
+                  <span className="sortIcon sortIconSmall">{getSortIcon('ot')}</span>
+                </th>
                 <th>Bonus</th>
                 <th>Earned so far</th>
-                <th>Advance</th>
-                <th>Gross</th>
-                <th>Net Pay</th>
+                <th className="sortableHeader" onClick={() => handleSort('advance')}>
+                  <span className="sortLabel">Advance</span>
+                  <span className="sortIcon sortIconSmall">{getSortIcon('advance')}</span>
+                </th>
+                <th>Penalty</th>
+                <th title="Gross salary = total before advance & penalty deductions">Gross</th>
+                <th className="sortableHeader" onClick={() => handleSort('net')}>
+                  <span className="sortLabel">Net Pay</span>
+                  <span className="sortIcon sortIconSmall">{getSortIcon('net')}</span>
+                </th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -238,15 +283,17 @@ export default function SalaryReport() {
                   </td>
                   <td>{Number(row.total_working_hours || 0).toFixed(2)}</td>
                   <td>{Number(row.overtime_hours || 0).toFixed(2)}</td>
-                  <td>{Number(row.bonus || 0).toFixed(2)}</td>
+                  <td title="Bonus is always in hours; paid at 1h salary rate">{(Number(row.bonus || 0)).toFixed(2)} h</td>
                   <td title="From hours worked (1st of month to today)">{Number(row.earned_so_far || 0).toFixed(2)}</td>
                   <td>{Number(row.advance_total || 0).toFixed(2)}</td>
+                  <td>{Number(row.penalty_deduction || 0).toFixed(2)}</td>
                   <td>{Number(row.gross_salary || 0).toFixed(2)}</td>
                   <td className="salNetPay">{Number(row.net_pay || 0).toFixed(2)}</td>
                   <td>
-                    <Link to={`/employees/${row.emp_code}/profile`} className="salViewBtn">
-                      View Details
-                    </Link>
+                    <div className="salActionsCell">
+                      <Link to={`/salary/employee/${row.emp_code}?month=${month}&year=${year}`} className="salViewBtn">Salary data</Link>
+                      <Link to={`/employees/${row.emp_code}/profile`} className="salViewBtn salProfileBtn">Profile</Link>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -255,6 +302,8 @@ export default function SalaryReport() {
         )}
         {!loading && list.length === 0 && <p className="muted">No salary data for this period.</p>}
       </div>
+      </div>
+
     </div>
   )
 }

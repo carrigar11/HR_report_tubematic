@@ -75,12 +75,16 @@ export const attendance = {
 }
 
 export const salary = {
-  monthly: (month, year, search = '') => api.get('/salary/monthly/', { params: { month, year, ...(search ? { search } : {}) } }),
+  monthly: (month, year, search = '', empCode = '') => api.get('/salary/monthly/', {
+    params: { month, year, ...(search ? { search } : {}), ...(empCode ? { emp_code: empCode } : {}) },
+  }),
   list: (params) => api.get('/salary/', { params }),
 }
 
 export const advance = {
   list: (month, year) => api.get('/advance/', { params: { month, year } }),
+  /** List all advances for one employee (optional month, year to filter). */
+  byEmployee: (empCode, month, year) => api.get('/advance/', { params: { emp_code: empCode, ...(month && year ? { month, year } : {}) } }),
   create: (data) => api.post('/advance/', data),
   delete: (id) => api.delete(`/advance/${id}/`),
 }
@@ -99,6 +103,14 @@ export const adjustments = {
   list: (params) => api.get('/adjustments/', { params }),
 }
 
+export const penalty = {
+  list: (params) => api.get('/penalty/', { params }),
+  create: (data) => api.post('/penalty/create/', data),
+  get: (id) => api.get(`/penalty/${id}/`),
+  update: (id, data) => api.patch(`/penalty/${id}/`, data),
+  delete: (id) => api.delete(`/penalty/${id}/`),
+}
+
 export const holidays = {
   list: (params) => api.get('/holidays/', { params }),
   create: (data) => api.post('/holidays/', data),
@@ -113,8 +125,11 @@ export const settings = {
 
 export const exportReport = (params) => api.get('/export/', { params, responseType: 'blob' })
 
-/** Payroll Excel: params = { month, year } or { date } or { date_from, date_to } or {} for all */
+/** Payroll Excel: params = { month, year } or { date } or { date_from, date_to } or { emp_code } or {} for all */
 export const exportPayrollExcel = (params) => api.get('/export/payroll-excel/', { params, responseType: 'blob' })
+
+/** Full salary history for one employee (CSV). params = { emp_code } */
+export const exportEmployeeSalaryHistory = (params) => api.get('/export/employee-salary-history/', { params, responseType: 'blob' })
 
 /** Previous day report: daily data = yesterday, Total Salary = current month */
 export const exportPayrollPreviousDay = () => api.get('/export/payroll-excel/', { params: { previous_day: '1' }, responseType: 'blob' })

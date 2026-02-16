@@ -100,10 +100,14 @@ def _punch_spans_next_day(punch_in, punch_out):
     return out_h < in_h  # e.g. 22:00 to 06:00
 
 
+# For hourly employees: normal working hours = 12; over that is OT. Bonus = 1 per 2 OT (in salary_logic / shift_bonus).
+HOURLY_NORMAL_WORK_HOURS = Decimal('12')
+
 def _calc_overtime(total_working_hours, shift_from, shift_to):
     """
     Overtime = total_working_hours - expected_shift_hours when positive.
     Returns HOURS ONLY (no minutes) - floor of the difference.
+    Used for non-hourly (Monthly/Fixed) employees.
     """
     if total_working_hours is None or total_working_hours <= 0:
         return Decimal('0')
@@ -113,8 +117,23 @@ def _calc_overtime(total_working_hours, shift_from, shift_to):
     ot = total_working_hours - expected
     if ot <= 0:
         return Decimal('0')
-    # Hours only, no minutes - use int (floor)
     return Decimal(int(ot))
+
+
+def _calc_overtime_for_employee(total_working_hours, shift_from, shift_to, salary_type):
+    """
+    OT for one day. Hourly: normal = 12h, OT = max(0, twh - 12) (whole hours).
+    Otherwise: OT = twh - expected_shift_hours (shift-based).
+    """
+    if total_working_hours is None or total_working_hours <= 0:
+        return Decimal('0')
+    st = (salary_type or '').strip()
+    if st == 'Hourly':
+        ot = total_working_hours - HOURLY_NORMAL_WORK_HOURS
+        if ot <= 0:
+            return Decimal('0')
+        return Decimal(int(ot))
+    return _calc_overtime(total_working_hours, shift_from, shift_to)
 
 
 def _safe_decimal(val, default=Decimal('0')):
@@ -230,7 +249,7 @@ def upload_employees_excel(file, preview=False) -> dict:
             status = 'Active'
         if emp_type not in ('Full-time', 'Hourly'):
             emp_type = 'Full-time'
-        if salary_type not in ('Monthly', 'Hourly'):
+        if salary_type not in ('Monthly', 'Hourly', 'Fixed'):
             salary_type = 'Monthly'
 
         emp_data = {
@@ -327,15 +346,17 @@ def upload_attendance_excel(file, preview=False) -> dict:
             key = (att['emp_code'], att['date'])
             existing_attendance[key] = att
     
-    # Get employee names and shift data for records
+    # Get employee names, shift and salary_type for records
     emp_codes = list(set([e[0] for e in emp_dates]))
     employee_names = {}
     employee_shifts = {}
+    employee_salary_types = {}
     if emp_codes:
         for emp in Employee.objects.filter(emp_code__in=emp_codes).values(
-            'emp_code', 'name', 'shift', 'shift_from', 'shift_to'
+            'emp_code', 'name', 'shift', 'shift_from', 'shift_to', 'salary_type'
         ):
             employee_names[emp['emp_code']] = emp['name']
+            employee_salary_types[emp['emp_code']] = (emp.get('salary_type') or 'Monthly').strip() or 'Monthly'
             if emp.get('shift_from') and emp.get('shift_to'):
                 employee_shifts[emp['emp_code']] = {
                     'shift': emp.get('shift', ''),
@@ -399,9 +420,12 @@ def upload_attendance_excel(file, preview=False) -> dict:
             shift_from_val = emp_shift['shift_from']
             shift_to_val = emp_shift['shift_to']
 
-        # Calculate OT using shift
-        if shift_from_val and shift_to_val and total_working and total_working > 0:
-            over_time = _calc_overtime(total_working, shift_from_val, shift_to_val)
+        # Calculate OT: Hourly = over 12h is OT; others = over shift duration
+        if total_working and total_working > 0:
+            salary_type = employee_salary_types.get(emp_code, 'Monthly')
+            over_time = _calc_overtime_for_employee(
+                total_working, shift_from_val, shift_to_val, salary_type
+            )
 
         att_data = {
             'emp_code': emp_code,
@@ -464,7 +488,7 @@ def upload_attendance_excel(file, preview=False) -> dict:
     # Actually apply changes
     for att_data in to_insert:
         Attendance.objects.create(**att_data)
-    
+
     for update_data in to_update:
         data = update_data['data']
         Attendance.objects.filter(
@@ -482,6 +506,16 @@ def upload_attendance_excel(file, preview=False) -> dict:
             over_time=data['over_time'],
             status=data['status'],
         )
+
+    # Shift OT bonus: >12h in a shift -> 1h bonus per 2h extra (once per emp per date)
+    from .shift_bonus import apply_shift_overtime_bonus_for_date
+    from .penalty_logic import recalculate_late_penalty_for_date
+    for att_data in to_insert:
+        apply_shift_overtime_bonus_for_date(att_data['emp_code'], att_data['date'])
+        recalculate_late_penalty_for_date(att_data['emp_code'], att_data['date'])
+    for update_data in to_update:
+        apply_shift_overtime_bonus_for_date(update_data['emp_code'], update_data['date'])
+        recalculate_late_penalty_for_date(update_data['emp_code'], update_data['date'])
 
     return {
         'success': True,
@@ -597,14 +631,17 @@ def upload_shift_excel(file, preview=False) -> dict:
             shift_to=new['shift_to'],
         )
         # 3. Recalculate OT for attendance records with total_working_hours > 0
-        if new['shift_from'] and new['shift_to']:
-            for att in Attendance.objects.filter(
-                emp_code=emp_code, total_working_hours__gt=0
-            ).only('id', 'total_working_hours', 'over_time'):
-                ot = _calc_overtime(att.total_working_hours, new['shift_from'], new['shift_to'])
-                if ot != att.over_time:
-                    Attendance.objects.filter(id=att.id).update(over_time=ot)
-                    total_att_updated += 1
+        emp = Employee.objects.filter(emp_code=emp_code).values('salary_type').first()
+        salary_type = (emp.get('salary_type') or 'Monthly').strip() if emp else 'Monthly'
+        for att in Attendance.objects.filter(
+            emp_code=emp_code, total_working_hours__gt=0
+        ).only('id', 'total_working_hours', 'over_time'):
+            ot = _calc_overtime_for_employee(
+                att.total_working_hours, new['shift_from'], new['shift_to'], salary_type
+            )
+            if ot != att.over_time:
+                Attendance.objects.filter(id=att.id).update(over_time=ot)
+                total_att_updated += 1
 
     return {
         'success': True,
@@ -652,6 +689,12 @@ def upload_force_punch_excel(file, preview=False) -> dict:
             key = (att['emp_code'], att['date'])
             existing_attendance[key] = att
 
+    emp_codes_fp = list(set(e[0] for e in emp_dates))
+    employee_salary_types_fp = {}
+    if emp_codes_fp:
+        for e in Employee.objects.filter(emp_code__in=emp_codes_fp).values('emp_code', 'salary_type'):
+            employee_salary_types_fp[e['emp_code']] = (e.get('salary_type') or 'Monthly').strip() or 'Monthly'
+
     for row, emp_code, att_date in rows_data:
         if not emp_code or not att_date:
             errors += 1
@@ -683,8 +726,11 @@ def upload_force_punch_excel(file, preview=False) -> dict:
             else:
                 total_working = Decimal('0')
         over_time = existing.get('over_time') or Decimal('0')
-        if existing.get('shift_from') and existing.get('shift_to') and total_working and total_working > 0:
-            over_time = _calc_overtime(total_working, existing['shift_from'], existing['shift_to'])
+        if total_working and total_working > 0:
+            salary_type = employee_salary_types_fp.get(emp_code, 'Monthly')
+            over_time = _calc_overtime_for_employee(
+                total_working, existing.get('shift_from'), existing.get('shift_to'), salary_type
+            )
 
         to_update.append({
             'emp_code': emp_code,
@@ -728,6 +774,14 @@ def upload_force_punch_excel(file, preview=False) -> dict:
             total_working_hours=upd['total_working_hours'],
             over_time=upd['over_time'],
         )
+
+    # Shift OT bonus + late penalty
+    from .shift_bonus import apply_shift_overtime_bonus_for_date
+    from .penalty_logic import recalculate_late_penalty_for_date
+    for upd in to_update:
+        att_date = date.fromisoformat(upd['date']) if isinstance(upd['date'], str) else upd['date']
+        apply_shift_overtime_bonus_for_date(upd['emp_code'], att_date)
+        recalculate_late_penalty_for_date(upd['emp_code'], att_date)
 
     return {
         'success': True,

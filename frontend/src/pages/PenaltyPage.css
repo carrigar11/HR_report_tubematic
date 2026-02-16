@@ -1,0 +1,100 @@
+.penaltyPage {
+  max-width: 1200px;
+}
+
+.penaltyHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.penaltyTitle {
+  margin: 0 0 0.25rem 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text, #e4e4e7);
+}
+
+.penaltySubtitle {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--textMuted, #71717a);
+  max-width: 560px;
+}
+
+.penaltyManualCard,
+.penaltyFilterCard {
+  margin-bottom: 1.25rem;
+}
+
+.penaltyCardTitle {
+  margin: 0 0 1rem 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.penaltyManualForm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem;
+}
+
+.penaltyField {
+  min-width: 120px;
+}
+
+.penaltyFieldWide {
+  min-width: 240px;
+  flex: 1;
+}
+
+.penaltyField label {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--textMuted);
+  margin-bottom: 0.25rem;
+}
+
+.penaltyMessage {
+  margin: 0.75rem 0 0 0;
+  font-size: 0.9rem;
+}
+
+.penaltyMessage.success { color: var(--accent, #22c55e); }
+.penaltyMessage.error { color: #ef4444; }
+
+.penaltyFilterRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-end;
+}
+
+.penaltyTableHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.penaltyTotal {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.penaltyTable .penaltyDesc {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.penaltyTable .btn-small { padding: 0.25rem 0.5rem; font-size: 0.8rem; }
+.penaltyTable .btn-danger { background: #b91c1c; color: #fff; border-color: #b91c1c; }

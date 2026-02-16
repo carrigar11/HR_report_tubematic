@@ -44,12 +44,14 @@ def ensure_monthly_salaries(year, month):
         ).first()
 
         if existing:
-            # Update attendance-derived fields but keep the existing bonus
+            # Update attendance-derived fields; for Hourly, bonus = floor(OT/2) (every 2 OT → 1 bonus)
             existing.salary_type = emp.salary_type
             existing.base_salary = base
             existing.overtime_hours = overtime_hours
             existing.total_working_hours = total_working_hours
             existing.days_present = days_present
+            if emp.salary_type == 'Hourly' and overtime_hours > 0:
+                existing.bonus = (overtime_hours / 2).to_integral_value()
             existing.save()
         else:
             # New record — auto-calc bonus for hourly employees

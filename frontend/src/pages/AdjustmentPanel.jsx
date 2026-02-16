@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { adjustments, attendance, employees } from '../api'
+import { adjustments, attendance, employees, penalty as penaltyApi } from '../api'
 import './Table.css'
 import './AdjustmentPanel.css'
 
@@ -155,8 +155,9 @@ export default function AdjustmentPanel() {
       if (form.punch_in) payload.punch_in = form.punch_in + (form.punch_in.length === 5 ? ':00' : '')
       if (form.punch_out) payload.punch_out = form.punch_out + (form.punch_out.length === 5 ? ':00' : '')
       // OT is auto-calculated by backend from punch times + shift
-      await attendance.adjust(payload)
-      setMessage('Attendance adjusted and logged.')
+      const res = await attendance.adjust(payload)
+      const penaltyNote = res.data?.penalty_note
+      setMessage(penaltyNote ? `Attendance adjusted and logged. ${penaltyNote}` : 'Attendance adjusted and logged.')
       loadList()
       setCurrentRecord(null)
       attendance.list({ emp_code: form.emp_code, date: form.date, page_size: 1 })
@@ -279,6 +280,43 @@ export default function AdjustmentPanel() {
               <div className="currentRecordItem">
                 <span className="currentRecordLabel">Overtime</span>
                 <span className="currentRecordValue">{Number(currentRecord.over_time || 0).toFixed(2)}</span>
+              </div>
+              <div className="currentRecordItem currentRecordItemFull">
+                <span className="currentRecordLabel">Shift OT bonus (12h+ rule)</span>
+                <span className="currentRecordValue">
+                  {Number(currentRecord.shift_ot_bonus_hours || 0) > 0 ? (
+                    <span className="adjustmentBonusBadge" title={currentRecord.shift_ot_bonus_description || ''}>
+                      {Number(currentRecord.shift_ot_bonus_hours).toFixed(0)}h bonus
+                      {currentRecord.shift_ot_bonus_description ? ' — ' + currentRecord.shift_ot_bonus_description : ''}
+                    </span>
+                  ) : (
+                    <span className="muted">No bonus (work &lt; 12h or not yet calculated)</span>
+                  )}
+                </span>
+              </div>
+              <div className="currentRecordItem currentRecordItemFull">
+                <span className="currentRecordLabel">Penalty (late / manual)</span>
+                <span className="currentRecordValue">
+                  {Number(currentRecord.penalty_amount || 0) > 0 ? (
+                    <span className="adjustmentPenaltyBadge" title={currentRecord.penalty_description || ''}>
+                      Rs {Number(currentRecord.penalty_amount).toFixed(2)}
+                      {currentRecord.penalty_description ? ' — ' + currentRecord.penalty_description : ''}
+                      {currentRecord.penalty_id && (
+                        <button type="button" className="adjustmentPenaltyRemove" onClick={async () => {
+                          if (!window.confirm('Remove this penalty for this day?')) return
+                          await penaltyApi.delete(currentRecord.penalty_id)
+                          attendance.list({ emp_code: form.emp_code, date: form.date, page_size: 1 })
+                            .then((r) => {
+                              const results = r.data.results ?? r.data ?? []
+                              setCurrentRecord(Array.isArray(results) && results.length ? results[0] : null)
+                            })
+                        }}>Remove</button>
+                      )}
+                    </span>
+                  ) : (
+                    <span className="muted">No penalty (on time or Fixed salary)</span>
+                  )}
+                </span>
               </div>
             </div>
           ) : (

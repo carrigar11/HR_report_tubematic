@@ -58,7 +58,7 @@ class Employee(models.Model):
     EMPLOYED_STATUSES = (STATUS_ACTIVE, STATUS_WEEK_OFF, STATUS_HOLIDAY)
 
     EMPLOYMENT_TYPE_CHOICES = [('Full-time', 'Full-time'), ('Hourly', 'Hourly')]
-    SALARY_TYPE_CHOICES = [('Monthly', 'Monthly'), ('Hourly', 'Hourly')]
+    SALARY_TYPE_CHOICES = [('Monthly', 'Monthly'), ('Hourly', 'Hourly'), ('Fixed', 'Fixed')]
 
     emp_code = models.CharField(max_length=50, unique=True, db_index=True)
     name = models.CharField(max_length=255)
@@ -188,6 +188,44 @@ class Adjustment(models.Model):
         return f"{self.emp_code} {self.adj_date}"
 
 
+class ShiftOvertimeBonus(models.Model):
+    """One record per emp per date: bonus hours awarded for working >12h in a shift (1h bonus per 2h extra). No duplicate for same day."""
+    emp_code = models.CharField(max_length=50, db_index=True)
+    date = models.DateField(db_index=True)
+    bonus_hours = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal('0'))
+    description = models.CharField(max_length=500, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'shift_overtime_bonus'
+        ordering = ['-date', 'emp_code']
+        unique_together = [['emp_code', 'date']]
+
+    def __str__(self):
+        return f"{self.emp_code} {self.date} {self.bonus_hours}h"
+
+
+class Penalty(models.Model):
+    """Late-coming penalty (Hourly employees only). 2.5 Rs/min until 300 Rs/month, then 5 Rs/min. Reset 1st of month. Manual penalties allowed."""
+    emp_code = models.CharField(max_length=50, db_index=True)
+    date = models.DateField(db_index=True)
+    month = models.PositiveSmallIntegerField()
+    year = models.PositiveIntegerField()
+    minutes_late = models.PositiveSmallIntegerField(default=0, help_text='Minutes late (0 for manual)')
+    deduction_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0'))
+    rate_used = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True, help_text='Rs per min used (2.5 or 5)')
+    description = models.CharField(max_length=500, blank=True)
+    is_manual = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'penalty'
+        ordering = ['-date', 'emp_code']
+
+    def __str__(self):
+        return f"{self.emp_code} {self.date} {self.deduction_amount}"
+
+
 class PerformanceReward(models.Model):
     """Streak, overtime reward, absentee alert, leaderboard."""
     ENTRY_TYPE_CHOICES = [('REWARD', 'REWARD'), ('ACTION', 'ACTION')]
@@ -242,6 +280,28 @@ class SystemSetting(models.Model):
 
     def __str__(self):
         return f"{self.key}={self.value}"
+
+
+class EmailSmtpConfig(models.Model):
+    """SMTP credentials and options for sending email. One active config is used for push email."""
+    smtp_server = models.CharField(max_length=255, default='smtp.gmail.com', help_text='e.g. smtp.gmail.com')
+    smtp_port = models.PositiveSmallIntegerField(default=587, help_text='Usually 587 for TLS')
+    auth_username = models.CharField(max_length=254, blank=True, help_text='SMTP login email')
+    auth_password = models.CharField(max_length=255, blank=True, help_text='App password or account password')
+    force_sender = models.CharField(max_length=254, blank=True, help_text='From address (optional, defaults to auth_username)')
+    error_logfile = models.CharField(max_length=255, blank=True, help_text='Path to error log file')
+    debug_logfile = models.CharField(max_length=255, blank=True, help_text='Path to debug log file')
+    is_active = models.BooleanField(default=True, help_text='Use this config when sending email')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'email_smtp_config'
+        verbose_name = 'Email SMTP config'
+        verbose_name_plural = 'Email SMTP configs'
+
+    def __str__(self):
+        return f"{self.smtp_server}:{self.smtp_port} ({self.auth_username or 'no auth'})"
 
 
 class AuditLog(models.Model):

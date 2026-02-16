@@ -11,6 +11,7 @@ const ACCESS_OPTIONS = [
   { key: 'salary', label: 'Salary Report' },
   { key: 'leaderboard', label: 'Leaderboard' },
   { key: 'bonus', label: 'Bonus Manager' },
+  { key: 'penalty', label: 'Penalty' },
   { key: 'absentee_alert', label: 'Absentee Alert' },
   { key: 'adjustment', label: 'Adjustments' },
   { key: 'export', label: 'Export' },

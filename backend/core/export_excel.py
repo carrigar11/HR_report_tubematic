@@ -12,7 +12,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 
-from .models import Employee, Attendance, SalaryAdvance
+from .models import Employee, Attendance, SalaryAdvance, Salary
 
 
 def _time_to_hours(t):
@@ -100,6 +100,8 @@ def build_payroll_rows(employees, attendance_queryset, advance_by_emp=None):
         salary_type = (emp.salary_type or 'Monthly').strip() or 'Monthly'
         if salary_type == 'Hourly':
             hourly_rate = base
+        elif salary_type == 'Fixed':
+            hourly_rate = 0.0
         else:
             hourly_rate = base / (26 * 8) if base else 0.0
         du = _shift_hours(emp.shift_from, emp.shift_to)
@@ -120,15 +122,45 @@ def build_payroll_rows(employees, attendance_queryset, advance_by_emp=None):
         row_total = 0.0
         for d in sorted_dates:
             hours = att_map.get((emp.emp_code, d), 0.0)
-            amount = round(hourly_rate * hours, 2)
+            amount = round(hourly_rate * hours, 2) if salary_type != 'Fixed' else 0.0
             day_totals.append(amount)
             row_total += amount
+        if salary_type == 'Fixed':
+            row_total = base
+        else:
+            row_total = round(row_total, 2)
         row['total'] = round(row_total, 2)
         row['_dates'] = sorted_dates
         row['_day_totals'] = day_totals
         payroll_rows.append(row)
 
     return sorted_dates, payroll_rows
+
+
+def _add_bonus_to_payroll_rows(payroll_rows, month, year):
+    """Add bonus (hours × hourly_rate) to each row's total. Bonus is stored as hours in Salary."""
+    if not payroll_rows or month is None or year is None:
+        return
+    emp_codes = [r['emp_code'] for r in payroll_rows]
+    salary_type_by_emp = {e.emp_code: (e.salary_type or 'Monthly').strip() or 'Monthly' for e in Employee.objects.filter(emp_code__in=emp_codes).values('emp_code', 'salary_type')}
+    bonus_by_emp = {}
+    for s in Salary.objects.filter(emp_code__in=emp_codes, month=month, year=year).values('emp_code', 'bonus', 'base_salary'):
+        bonus_by_emp[s['emp_code']] = (float(s.get('bonus') or 0), float(s.get('base_salary') or 0))
+    for row in payroll_rows:
+        ec = row['emp_code']
+        sala = row.get('sala') or 0.0  # hourly rate already set in build_payroll_rows
+        bonus_hrs, base = bonus_by_emp.get(ec, (0.0, 0.0))
+        if bonus_hrs <= 0:
+            continue
+        st = salary_type_by_emp.get(ec, 'Monthly')
+        if st == 'Hourly':
+            hourly_rate = base
+        elif st == 'Fixed':
+            hourly_rate = base / 208.0 if base else 0.0
+        else:
+            hourly_rate = base / 208.0 if base else 0.0
+        bonus_money = round(bonus_hrs * hourly_rate, 2)
+        row['total'] = round((row.get('total') or 0) + bonus_money, 2)
 
 
 def write_payroll_sheet(ws, sorted_dates, payroll_rows):
@@ -340,6 +372,7 @@ def generate_payroll_excel_previous_day(allowed_emp_codes=None):
     )
     sorted_dates, payroll_rows = build_payroll_rows(employees, att_yesterday, advance_by_emp=advance_by_emp)
     _, payroll_month = build_payroll_rows(employees, att_month, advance_by_emp=advance_by_emp)
+    _add_bonus_to_payroll_rows(payroll_month, yesterday.month, yesterday.year)
     emp_to_month_total = {r['emp_code']: r['total'] for r in payroll_month}
     for row in payroll_rows:
         row['total'] = emp_to_month_total.get(row['emp_code'], 0)
@@ -382,11 +415,12 @@ def _write_payroll_workbook(sorted_dates, payroll_rows, plant_rows):
     return buf
 
 
-def generate_payroll_excel(date_from=None, date_to=None, single_date=None, month=None, year=None, allowed_emp_codes=None):
+def generate_payroll_excel(date_from=None, date_to=None, single_date=None, month=None, year=None, allowed_emp_codes=None, emp_code=None):
     """
     Generate payroll Excel workbook. Returns BytesIO.
     Filter: single_date (one day), or month+year, or date_from/date_to (range), or all if none set.
     allowed_emp_codes: if set, only these employees (dept admin filter).
+    emp_code: if set, only this single employee (overrides to one-emp export).
     """
     att_qs = _get_date_filter_queryset(
         date_from=date_from, date_to=date_to,
@@ -394,8 +428,12 @@ def generate_payroll_excel(date_from=None, date_to=None, single_date=None, month
     )
     if allowed_emp_codes is not None:
         att_qs = att_qs.filter(emp_code__in=allowed_emp_codes) if allowed_emp_codes else att_qs.none()
+    if emp_code:
+        att_qs = att_qs.filter(emp_code=emp_code)
     emp_qs = Employee.objects.all().order_by('dept_name', 'emp_code')
-    if allowed_emp_codes is not None:
+    if emp_code:
+        emp_qs = emp_qs.filter(emp_code=emp_code)
+    elif allowed_emp_codes is not None:
         emp_qs = emp_qs.filter(emp_code__in=allowed_emp_codes) if allowed_emp_codes else emp_qs.none()
     employees = list(emp_qs)
     if single_date:
@@ -414,5 +452,7 @@ def generate_payroll_excel(date_from=None, date_to=None, single_date=None, month
             allowed_emp_codes=allowed_emp_codes
         )
     sorted_dates, payroll_rows = build_payroll_rows(employees, att_qs, advance_by_emp=advance_by_emp)
+    if month is not None and year is not None:
+        _add_bonus_to_payroll_rows(payroll_rows, month, year)
     plant_rows = build_plant_report_rows(payroll_rows, sorted_dates, att_qs)
     return _write_payroll_workbook(sorted_dates, payroll_rows, plant_rows)

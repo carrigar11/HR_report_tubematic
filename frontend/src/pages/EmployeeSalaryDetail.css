@@ -1,0 +1,177 @@
+/* Employee Salary Detail page */
+.empSalaryDetailPage {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.empSalHeader {
+  margin-bottom: 1.25rem;
+}
+
+.empSalBack {
+  display: inline-block;
+  font-size: 0.9rem;
+  color: var(--accent);
+  text-decoration: none;
+  margin-bottom: 0.5rem;
+}
+.empSalBack:hover {
+  text-decoration: underline;
+}
+
+.empSalTitleRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.empSalTitle {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.empSalCode {
+  font-family: var(--fontMono, monospace);
+  font-size: 0.95rem;
+  color: var(--textMuted);
+  padding: 0.2rem 0.5rem;
+  background: var(--bg);
+  border-radius: 4px;
+}
+
+.empSalName {
+  font-size: 1rem;
+  color: var(--text);
+}
+
+.empSalGrid {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 1.25rem;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .empSalGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.empSalCard {
+  padding: 1.25rem;
+}
+
+.empSalCardTitle {
+  margin: 0 0 1rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text);
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.empSalTableWrap {
+  overflow-x: auto;
+}
+
+.empSalTable {
+  width: 100%;
+  font-size: 0.85rem;
+}
+
+.empSalTable th,
+.empSalTable td {
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+}
+
+.empSalRowHighlight {
+  background: rgba(34, 197, 94, 0.08);
+}
+
+.empSalDownloadCard .empSalDownloadDesc {
+  margin: 0 0 1rem;
+  font-size: 0.85rem;
+  color: var(--textMuted);
+}
+
+.empSalDownloadSection {
+  margin-bottom: 1.25rem;
+}
+
+.empSalDownloadSub {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.empSalDateRow {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.empSalField {
+  flex: 1;
+  min-width: 0;
+}
+
+.empSalField .label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--textMuted);
+  margin-bottom: 0.25rem;
+}
+
+.empSalField .input {
+  width: 100%;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+.empSalDownloadFull {
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.empSalProfileLink {
+  display: inline-block;
+  margin-top: 1rem;
+  font-size: 0.85rem;
+  color: var(--accent);
+  text-decoration: none;
+}
+.empSalProfileLink:hover {
+  text-decoration: underline;
+}
+
+.empSalDownloadSection.empSalAdvances {
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.empSalAdvancesModal {
+  min-width: 420px;
+  max-width: 95%;
+}
+
+.empSalAdvancesTableWrap {
+  overflow-x: auto;
+  margin: 0.75rem 0;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.empSalAdvancesModal .empSalTable th,
+.empSalAdvancesModal .empSalTable td {
+  padding: 0.4rem 0.6rem;
+  font-size: 0.85rem;
+}

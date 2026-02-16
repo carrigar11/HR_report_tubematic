@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Admin, Employee, Attendance, Salary, SalaryAdvance, Adjustment, PerformanceReward, Holiday, SystemSetting
+from .models import Admin, Employee, Attendance, Salary, SalaryAdvance, Adjustment, ShiftOvertimeBonus, Penalty, PerformanceReward, Holiday, SystemSetting, EmailSmtpConfig
 
 
 @admin.register(Admin)
@@ -36,6 +36,20 @@ class AdjustmentAdmin(admin.ModelAdmin):
     list_display = ('emp_code', 'adj_date', 'reason', 'created_by_admin', 'created_at')
 
 
+@admin.register(ShiftOvertimeBonus)
+class ShiftOvertimeBonusAdmin(admin.ModelAdmin):
+    list_display = ('emp_code', 'date', 'bonus_hours', 'description', 'created_at')
+    list_filter = ('date',)
+    search_fields = ('emp_code', 'description')
+
+
+@admin.register(Penalty)
+class PenaltyAdmin(admin.ModelAdmin):
+    list_display = ('emp_code', 'date', 'minutes_late', 'deduction_amount', 'rate_used', 'is_manual', 'description', 'created_at')
+    list_filter = ('date', 'is_manual')
+    search_fields = ('emp_code', 'description')
+
+
 @admin.register(PerformanceReward)
 class PerformanceRewardAdmin(admin.ModelAdmin):
     list_display = ('emp_code', 'entry_type', 'trigger_reason', 'is_on_leaderboard', 'admin_action_status', 'created_at')
@@ -50,3 +64,10 @@ class HolidayAdmin(admin.ModelAdmin):
 @admin.register(SystemSetting)
 class SystemSettingAdmin(admin.ModelAdmin):
     list_display = ('key', 'value', 'description')
+
+
+@admin.register(EmailSmtpConfig)
+class EmailSmtpConfigAdmin(admin.ModelAdmin):
+    list_display = ('id', 'smtp_server', 'smtp_port', 'auth_username', 'force_sender', 'is_active', 'updated_at')
+    list_filter = ('is_active',)
+    fields = ('smtp_server', 'smtp_port', 'auth_username', 'auth_password', 'force_sender', 'error_logfile', 'debug_logfile', 'is_active')

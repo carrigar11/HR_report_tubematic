@@ -11,7 +11,7 @@ from decimal import Decimal
 
 from .models import (
     Admin, Employee, Attendance, Salary, SalaryAdvance, Adjustment,
-    PerformanceReward, Holiday, SystemSetting, AuditLog
+    ShiftOvertimeBonus, Penalty, PerformanceReward, Holiday, SystemSetting, AuditLog
 )
 from .serializers import (
     AdminSerializer, AdminProfileSerializer, AdminUpdateSerializer,
@@ -20,6 +20,7 @@ from .serializers import (
     AuditLogSerializer,
     EmployeeSerializer, AttendanceSerializer,
     SalarySerializer, SalaryAdvanceSerializer, AdjustmentSerializer,
+    PenaltySerializer,
     PerformanceRewardSerializer, HolidaySerializer, SystemSettingSerializer,
     AdminLoginSerializer, AttendanceAdjustPayloadSerializer,
 )
@@ -556,8 +557,15 @@ def _punch_spans_next_day(punch_in, punch_out):
     return in_h is not None and out_h is not None and out_h < in_h
 
 
-def _calc_overtime_from_punch(punch_in, punch_out, shift_from, shift_to):
-    """OT = working_hours - expected_shift_hours (whole hours only)."""
+# Hourly employees: normal = 12h per day; over that is OT (matches excel_upload).
+HOURLY_NORMAL_WORK_HOURS = Decimal('12')
+
+
+def _calc_overtime_from_punch(punch_in, punch_out, shift_from, shift_to, salary_type=None):
+    """
+    OT for the day. If salary_type == 'Hourly': OT = max(0, total_working - 12) (whole hours).
+    Else: OT = total_working - expected_shift_hours (whole hours only).
+    """
     if punch_in is None or punch_out is None:
         return Decimal('0')
     in_h = _time_to_decimal_hours(punch_in)
@@ -568,6 +576,12 @@ def _calc_overtime_from_punch(punch_in, punch_out, shift_from, shift_to):
     if diff < 0:
         diff += 24
     total_working = Decimal(str(round(diff, 2)))
+    st = (salary_type or '').strip()
+    if st == 'Hourly':
+        ot = total_working - HOURLY_NORMAL_WORK_HOURS
+        if ot <= 0:
+            return Decimal('0')
+        return Decimal(int(ot))
     expected = _shift_duration_hours(shift_from, shift_to)
     if expected is None or expected <= 0:
         return Decimal('0')
@@ -605,16 +619,18 @@ class AttendanceAdjustView(APIView):
         # Use shift from attendance record, or fallback to employee's assigned shift
         shift_from = att.shift_from
         shift_to = att.shift_to
-        if not shift_from or not shift_to:
-            emp = Employee.objects.filter(emp_code=emp_code).values('shift', 'shift_from', 'shift_to').first()
-            if emp and emp.get('shift_from') and emp.get('shift_to'):
+        emp_salary_type = 'Monthly'
+        emp = Employee.objects.filter(emp_code=emp_code).values('shift', 'shift_from', 'shift_to', 'salary_type').first()
+        if emp:
+            emp_salary_type = (emp.get('salary_type') or 'Monthly').strip() or 'Monthly'
+            if (not shift_from or not shift_to) and emp.get('shift_from') and emp.get('shift_to'):
                 shift_from = emp['shift_from']
                 shift_to = emp['shift_to']
                 att.shift = emp.get('shift', '')
                 att.shift_from = shift_from
                 att.shift_to = shift_to
-        if punch_in and punch_out and shift_from and shift_to:
-            att.over_time = _calc_overtime_from_punch(punch_in, punch_out, shift_from, shift_to)
+        if punch_in and punch_out:
+            att.over_time = _calc_overtime_from_punch(punch_in, punch_out, shift_from, shift_to, emp_salary_type)
             # Also update total_working_hours and punch_spans_next_day from punch times
             in_h = _time_to_decimal_hours(punch_in)
             out_h = _time_to_decimal_hours(punch_out)
@@ -637,10 +653,26 @@ class AttendanceAdjustView(APIView):
             created_by_admin=admin_name,
         )
         log_activity(request, 'adjust', 'attendance', 'attendance', emp_code, details={'date': str(adj_date), 'by': admin_name})
-        return Response({
+        from .shift_bonus import recalculate_shift_overtime_bonus_for_date
+        from .penalty_logic import recalculate_late_penalty_for_date, _minutes_late
+        recalculate_shift_overtime_bonus_for_date(emp_code, adj_date)
+        recalculate_late_penalty_for_date(emp_code, adj_date, attendance=att)
+        salary_type = (emp_salary_type or 'Monthly').strip() or 'Monthly'
+        shift_start = shift_from or att.shift_from
+        minutes_late = _minutes_late(att.punch_in, shift_start) if att.punch_in else 0
+        penalty_note = None
+        if minutes_late > 0:
+            if salary_type.lower() == 'hourly':
+                penalty_note = f'Late-coming penalty applied ({minutes_late} min late). Check Penalty page.'
+            else:
+                penalty_note = f'No automatic penalty: only Hourly employees get late penalty. This employee is {salary_type}.'
+        response_data = {
             'success': True,
             'attendance': AttendanceSerializer(att).data,
-        })
+        }
+        if penalty_note:
+            response_data['penalty_note'] = penalty_note
+        return Response(response_data)
 
 
 # ---------- Dashboard ----------
@@ -709,6 +741,29 @@ class DashboardView(APIView):
         })
 
 
+# ---------- Salary: bonus = hours for ALL types; bonus money = bonus_hours × hourly_rate ----------
+# Hourly: hourly_rate = base_salary. Monthly/Fixed: hourly_rate = base_salary/208 (26 days × 8 h).
+def _gross_and_rate(salary_type, base_salary, total_working_hours, overtime_hours, bonus_hours):
+    """Bonus is always stored as HOURS. Returns (gross, hourly_rate). Bonus money = bonus_hours × hourly_rate."""
+    base = Decimal(str(base_salary or 0))
+    total_hrs = Decimal(str(total_working_hours or 0))
+    ot_hrs = Decimal(str(overtime_hours or 0))
+    bonus = Decimal(str(bonus_hours or 0))
+    st = (salary_type or '').strip()
+    if st == 'Hourly':
+        hourly_rate = base
+        gross = (total_hrs + bonus) * base
+        return (gross, hourly_rate)
+    if st == 'Fixed':
+        hourly_rate = base / Decimal('208') if base else Decimal('0')
+        gross = base + (bonus * hourly_rate)
+        return (gross, hourly_rate)
+    # Monthly: proportional by hours + bonus hours at same rate
+    hourly_rate = base / Decimal('208') if base else Decimal('0')
+    gross = (total_hrs + ot_hrs + bonus) * hourly_rate
+    return (gross, hourly_rate)
+
+
 # ---------- Salary monthly (compute or return stored) ----------
 class SalaryMonthlyView(APIView):
     def get(self, request):
@@ -723,6 +778,9 @@ class SalaryMonthlyView(APIView):
         salaries = Salary.objects.filter(month=month, year=year)
         if allowed_emp_codes is not None:
             salaries = salaries.filter(emp_code__in=allowed_emp_codes) if allowed_emp_codes else salaries.none()
+        emp_code_filter = request.query_params.get('emp_code', '').strip()
+        if emp_code_filter:
+            salaries = salaries.filter(emp_code__icontains=emp_code_filter)
         search = request.query_params.get('search', '').strip()
         if search:
             emp_codes = Employee.objects.filter(
@@ -733,6 +791,11 @@ class SalaryMonthlyView(APIView):
         advance_by_emp = get_advance_totals_by_emp(month=month, year=year)
         if allowed_emp_codes is not None:
             advance_by_emp = {k: v for k, v in advance_by_emp.items() if k in allowed_emp_codes} if allowed_emp_codes else {}
+        penalty_by_emp = {}
+        for r in Penalty.objects.filter(month=month, year=year).values('emp_code').annotate(total=Sum('deduction_amount')):
+            penalty_by_emp[r['emp_code']] = r['total'] or Decimal('0')
+        if allowed_emp_codes is not None:
+            penalty_by_emp = {k: v for k, v in penalty_by_emp.items() if k in allowed_emp_codes} if allowed_emp_codes else {}
         today = timezone.localdate()
         # Earned so far (money from hours worked from 1st of month up to today)
         from calendar import monthrange
@@ -804,19 +867,18 @@ class SalaryMonthlyView(APIView):
             # Advance total for this month
             advance_total = advance_by_emp.get(ec, Decimal('0'))
             row['advance_total'] = str(advance_total)
-            # Gross: Monthly = base + bonus + (OT hrs * hourly_rate); Hourly = total_hrs * rate + bonus
-            base = Decimal(str(row.get('base_salary') or 0))
-            bonus = Decimal(str(row.get('bonus') or 0))
-            ot_hrs = Decimal(str(row.get('overtime_hours') or 0))
-            total_hrs = Decimal(str(row.get('total_working_hours') or 0))
-            if (row.get('salary_type') or '').strip() == 'Hourly':
-                hourly_rate = base
-                gross = (total_hrs * base) + bonus
-            else:
-                hourly_rate = base / Decimal('208') if base else Decimal('0')  # 26*8
-                gross = (total_hrs * hourly_rate) + bonus + (ot_hrs * hourly_rate)
+            # Gross: bonus is always HOURS; bonus money = bonus_hours × hourly_rate (same for all types)
+            gross, hourly_rate = _gross_and_rate(
+                row.get('salary_type'),
+                row.get('base_salary'),
+                row.get('total_working_hours'),
+                row.get('overtime_hours'),
+                row.get('bonus'),
+            )
             row['gross_salary'] = str(round(gross, 2))
-            row['net_pay'] = str(round(gross - advance_total, 2))
+            penalty_total = penalty_by_emp.get(ec, Decimal('0')) if (row.get('salary_type') or '').strip() == 'Hourly' else Decimal('0')
+            row['penalty_deduction'] = str(penalty_total)
+            row['net_pay'] = str(round(gross - advance_total - penalty_total, 2))
             # Earned so far (from 1st of month up to today, based on hours worked)
             so_far = earned_so_far_by_emp.get(ec, {'total_hrs': Decimal('0'), 'total_ot': Decimal('0')})
             hrs_so_far = so_far['total_hrs'] + so_far['total_ot']
@@ -846,8 +908,17 @@ class SalaryAdvanceListCreateView(APIView):
         _, allowed_emp_codes = get_request_admin(request)
         month = request.query_params.get('month')
         year = request.query_params.get('year')
+        emp_code_param = request.query_params.get('emp_code', '').strip()
+        if emp_code_param:
+            qs = SalaryAdvance.objects.filter(emp_code__iexact=emp_code_param).order_by('-year', '-month', '-created_at')
+            if allowed_emp_codes is not None and emp_code_param not in allowed_emp_codes:
+                qs = qs.none()
+            if month and year:
+                qs = qs.filter(month=int(month), year=int(year))
+            data = SalaryAdvanceSerializer(qs, many=True).data
+            return Response(data)
         if not month or not year:
-            return Response({'error': 'month and year required'}, status=400)
+            return Response({'error': 'month and year required (or provide emp_code for one employee)'}, status=400)
         month, year = int(month), int(year)
         qs = SalaryAdvance.objects.filter(month=month, year=year).order_by('-created_at', 'emp_code')
         if allowed_emp_codes is not None:
@@ -1065,6 +1136,15 @@ class BonusOverviewView(APIView):
         ).values('emp_code').annotate(count=Count('id')):
             streak_counts[r['emp_code']] = r['count']
 
+        # Shift OT bonus (12h+ rule: 1h bonus per 2h extra) per employee for this month
+        shift_ot_bonus_by_emp = {}
+        for r in ShiftOvertimeBonus.objects.filter(
+            emp_code__in=emp_codes_list,
+            date__gte=month_start,
+            date__lte=month_end,
+        ).values('emp_code').annotate(total=Sum('bonus_hours')):
+            shift_ot_bonus_by_emp[r['emp_code']] = float(r['total'] or 0)
+
         # Summary stats
         bonused = [s for s in sal_list if float(s['bonus'] or 0) > 0]
         total_bonus = sum(float(s['bonus'] or 0) for s in sal_list)
@@ -1096,6 +1176,7 @@ class BonusOverviewView(APIView):
                 'month_ot': str(stats.get('total_ot') or 0),
                 'month_days': stats.get('days', 0),
                 'streak_count': streak_counts.get(ec, 0),
+                'shift_ot_bonus_hours': round(shift_ot_bonus_by_emp.get(ec, 0), 2),
             })
 
         return Response({
@@ -1137,6 +1218,139 @@ class SetBonusView(APIView):
         return Response({'success': True, 'emp_code': emp_code, 'new_bonus': str(sal.bonus)})
 
 
+# ---------- Penalty (late-coming deduction for Hourly employees) ----------
+class PenaltyListView(APIView):
+    """List penalties with filters: emp_code, month, year, date_from, date_to."""
+    def get(self, request):
+        _, allowed_emp_codes = get_request_admin(request)
+        qs = Penalty.objects.all().order_by('-date', 'emp_code')
+        if allowed_emp_codes is not None:
+            qs = qs.filter(emp_code__in=allowed_emp_codes) if allowed_emp_codes else qs.none()
+        emp_code = request.query_params.get('emp_code', '').strip()
+        if emp_code:
+            qs = qs.filter(emp_code__icontains=emp_code)
+        month = request.query_params.get('month', '').strip()
+        year = request.query_params.get('year', '').strip()
+        if month:
+            qs = qs.filter(month=int(month))
+        if year:
+            qs = qs.filter(year=int(year))
+        date_from = request.query_params.get('date_from', '').strip()
+        date_to = request.query_params.get('date_to', '').strip()
+        if date_from:
+            try:
+                qs = qs.filter(date__gte=date_from)
+            except ValueError:
+                pass
+        if date_to:
+            try:
+                qs = qs.filter(date__lte=date_to)
+            except ValueError:
+                pass
+        attendance_map = {}
+        if qs.exists():
+            penalty_keys = list(qs.values_list('emp_code', 'date'))
+            attendances = Attendance.objects.filter(
+                emp_code__in=[k[0] for k in penalty_keys],
+                date__in=[k[1] for k in penalty_keys]
+            ).values('emp_code', 'date', 'punch_in', 'shift_from')
+            for a in attendances:
+                key = (a['emp_code'], str(a['date']))
+                attendance_map[key] = {'punch_in': a['punch_in'], 'shift_from': a['shift_from']}
+        data = PenaltySerializer(qs, many=True, context={'attendance_map': attendance_map}).data
+        return Response(data)
+
+
+class PenaltyCreateView(APIView):
+    """Create manual penalty: emp_code, deduction_amount, description, date (optional, default today)."""
+    def post(self, request):
+        _, allowed_emp_codes = get_request_admin(request)
+        emp_code = (request.data.get('emp_code') or '').strip()
+        amount = request.data.get('deduction_amount') or request.data.get('amount')
+        description = (request.data.get('description') or '').strip() or 'Manual penalty'
+        penalty_date = request.data.get('date')
+        if not emp_code:
+            return Response({'error': 'emp_code required'}, status=400)
+        if allowed_emp_codes is not None and emp_code not in allowed_emp_codes:
+            return Response({'error': 'Not allowed for this employee'}, status=403)
+        try:
+            amount = Decimal(str(amount))
+        except Exception:
+            return Response({'error': 'Invalid deduction_amount'}, status=400)
+        if amount < 0:
+            return Response({'error': 'deduction_amount cannot be negative'}, status=400)
+        if penalty_date:
+            if isinstance(penalty_date, str):
+                try:
+                    penalty_date = date.fromisoformat(penalty_date)
+                except ValueError:
+                    return Response({'error': 'Invalid date'}, status=400)
+        else:
+            penalty_date = timezone.localdate()
+        obj = Penalty.objects.create(
+            emp_code=emp_code,
+            date=penalty_date,
+            month=penalty_date.month,
+            year=penalty_date.year,
+            minutes_late=0,
+            deduction_amount=amount,
+            rate_used=None,
+            description=description[:500],
+            is_manual=True,
+        )
+        log_activity(request, 'create', 'penalty', 'penalty', emp_code, details={'amount': str(amount), 'date': str(penalty_date)})
+        return Response(PenaltySerializer(obj).data, status=201)
+
+
+class PenaltyDetailView(APIView):
+    """Get, update, or delete a penalty record (for adjustment page)."""
+    def get(self, request, pk):
+        _, allowed_emp_codes = get_request_admin(request)
+        try:
+            obj = Penalty.objects.get(pk=pk)
+        except Penalty.DoesNotExist:
+            return Response({'error': 'Not found'}, status=404)
+        if allowed_emp_codes is not None and obj.emp_code not in allowed_emp_codes:
+            return Response({'error': 'Not allowed'}, status=403)
+        return Response(PenaltySerializer(obj).data)
+
+    def patch(self, request, pk):
+        _, allowed_emp_codes = get_request_admin(request)
+        try:
+            obj = Penalty.objects.get(pk=pk)
+        except Penalty.DoesNotExist:
+            return Response({'error': 'Not found'}, status=404)
+        if allowed_emp_codes is not None and obj.emp_code not in allowed_emp_codes:
+            return Response({'error': 'Not allowed'}, status=403)
+        amount = request.data.get('deduction_amount') or request.data.get('amount')
+        description = request.data.get('description')
+        if amount is not None:
+            try:
+                obj.deduction_amount = Decimal(str(amount))
+                if obj.deduction_amount < 0:
+                    return Response({'error': 'deduction_amount cannot be negative'}, status=400)
+            except Exception:
+                return Response({'error': 'Invalid deduction_amount'}, status=400)
+        if description is not None:
+            obj.description = str(description)[:500]
+        obj.save()
+        log_activity(request, 'update', 'penalty', 'penalty', obj.emp_code, details={'id': pk})
+        return Response(PenaltySerializer(obj).data)
+
+    def delete(self, request, pk):
+        _, allowed_emp_codes = get_request_admin(request)
+        try:
+            obj = Penalty.objects.get(pk=pk)
+        except Penalty.DoesNotExist:
+            return Response({'error': 'Not found'}, status=404)
+        if allowed_emp_codes is not None and obj.emp_code not in allowed_emp_codes:
+            return Response({'error': 'Not allowed'}, status=403)
+        emp_code = obj.emp_code
+        obj.delete()
+        log_activity(request, 'delete', 'penalty', 'penalty', emp_code, details={'id': pk})
+        return Response(status=204)
+
+
 # ---------- Run reward engine (manual trigger) ----------
 class RunRewardEngineView(APIView):
     def post(self, request):
@@ -1170,6 +1384,7 @@ class ExportPayrollExcelView(APIView):
         single_date = request.query_params.get('date', '').strip()
         date_from = request.query_params.get('date_from', '').strip()
         date_to = request.query_params.get('date_to', '').strip()
+        emp_code_param = request.query_params.get('emp_code', '').strip()
 
         month = int(month) if month else None
         year = int(year) if year else None
@@ -1192,17 +1407,30 @@ class ExportPayrollExcelView(APIView):
             except ValueError:
                 pass
 
+        if emp_code_param and allowed_emp_codes is not None and emp_code_param not in allowed_emp_codes:
+            return Response({'error': 'Not allowed to export this employee'}, status=403)
         try:
             buf = generate_payroll_excel(
                 date_from=d_from, date_to=d_to, single_date=d_single,
                 month=month, year=year,
-                allowed_emp_codes=allowed_emp_codes
+                allowed_emp_codes=allowed_emp_codes,
+                emp_code=emp_code_param or None
             )
         except Exception as e:
             return Response({'error': str(e)}, status=500)
 
         filename = 'payroll_export.xlsx'
-        if month and year:
+        if emp_code_param:
+            safe_ec = emp_code_param.replace('/', '_')
+            if month and year:
+                filename = f'payroll_{safe_ec}_{year}_{month:02d}.xlsx'
+            elif d_single:
+                filename = f'payroll_{safe_ec}_{d_single.isoformat()}.xlsx'
+            elif d_from or d_to:
+                filename = f'payroll_{safe_ec}_range.xlsx'
+            else:
+                filename = f'payroll_{safe_ec}.xlsx'
+        elif month and year:
             filename = f'payroll_{year}_{month:02d}.xlsx'
         elif d_single:
             filename = f'payroll_{d_single.isoformat()}.xlsx'
@@ -1211,6 +1439,58 @@ class ExportPayrollExcelView(APIView):
         log_activity(request, 'export', 'export', 'payroll', '', details={'filename': filename, 'month': month, 'year': year})
         response = HttpResponse(buf.getvalue(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
+
+
+class ExportEmployeeSalaryHistoryView(APIView):
+    """Export full salary history for one employee as CSV."""
+    def get(self, request):
+        import csv
+        from django.http import HttpResponse
+        _, allowed_emp_codes = get_request_admin(request)
+        emp_code = request.query_params.get('emp_code', '').strip()
+        if not emp_code:
+            return Response({'error': 'emp_code required'}, status=400)
+        if allowed_emp_codes is not None and emp_code not in allowed_emp_codes:
+            return Response({'error': 'Not allowed to export this employee'}, status=403)
+        emp = Employee.objects.filter(emp_code=emp_code).first()
+        if not emp:
+            return Response({'error': 'Employee not found'}, status=404)
+        salaries = Salary.objects.filter(emp_code=emp_code).order_by('-year', '-month')
+        sal_list = list(SalarySerializer(salaries, many=True).data)
+        for row in sal_list:
+            m, y = row.get('month'), row.get('year')
+            adv = get_advance_totals_by_emp(month=m, year=y)
+            advance_total = adv.get(emp_code, Decimal('0'))
+            row['advance_total'] = str(advance_total)
+            penalty_total = Decimal('0')
+            if (row.get('salary_type') or '').strip() == 'Hourly':
+                agg = Penalty.objects.filter(emp_code=emp_code, month=m, year=y).aggregate(s=Sum('deduction_amount'))
+                if agg.get('s') is not None:
+                    penalty_total = agg['s']
+            row['penalty_deduction'] = str(penalty_total)
+            gross, _ = _gross_and_rate(
+                row.get('salary_type'),
+                row.get('base_salary'),
+                row.get('total_working_hours'),
+                row.get('overtime_hours'),
+                row.get('bonus'),
+            )
+            row['gross_salary'] = str(round(gross, 2))
+            row['net_pay'] = str(round(gross - advance_total - penalty_total, 2))
+        fieldnames = ['emp_code', 'name', 'month', 'year', 'salary_type', 'base_salary', 'days_present',
+                      'total_working_hours', 'overtime_hours', 'bonus', 'advance_total', 'penalty_deduction',
+                      'gross_salary', 'net_pay']
+        for row in sal_list:
+            row['name'] = emp.name or ''
+        response = HttpResponse(content_type='text/csv')
+        safe_ec = emp_code.replace('/', '_')
+        response['Content-Disposition'] = f'attachment; filename="salary_history_{safe_ec}.csv"'
+        writer = csv.DictWriter(response, fieldnames=fieldnames, extrasaction='ignore')
+        writer.writeheader()
+        for row in sal_list:
+            writer.writerow({k: row.get(k, '') for k in fieldnames})
+        log_activity(request, 'export', 'export', 'employee_salary_history', emp_code, details={'rows': len(sal_list)})
         return response
 
 
@@ -1301,17 +1581,21 @@ class EmployeeProfileView(APIView):
             adv = get_advance_totals_by_emp(month=m, year=y)
             advance_total = adv.get(emp_code, Decimal('0'))
             row['advance_total'] = str(advance_total)
-            base = Decimal(str(row.get('base_salary') or 0))
-            bonus = Decimal(str(row.get('bonus') or 0))
-            ot_hrs = Decimal(str(row.get('overtime_hours') or 0))
-            total_hrs = Decimal(str(row.get('total_working_hours') or 0))
+            penalty_total = Decimal('0')
             if (row.get('salary_type') or '').strip() == 'Hourly':
-                gross = (total_hrs * base) + bonus
-            else:
-                hourly_rate = base / Decimal('208') if base else Decimal('0')
-                gross = (total_hrs * hourly_rate) + bonus + (ot_hrs * hourly_rate)
+                agg = Penalty.objects.filter(emp_code=emp_code, month=m, year=y).aggregate(s=Sum('deduction_amount'))
+                if agg.get('s') is not None:
+                    penalty_total = agg['s']
+            row['penalty_deduction'] = str(penalty_total)
+            gross, _ = _gross_and_rate(
+                row.get('salary_type'),
+                row.get('base_salary'),
+                row.get('total_working_hours'),
+                row.get('overtime_hours'),
+                row.get('bonus'),
+            )
             row['gross_salary'] = str(round(gross, 2))
-            row['net_pay'] = str(round(gross - advance_total, 2))
+            row['net_pay'] = str(round(gross - advance_total - penalty_total, 2))
         return Response({
             'employee': EmployeeSerializer(emp).data,
             'attendance': AttendanceSerializer(att_list, many=True).data,
