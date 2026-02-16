@@ -1,0 +1,182 @@
+/* Activity Log page: horizontal filter bar and table */
+.activityLogPage {
+  max-width: 100%;
+}
+
+.activityLogFilters {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+  padding: 1rem;
+  background: var(--cardBg, #1a1d24);
+  border-radius: 10px;
+  border: 1px solid var(--border, #2d323c);
+}
+
+.activityLogFilters .filterGroup {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.activityLogFilters .filterGroup label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--textMuted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.35rem;
+}
+
+.activityLogFilters select,
+.activityLogFilters input[type="number"] {
+  padding: 0.5rem 0.65rem;
+  font-size: 0.875rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  min-width: 100px;
+}
+
+.activityLogFilters select {
+  min-width: 120px;
+}
+
+.activityLogFilters .limitSelect {
+  min-width: 80px;
+}
+
+.activityLogFilters .adminIdInput {
+  min-width: 90px;
+  width: 90px;
+}
+
+.activityLogFilters .refreshBtn,
+.activityLogFilters .activityLogClearBtn {
+  margin-left: 0.25rem;
+}
+
+.activityLogFilters .activityLogClearBtn {
+  color: var(--textMuted);
+  border-color: var(--border);
+}
+
+.activityLogFilters .activityLogClearBtn:hover {
+  color: var(--text);
+  border-color: var(--textMuted);
+}
+
+/* Details cell: truncated text + View full button */
+.activityLogDetailsCell {
+  max-width: 220px;
+  vertical-align: middle;
+}
+
+.activityLogDetailsCell .activityLogDetailsPreview {
+  display: inline-block;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+  margin-right: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.activityLogDetailsCell .activityLogViewDetailsBtn {
+  padding: 0.2rem 0.5rem;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.activityLogTableWrap {
+  overflow-x: auto;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--cardBg);
+}
+
+.activityLogTableWrap .table {
+  margin-bottom: 0;
+}
+
+.activityLogTableWrap .table th {
+  white-space: nowrap;
+}
+
+/* Full details modal */
+.activityLogDetailBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+
+.activityLogDetailModal {
+  max-width: 560px;
+  width: 100%;
+  max-height: 90vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.activityLogDetailTitle {
+  margin: 0 0 1rem 0;
+  font-size: 1.1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.activityLogDetailMeta {
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}
+
+.activityLogDetailMeta p {
+  margin: 0.25rem 0;
+}
+
+.activityLogDetailJsonWrap {
+  flex: 1;
+  min-height: 120px;
+  overflow: auto;
+  margin-bottom: 1rem;
+}
+
+.activityLogDetailJsonLabel {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--textMuted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.35rem;
+}
+
+.activityLogDetailJson {
+  margin: 0;
+  padding: 0.75rem;
+  font-size: 0.8rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--text);
+}
+
+.activityLogDetailActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}

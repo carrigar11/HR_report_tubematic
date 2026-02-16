@@ -49,54 +49,89 @@
 .exportHowWhereCard {
   max-width: 720px;
   margin: 0 auto 1.75rem;
-  padding: 0.85rem 1rem;
-  border-radius: var(--radius);
+  padding: 0;
+  border-radius: 12px;
   border: 1px solid var(--border);
-  background: var(--surface);
+  border-left: 3px solid var(--accent);
+  background: var(--cardBg, #1a1d24);
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
 .exportHowWhereSummary {
-  font-size: 0.9rem;
+  font-size: 1rem;
   font-weight: 600;
   color: var(--text);
   cursor: pointer;
   list-style: none;
-  padding: 0.2rem 0;
+  padding: 1rem 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  transition: background 0.2s ease;
+  user-select: none;
+}
+
+.exportHowWhereSummary:hover {
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .exportHowWhereSummary::-webkit-details-marker { display: none; }
 
 .exportHowWhereSummary::before {
-  content: '▸ ';
-  display: inline-block;
-  width: 1em;
-  color: var(--textMuted);
+  content: '▸';
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25em;
+  font-size: 1rem;
+  color: var(--accent);
+  transition: transform 0.2s ease;
 }
 
 .exportHowWhereCard[open] .exportHowWhereSummary::before {
-  content: '▾ ';
+  content: '▾';
+  transform: none;
+}
+
+.exportHowWhereCard[open] .exportHowWhereSummary {
+  border-bottom: 1px solid var(--border);
 }
 
 .exportHowWhereBody {
-  margin-top: 0.85rem;
-  padding-top: 0.85rem;
-  border-top: 1px solid var(--border);
-  font-size: 0.82rem;
+  margin: 0;
+  padding: 1.25rem 1.5rem;
+  font-size: 0.875rem;
   color: var(--textMuted);
-  line-height: 1.6;
+  line-height: 1.65;
+  background: rgba(0, 0, 0, 0.15);
 }
 
-.exportHowWhereBody p { margin: 0 0 0.5rem; }
-.exportHowWhereBody p:first-child { margin-top: 0; }
-.exportHowWhereBody ul { margin: 0.35rem 0 0 1rem; padding-left: 0.5rem; }
-.exportHowWhereBody li { margin-bottom: 0.35rem; }
-.exportHowWhereBody code {
-  font-size: 0.78em;
-  padding: 0.15em 0.4em;
-  border-radius: 4px;
-  background: var(--bg);
+.exportHowWhereBody p {
+  margin: 0 0 0.6rem;
   color: var(--text);
+  font-size: 0.9rem;
+}
+
+.exportHowWhereBody p:first-child { margin-top: 0; }
+.exportHowWhereBody p + ul { margin-top: 0.25rem; }
+.exportHowWhereBody ul {
+  margin: 0 0 1rem 1.25rem;
+  padding-left: 0.25rem;
+}
+.exportHowWhereBody ul:last-child { margin-bottom: 0; }
+.exportHowWhereBody li {
+  margin-bottom: 0.5rem;
+}
+.exportHowWhereBody li:last-child { margin-bottom: 0; }
+.exportHowWhereBody code {
+  font-size: 0.82em;
+  padding: 0.2em 0.5em;
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--accent);
   border: 1px solid var(--border);
+  font-family: ui-monospace, 'Cascadia Code', 'SF Mono', monospace;
 }
 
 /* Per-card: What's in this file & where it comes from */

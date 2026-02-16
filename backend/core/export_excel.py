@@ -142,7 +142,7 @@ def _add_bonus_to_payroll_rows(payroll_rows, month, year):
     if not payroll_rows or month is None or year is None:
         return
     emp_codes = [r['emp_code'] for r in payroll_rows]
-    salary_type_by_emp = {e.emp_code: (e.salary_type or 'Monthly').strip() or 'Monthly' for e in Employee.objects.filter(emp_code__in=emp_codes).values('emp_code', 'salary_type')}
+    salary_type_by_emp = {e['emp_code']: (e.get('salary_type') or 'Monthly').strip() or 'Monthly' for e in Employee.objects.filter(emp_code__in=emp_codes).values('emp_code', 'salary_type')}
     bonus_by_emp = {}
     for s in Salary.objects.filter(emp_code__in=emp_codes, month=month, year=year).values('emp_code', 'bonus', 'base_salary'):
         bonus_by_emp[s['emp_code']] = (float(s.get('bonus') or 0), float(s.get('base_salary') or 0))
@@ -163,14 +163,20 @@ def _add_bonus_to_payroll_rows(payroll_rows, month, year):
         row['total'] = round((row.get('total') or 0) + bonus_money, 2)
 
 
-def write_payroll_sheet(ws, sorted_dates, payroll_rows):
+def write_payroll_sheet(ws, sorted_dates, payroll_rows, include_punch_columns=False):
     header_fill = PatternFill(start_color='366092', end_color='366092', fill_type='solid')
     header_font = Font(bold=True, color='FFFFFF')
     headers = ['Emp Code', 'STAFF', 'Pla', 'Status', 'Under Work', 'Department', 'Sala', 'Du']
+    if include_punch_columns:
+        headers.extend(['Punch In', 'Punch Out'])
     for d in sorted_dates:
         headers.append(d.strftime('%d-%m-%y') if hasattr(d, 'strftime') else str(d))
     headers.append('TOTAL')
     headers.append('Advance')
+
+    base_date_col = 11 if include_punch_columns else 9
+    total_col = base_date_col + len(sorted_dates)
+    advance_col = total_col + 1
 
     for col_idx, h in enumerate(headers, 1):
         c = ws.cell(row=1, column=col_idx, value=h)
@@ -186,14 +192,17 @@ def write_payroll_sheet(ws, sorted_dates, payroll_rows):
         ws.cell(row=row_idx, column=6, value=row.get('department'))
         ws.cell(row=row_idx, column=7, value=row.get('sala'))
         ws.cell(row=row_idx, column=8, value=row.get('du'))
-        for col_idx, day_val in enumerate(row.get('_day_totals', []), 9):
+        if include_punch_columns:
+            ws.cell(row=row_idx, column=9, value=row.get('punch_in', ''))
+            ws.cell(row=row_idx, column=10, value=row.get('punch_out', ''))
+        for col_idx, day_val in enumerate(row.get('_day_totals', []), base_date_col):
             ws.cell(row=row_idx, column=col_idx, value=day_val)
-        ws.cell(row=row_idx, column=9 + len(sorted_dates), value=row.get('total'))
-        ws.cell(row=row_idx, column=10 + len(sorted_dates), value=row.get('advance'))
+        ws.cell(row=row_idx, column=total_col, value=row.get('total'))
+        ws.cell(row=row_idx, column=advance_col, value=row.get('advance'))
 
     tot_row = len(payroll_rows) + 2
     ws.cell(row=tot_row, column=1, value='Total').font = Font(bold=True)
-    for col_idx in range(2, 9):
+    for col_idx in range(2, base_date_col):
         ws.cell(row=tot_row, column=col_idx, value='')
     col_totals = [0.0] * len(sorted_dates)
     grand_total = 0.0
@@ -204,14 +213,17 @@ def write_payroll_sheet(ws, sorted_dates, payroll_rows):
                 col_totals[i] += v
         grand_total += row.get('total') or 0
         advance_total += row.get('advance') or 0
-    for col_idx, tot in enumerate(col_totals, 9):
+    for col_idx, tot in enumerate(col_totals, base_date_col):
         ws.cell(row=tot_row, column=col_idx, value=round(tot, 2)).font = Font(bold=True)
-    ws.cell(row=tot_row, column=9 + len(sorted_dates), value=round(grand_total, 2)).font = Font(bold=True)
-    ws.cell(row=tot_row, column=10 + len(sorted_dates), value=round(advance_total, 2)).font = Font(bold=True)
+    ws.cell(row=tot_row, column=total_col, value=round(grand_total, 2)).font = Font(bold=True)
+    ws.cell(row=tot_row, column=advance_col, value=round(advance_total, 2)).font = Font(bold=True)
 
     ws.column_dimensions['A'].width = 12
     ws.column_dimensions['B'].width = 20
-    for col_idx in range(9, 9 + len(sorted_dates)):
+    if include_punch_columns:
+        ws.column_dimensions['I'].width = 10
+        ws.column_dimensions['J'].width = 10
+    for col_idx in range(base_date_col, total_col):
         ws.column_dimensions[get_column_letter(col_idx)].width = 12
 
 
@@ -377,6 +389,21 @@ def generate_payroll_excel_previous_day(allowed_emp_codes=None):
     for row in payroll_rows:
         row['total'] = emp_to_month_total.get(row['emp_code'], 0)
 
+    # For previous day only: add punch in/out per employee (single day data)
+    punch_map = {}
+    for a in att_yesterday.values('emp_code', 'date', 'punch_in', 'punch_out'):
+        key = (a['emp_code'], a['date'])
+        pi = a.get('punch_in')
+        po = a.get('punch_out')
+        punch_map[key] = (
+            pi.strftime('%H:%M') if pi else '',
+            po.strftime('%H:%M') if po else ''
+        )
+    for row in payroll_rows:
+        pin, pout = punch_map.get((row['emp_code'], yesterday), ('', ''))
+        row['punch_in'] = pin
+        row['punch_out'] = pout
+
     month_total_per_dept = {}
     for row in payroll_rows:
         dept = row.get('department') or ''
@@ -386,17 +413,17 @@ def generate_payroll_excel_previous_day(allowed_emp_codes=None):
         payroll_rows, sorted_dates, att_yesterday,
         month_total_per_dept=month_total_per_dept
     )
-    return _write_payroll_workbook(sorted_dates, payroll_rows, plant_rows)
+    return _write_payroll_workbook(sorted_dates, payroll_rows, plant_rows, include_punch_columns=True)
 
 
-def _write_payroll_workbook(sorted_dates, payroll_rows, plant_rows):
-    """Build workbook with Plant Report, Payroll, and per-dept sheets."""
+def _write_payroll_workbook(sorted_dates, payroll_rows, plant_rows, include_punch_columns=False):
+    """Build workbook with Plant Report, Payroll, and per-dept sheets. include_punch_columns: add Punch In/Out cols (e.g. previous day)."""
     wb = Workbook()
     ws_plant = wb.active
     ws_plant.title = 'Plant Report'
     write_plant_report_sheet(ws_plant, sorted_dates, plant_rows)
     ws = wb.create_sheet(title='Payroll')
-    write_payroll_sheet(ws, sorted_dates, payroll_rows)
+    write_payroll_sheet(ws, sorted_dates, payroll_rows, include_punch_columns=include_punch_columns)
     depts = sorted(set(r.get('department') or '' for r in payroll_rows))
     dept_list = [d for d in depts if d]
     if '' in depts:
@@ -408,7 +435,7 @@ def _write_payroll_workbook(sorted_dates, payroll_rows, plant_rows):
         title = (dept if dept else 'No_Dept')[:31]
         title = ''.join(c for c in title if c not in r'\/:*?[]')
         ws_dept = wb.create_sheet(title=title)
-        write_payroll_sheet(ws_dept, sorted_dates, subset)
+        write_payroll_sheet(ws_dept, sorted_dates, subset, include_punch_columns=include_punch_columns)
     buf = BytesIO()
     wb.save(buf)
     buf.seek(0)
