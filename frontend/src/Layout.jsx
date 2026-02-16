@@ -33,7 +33,6 @@ const nav = [
   { to: '/absentee-alert', label: 'Absentee Alert', icon: IconAlert, access: 'absentee_alert' },
   { to: '/adjustments', label: 'Adjustments', icon: IconEdit, access: 'adjustment' },
   { to: '/holidays', label: 'Holidays', icon: IconHoliday, access: 'holidays' },
-  { to: '/settings', label: 'Settings', icon: IconSettings, access: 'settings' },
   { to: '/export', label: 'Export', icon: IconExport, access: 'export' },
   { to: '/manage-admins', label: 'Manage Admins', icon: IconUser, access: 'manage_admins' },
   { to: '/activity-log', label: 'Activity Log', icon: IconClock, access: 'manage_admins' },

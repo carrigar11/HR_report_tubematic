@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from .models import (
     Admin, Employee, Attendance, Salary, SalaryAdvance, Adjustment,
-    Penalty, PerformanceReward, Holiday, SystemSetting, AuditLog
+    Penalty, PerformanceReward, Holiday, SystemSetting, EmailSmtpConfig, AuditLog
 )
 
 
@@ -230,6 +230,17 @@ class SystemSettingSerializer(serializers.ModelSerializer):
     class Meta:
         model = SystemSetting
         fields = ['id', 'key', 'value', 'description', 'updated_at']
+
+
+class EmailSmtpConfigSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EmailSmtpConfig
+        fields = [
+            'id', 'smtp_server', 'smtp_port', 'auth_username', 'auth_password',
+            'force_sender', 'error_logfile', 'debug_logfile', 'is_active',
+            'created_at', 'updated_at',
+        ]
+        extra_kwargs = {'auth_password': {'write_only': False}}  # allow read for editing in settings
 
 
 class AuditLogSerializer(serializers.ModelSerializer):

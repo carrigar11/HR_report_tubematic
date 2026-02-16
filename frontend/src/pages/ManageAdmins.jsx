@@ -1,5 +1,5 @@
 import { useState, useEffect, Fragment } from 'react'
-import { admins as adminsApi } from '../api'
+import { admins as adminsApi, departments as departmentsApi } from '../api'
 import { IconEye, IconEyeOff, IconUser } from '../components/Icons'
 import './Table.css'
 import './ManageAdmins.css'
@@ -47,6 +47,7 @@ export default function ManageAdmins() {
   const [createLoading, setCreateLoading] = useState(false)
   const [createError, setCreateError] = useState('')
   const [showCreatePassword, setShowCreatePassword] = useState(false)
+  const [departmentOptions, setDepartmentOptions] = useState([])
 
   // Edit profile (name, email, password, department, role, access)
   const [editProfileAdmin, setEditProfileAdmin] = useState(null)
@@ -74,6 +75,12 @@ export default function ManageAdmins() {
 
   useEffect(() => {
     loadList()
+  }, [])
+
+  useEffect(() => {
+    departmentsApi.list()
+      .then((r) => setDepartmentOptions(r.data?.departments ?? []))
+      .catch(() => setDepartmentOptions([]))
   }, [])
 
   // When role changes in create form, apply role-based access preset
@@ -337,14 +344,32 @@ export default function ManageAdmins() {
                 />
               </div>
               <div className="manageAdminsField">
-                <label>Department * (for Dept Admin)</label>
-                <input
-                  type="text"
+                <label>Department (for Dept Admin)</label>
+                <select
                   className="input"
-                  value={createDepartment}
-                  onChange={(e) => setCreateDepartment(e.target.value)}
-                  placeholder="e.g. Production, HR, Stores"
-                />
+                  value={departmentOptions.includes(createDepartment) ? createDepartment : (createDepartment ? '__other__' : '')}
+                  onChange={(e) => {
+                    const v = e.target.value
+                    if (v === '__other__') setCreateDepartment('')
+                    else setCreateDepartment(v)
+                  }}
+                >
+                  <option value="">Select department</option>
+                  {departmentOptions.map((d) => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                  <option value="__other__">— Other (type below) —</option>
+                </select>
+                {(createDepartment && !departmentOptions.includes(createDepartment)) && (
+                  <input
+                    type="text"
+                    className="input"
+                    value={createDepartment}
+                    onChange={(e) => setCreateDepartment(e.target.value)}
+                    placeholder="Type department name"
+                    style={{ marginTop: '0.5rem' }}
+                  />
+                )}
                 <span className="manageAdminsHint">They will only see data for this department.</span>
               </div>
               <div className="manageAdminsField">
@@ -527,13 +552,32 @@ export default function ManageAdmins() {
                   <h4 className="manageAdminsEditSectionTitle">Department &amp; Access</h4>
                   <div className="manageAdminsField">
                     <label>Department</label>
-                    <input
-                      type="text"
+                    <select
                       className="input"
-                      value={editDepartment}
-                      onChange={(e) => setEditDepartment(e.target.value)}
-                      placeholder="e.g. HR, Production"
-                    />
+                      value={departmentOptions.includes(editDepartment) ? editDepartment : (editDepartment ? '__other__' : '')}
+                      onChange={(e) => {
+                        const v = e.target.value
+                        if (v === '__other__') setEditDepartment('')
+                        else setEditDepartment(v)
+                      }}
+                    >
+                      <option value="">No department</option>
+                      {departmentOptions.map((d) => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                      <option value="__other__">— Other (type below) —</option>
+                    </select>
+                    {(editDepartment && !departmentOptions.includes(editDepartment)) && (
+                      <input
+                        type="text"
+                        className="input"
+                        value={editDepartment}
+                        onChange={(e) => setEditDepartment(e.target.value)}
+                        placeholder="Type department name"
+                        style={{ marginTop: '0.5rem' }}
+                      />
+                    )}
+                    <span className="manageAdminsHint">They will only see data for this department.</span>
                   </div>
                   <div className="manageAdminsField">
                     <label>Role &amp; access preset</label>

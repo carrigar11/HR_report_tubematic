@@ -11,6 +11,7 @@ Uses same DB as Django: set DB_NAME, DB_USER, DB_PASSWORD, DB_HOST, DB_PORT
 in backend/.env or environment (no default password).
 """
 
+import json
 import os
 import re
 from datetime import date, datetime
@@ -48,7 +49,7 @@ def _load_env():
 _load_env()
 DB_NAME = os.environ.get("DB_NAME", "hr_attendance_db")
 DB_USER = os.environ.get("DB_USER", "postgres")
-DB_PASSWORD = os.environ.get("DB_PASSWORD", "")
+DB_PASSWORD = os.environ.get("DB_PASSWORD", "Seeta#4597")
 DB_HOST = os.environ.get("DB_HOST", "localhost")
 DB_PORT = os.environ.get("DB_PORT", "5432")
 
@@ -57,10 +58,14 @@ TABLE_EXPORT_ORDER = [
     ("employees", "dept_name, emp_code"),
     ("attendance", "date DESC, emp_code"),
     ("salaries", "year DESC, month DESC, emp_code"),
+    ("salary_advances", "year DESC, month DESC, emp_code"),
     ("adjustment", "created_at DESC"),
+    ("shift_overtime_bonus", "date DESC, emp_code"),
+    ("penalty", "date DESC, emp_code"),
     ("performance_rewards", "created_at DESC"),
     ("holidays", "date"),
     ("system_settings", "key"),
+    ("email_smtp_config", "id"),
     ("admins", "id"),
     ("audit_log", "created_at DESC"),
 ]
@@ -115,6 +120,8 @@ def value_for_excel(v):
         return v.isoformat() if hasattr(v, "isoformat") else str(v)
     if hasattr(v, "isoformat"):  # time
         return str(v)[:5] if v else ""
+    if isinstance(v, (dict, list)):
+        return json.dumps(v) if v else ""
     return v
 
 

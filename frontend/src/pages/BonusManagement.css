@@ -508,6 +508,53 @@
   font-weight: 700;
 }
 
+.bmDetailSection {
+  margin-top: 1rem;
+  margin-bottom: 0.75rem;
+}
+.bmDetailSectionTitle {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.bmDetailTable {
+  width: 100%;
+  max-width: 640px;
+  font-size: 0.8rem;
+  border-collapse: collapse;
+}
+.bmDetailTable th,
+.bmDetailTable td {
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.bmDetailTable th {
+  font-weight: 600;
+  color: var(--textMuted);
+}
+.bmDetailTable td {
+  color: var(--text);
+}
+.bmDetailAttWrap {
+  overflow-x: auto;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.bmDetailMuted {
+  font-size: 0.8rem;
+  color: var(--textMuted);
+  margin: 0.35rem 0;
+}
+.bmDetailDesc {
+  max-width: 280px;
+  font-size: 0.75rem;
+  color: var(--textMuted);
+}
+
 /* Quick bonus buttons */
 .bmDetailQuickBonus {
   display: flex;

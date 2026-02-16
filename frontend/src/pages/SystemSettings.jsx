@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { settings, runRewardEngine, admins } from '../api'
-import { IconUser, IconSettings, IconTrophy } from '../components/Icons'
+import { settings, runRewardEngine, admins, smtpConfig } from '../api'
+import { IconUser, IconSettings, IconTrophy, IconMail } from '../components/Icons'
 import './Table.css'
 import './SystemSettings.css'
 
@@ -25,6 +25,21 @@ export default function SystemSettings() {
   const [editing, setEditing] = useState({})
   const [runLoading, setRunLoading] = useState(false)
   const [runResult, setRunResult] = useState('')
+
+  const [smtp, setSmtp] = useState(null)
+  const [smtpLoading, setSmtpLoading] = useState(true)
+  const [smtpSaving, setSmtpSaving] = useState(false)
+  const [smtpMessage, setSmtpMessage] = useState('')
+  const [smtpForm, setSmtpForm] = useState({
+    smtp_server: '',
+    smtp_port: 587,
+    auth_username: '',
+    auth_password: '',
+    force_sender: '',
+    error_logfile: '',
+    debug_logfile: '',
+    is_active: true,
+  })
 
   const adminId = (() => {
     try {
@@ -58,6 +73,26 @@ export default function SystemSettings() {
       .then((r) => setList(r.data.results ?? r.data ?? []))
       .catch(() => setList([]))
       .finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => {
+    smtpConfig.get()
+      .then((r) => {
+        const d = r.data
+        setSmtp(d)
+        setSmtpForm({
+          smtp_server: d.smtp_server || '',
+          smtp_port: d.smtp_port ?? 587,
+          auth_username: d.auth_username || '',
+          auth_password: d.auth_password || '',
+          force_sender: d.force_sender || '',
+          error_logfile: d.error_logfile || '',
+          debug_logfile: d.debug_logfile || '',
+          is_active: d.is_active !== false,
+        })
+      })
+      .catch(() => setSmtp(null))
+      .finally(() => setSmtpLoading(false))
   }, [])
 
   const handleSaveProfile = async () => {
@@ -114,6 +149,37 @@ export default function SystemSettings() {
       setRunResult('Error: ' + (err.response?.data?.detail || err.message))
     } finally {
       setRunLoading(false)
+    }
+  }
+
+  const handleSaveSmtp = async (e) => {
+    e.preventDefault()
+    if (!smtp?.id) {
+      setSmtpMessage('No SMTP config to update. Add one in Django Admin first.')
+      return
+    }
+    setSmtpSaving(true)
+    setSmtpMessage('')
+    try {
+      const payload = {
+        id: smtp.id,
+        smtp_server: smtpForm.smtp_server.trim() || 'smtp.gmail.com',
+        smtp_port: Number(smtpForm.smtp_port) || 587,
+        auth_username: smtpForm.auth_username.trim(),
+        force_sender: smtpForm.force_sender.trim(),
+        error_logfile: smtpForm.error_logfile.trim(),
+        debug_logfile: smtpForm.debug_logfile.trim(),
+        is_active: smtpForm.is_active,
+      }
+      if (smtpForm.auth_password) payload.auth_password = smtpForm.auth_password
+      const { data } = await smtpConfig.update(payload)
+      setSmtp(data)
+      setSmtpForm((f) => ({ ...f, auth_password: '' }))
+      setSmtpMessage('SMTP config saved.')
+    } catch (err) {
+      setSmtpMessage(err.response?.data?.error || err.response?.data?.detail || err.message || 'Failed to save')
+    } finally {
+      setSmtpSaving(false)
     }
   }
 
@@ -262,6 +328,67 @@ export default function SystemSettings() {
               </tbody>
             </table>
           </div>
+        )}
+      </section>
+
+      {/* Email SMTP config */}
+      <section className="settingsSection card settingsSectionSmtp">
+        <div className="settingsSectionTitleRow">
+          <span className="settingsSectionIcon settingsSectionIconSmtp"><IconMail /></span>
+          <div>
+            <h3 className="settingsSectionTitle">Email SMTP (send mail)</h3>
+            <p className="muted settingsSectionDesc">SMTP credentials used to push email. Change and save below.</p>
+          </div>
+        </div>
+        {smtpLoading ? (
+          <p className="muted">Loading…</p>
+        ) : !smtp ? (
+          <p className="muted">No SMTP config found. Add one in Django Admin (Core → Email SMTP configs) or run migrations.</p>
+        ) : (
+          <form onSubmit={handleSaveSmtp} className="smtpForm">
+            <div className="smtpFormRow">
+              <div className="profileField">
+                <label className="label">SMTP server</label>
+                <input type="text" className="input" value={smtpForm.smtp_server} onChange={(e) => setSmtpForm((f) => ({ ...f, smtp_server: e.target.value }))} placeholder="smtp.gmail.com" />
+              </div>
+              <div className="profileField" style={{ maxWidth: 100 }}>
+                <label className="label">Port</label>
+                <input type="number" className="input" value={smtpForm.smtp_port} onChange={(e) => setSmtpForm((f) => ({ ...f, smtp_port: e.target.value }))} min={1} max={65535} />
+              </div>
+            </div>
+            <div className="profileField">
+              <label className="label">Auth username (email)</label>
+              <input type="text" className="input" value={smtpForm.auth_username} onChange={(e) => setSmtpForm((f) => ({ ...f, auth_username: e.target.value }))} placeholder="your@gmail.com" />
+            </div>
+            <div className="profileField">
+              <label className="label">Auth password</label>
+              <input type="password" className="input" value={smtpForm.auth_password} onChange={(e) => setSmtpForm((f) => ({ ...f, auth_password: e.target.value }))} placeholder="Leave blank to keep current" />
+            </div>
+            <div className="profileField">
+              <label className="label">Force sender (optional)</label>
+              <input type="text" className="input" value={smtpForm.force_sender} onChange={(e) => setSmtpForm((f) => ({ ...f, force_sender: e.target.value }))} placeholder="From address" />
+            </div>
+            <div className="smtpFormRow">
+              <div className="profileField">
+                <label className="label">Error log file</label>
+                <input type="text" className="input" value={smtpForm.error_logfile} onChange={(e) => setSmtpForm((f) => ({ ...f, error_logfile: e.target.value }))} placeholder="error.log" />
+              </div>
+              <div className="profileField">
+                <label className="label">Debug log file</label>
+                <input type="text" className="input" value={smtpForm.debug_logfile} onChange={(e) => setSmtpForm((f) => ({ ...f, debug_logfile: e.target.value }))} placeholder="debug.log" />
+              </div>
+            </div>
+            <div className="profileField smtpFormActive">
+              <label className="label checkboxLabel">
+                <input type="checkbox" checked={smtpForm.is_active} onChange={(e) => setSmtpForm((f) => ({ ...f, is_active: e.target.checked }))} />
+                <span>Use this config when sending email</span>
+              </label>
+            </div>
+            <div className="profileFormActions">
+              <button type="submit" className="btn btn-primary" disabled={smtpSaving}>{smtpSaving ? 'Saving…' : 'Save SMTP config'}</button>
+            </div>
+            {smtpMessage && <p className={`profileMessage ${smtpMessage.includes('Failed') || smtpMessage.includes('No SMTP') ? 'error' : 'success'}`}>{smtpMessage}</p>}
+          </form>
         )}
       </section>
 

@@ -13,12 +13,17 @@ api.interceptors.request.use((config) => {
       const admin = JSON.parse(stored)
       if (admin && admin.id != null) config.headers['X-Admin-Id'] = String(admin.id)
     }
+  
   } catch (_) {}
   return config
 })
 
 export const auth = {
   login: (email, password) => api.post('/auth/login/', { email, password }),
+}
+
+export const departments = {
+  list: () => api.get('/departments/'),
 }
 
 export const admins = {
@@ -94,6 +99,7 @@ export const leaderboard = () => api.get('/leaderboard/')
 export const giveBonus = (emp_code, bonus_hours) => api.post('/leaderboard/bonus/', { emp_code, bonus_hours })
 export const bonus = {
   overview: (month, year, search = '') => api.get('/bonus/overview/', { params: { month, year, ...(search ? { search } : {}) } }),
+  employeeDetails: (emp_code, month, year) => api.get('/bonus/employee-details/', { params: { emp_code, month, year } }),
   give: (emp_code, bonus_hours) => api.post('/leaderboard/bonus/', { emp_code, bonus_hours }),
   set: (emp_code, bonus_hours) => api.post('/bonus/set/', { emp_code, bonus_hours }),
 }
@@ -121,6 +127,11 @@ export const holidays = {
 export const settings = {
   list: () => api.get('/settings/'),
   update: (key, data) => api.patch(`/settings/${key}/`, data),
+}
+
+export const smtpConfig = {
+  get: () => api.get('/settings/smtp/'),
+  update: (data) => api.patch('/settings/smtp/', data),
 }
 
 export const exportReport = (params) => api.get('/export/', { params, responseType: 'blob' })

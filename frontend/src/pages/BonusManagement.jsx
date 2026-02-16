@@ -33,8 +33,10 @@ export default function BonusManagement() {
   const [editVal, setEditVal] = useState('')
   const [editLoading, setEditLoading] = useState(false)
 
-  // Expanded row
+  // Expanded row + details data (when bonus given, OT, punch in/out)
   const [expanded, setExpanded] = useState(null)
+  const [detailData, setDetailData] = useState(null)
+  const [detailLoading, setDetailLoading] = useState(false)
 
   useEffect(() => {
     const t = setTimeout(() => setSearchDebounced(search.trim()), 300)
@@ -50,6 +52,19 @@ export default function BonusManagement() {
   }, [month, year, searchDebounced])
 
   useEffect(() => { fetchData() }, [fetchData])
+
+  useEffect(() => {
+    if (!expanded || !month || !year) {
+      setDetailData(null)
+      return
+    }
+    setDetailLoading(true)
+    setDetailData(null)
+    bonus.employeeDetails(expanded, month, year)
+      .then((r) => setDetailData(r.data))
+      .catch(() => setDetailData(null))
+      .finally(() => setDetailLoading(false))
+  }, [expanded, month, year])
 
   // Search employees for give-bonus panel
   useEffect(() => {
@@ -355,6 +370,72 @@ export default function BonusManagement() {
                                     <span className="bmDetailValue">{emp.salary_type || '—'}</span>
                                   </div>
                                 </div>
+                                {detailLoading && <p className="bmDetailMuted">Loading details…</p>}
+                                {!detailLoading && detailData && detailData.emp_code === emp.emp_code && (
+                                  <>
+                                    <div className="bmDetailSection">
+                                      <h4 className="bmDetailSectionTitle">When bonus was given</h4>
+                                      {((detailData.shift_ot_bonus || []).length > 0) ? (
+                                        <table className="bmDetailTable">
+                                          <thead>
+                                            <tr><th>Date</th><th>Bonus (hrs)</th><th>Reason</th></tr>
+                                          </thead>
+                                          <tbody>
+                                            {(detailData.shift_ot_bonus || []).map((r, idx) => (
+                                              <tr key={idx}>
+                                                <td>{r.date}</td>
+                                                <td>{Number(r.bonus_hours).toFixed(1)}h</td>
+                                                <td className="bmDetailDesc">{r.description || '—'}</td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      ) : <p className="bmDetailMuted">No shift OT bonus (12h+ days) this month.</p>}
+                                      {(detailData.manual_bonus_grants || []).length > 0 && (
+                                        <>
+                                          <span className="bmDetailLabel">Manual awards</span>
+                                          <table className="bmDetailTable">
+                                            <thead>
+                                              <tr><th>When</th><th>Hours added</th><th>New total</th></tr>
+                                            </thead>
+                                            <tbody>
+                                              {(detailData.manual_bonus_grants || []).map((g, idx) => (
+                                                <tr key={idx}>
+                                                  <td>{g.given_at ? new Date(g.given_at).toLocaleString() : '—'}</td>
+                                                  <td>+{g.hours || '?'}h</td>
+                                                  <td>{g.new_total || '?'}h</td>
+                                                </tr>
+                                              ))}
+                                            </tbody>
+                                          </table>
+                                        </>
+                                      )}
+                                    </div>
+                                    <div className="bmDetailSection">
+                                      <h4 className="bmDetailSectionTitle">Punch in / out &amp; OT (this month)</h4>
+                                      {(detailData.attendance || []).length > 0 ? (
+                                        <div className="bmDetailAttWrap">
+                                          <table className="bmDetailTable">
+                                            <thead>
+                                              <tr><th>Date</th><th>Punch in</th><th>Punch out</th><th>Working hrs</th><th>OT (hrs)</th></tr>
+                                            </thead>
+                                            <tbody>
+                                              {(detailData.attendance || []).map((a, idx) => (
+                                                <tr key={idx}>
+                                                  <td>{a.date}</td>
+                                                  <td>{a.punch_in || '—'}</td>
+                                                  <td>{a.punch_out || '—'}</td>
+                                                  <td>{Number(a.total_working_hours).toFixed(1)}h</td>
+                                                  <td>{Number(a.over_time).toFixed(1)}h</td>
+                                                </tr>
+                                              ))}
+                                            </tbody>
+                                          </table>
+                                        </div>
+                                      ) : <p className="bmDetailMuted">No attendance for this month.</p>}
+                                    </div>
+                                  </>
+                                )}
                                 <div className="bmDetailQuickBonus">
                                   <span className="bmDetailLabel">Quick Add Bonus</span>
                                   <div className="bmQuickBonusRow">

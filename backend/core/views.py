@@ -11,7 +11,8 @@ from decimal import Decimal
 
 from .models import (
     Admin, Employee, Attendance, Salary, SalaryAdvance, Adjustment,
-    ShiftOvertimeBonus, Penalty, PerformanceReward, Holiday, SystemSetting, AuditLog
+    ShiftOvertimeBonus, Penalty, PerformanceReward, Holiday, SystemSetting,
+    EmailSmtpConfig, AuditLog
 )
 from .serializers import (
     AdminSerializer, AdminProfileSerializer, AdminUpdateSerializer,
@@ -22,6 +23,7 @@ from .serializers import (
     SalarySerializer, SalaryAdvanceSerializer, AdjustmentSerializer,
     PenaltySerializer,
     PerformanceRewardSerializer, HolidaySerializer, SystemSettingSerializer,
+    EmailSmtpConfigSerializer,
     AdminLoginSerializer, AttendanceAdjustPayloadSerializer,
 )
 from .excel_upload import upload_employees_excel, upload_attendance_excel, upload_shift_excel, upload_force_punch_excel
@@ -127,6 +129,21 @@ class AdminProfileView(APIView):
 
 
 # ---------- Super admin: list/create/update other admins (access) ----------
+class DepartmentsListView(APIView):
+    """GET: list distinct department names from employees (for Manage Admins dropdown). Super admin only."""
+    def get(self, request):
+        current, _ = get_request_admin(request)
+        if not current or not current.is_super_admin:
+            return Response({'error': 'Super admin only'}, status=403)
+        depts = sorted(
+            set(
+                Employee.objects.exclude(dept_name='').exclude(dept_name__isnull=True)
+                .values_list('dept_name', flat=True).distinct()
+            )
+        )
+        return Response({'departments': [d.strip() for d in depts if (d or '').strip()]})
+
+
 class AdminListView(APIView):
     """GET: list all admins. POST: create new admin (super admin only)."""
     def get(self, request):
@@ -524,6 +541,41 @@ class SystemSettingViewSet(viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         log_activity(self.request, 'delete', 'settings', 'setting', instance.key, details={})
         instance.delete()
+
+
+# ---------- Email SMTP config (for Settings page) ----------
+class EmailSmtpConfigView(APIView):
+    """GET: return first active SMTP config (or first row). PATCH: update by id (body: id required)."""
+    def get(self, request):
+        current_admin, _ = get_request_admin(request)
+        if not current_admin or not (getattr(current_admin, 'is_super_admin', False) or (current_admin.access or {}).get('settings')):
+            return Response({'error': 'Not allowed'}, status=403)
+        config = EmailSmtpConfig.objects.filter(is_active=True).first()
+        if not config:
+            config = EmailSmtpConfig.objects.first()
+        if not config:
+            return Response({'detail': 'No SMTP config found. Add one in Django Admin or run migration.'}, status=404)
+        return Response(EmailSmtpConfigSerializer(config).data)
+
+    def patch(self, request):
+        current_admin, _ = get_request_admin(request)
+        if not current_admin or not (getattr(current_admin, 'is_super_admin', False) or (current_admin.access or {}).get('settings')):
+            return Response({'error': 'Not allowed'}, status=403)
+        pk = request.data.get('id')
+        if not pk:
+            config = EmailSmtpConfig.objects.filter(is_active=True).first() or EmailSmtpConfig.objects.first()
+        else:
+            try:
+                config = EmailSmtpConfig.objects.get(pk=pk)
+            except EmailSmtpConfig.DoesNotExist:
+                return Response({'error': 'SMTP config not found'}, status=404)
+        if not config:
+            return Response({'error': 'No SMTP config to update'}, status=404)
+        ser = EmailSmtpConfigSerializer(config, data=request.data, partial=True)
+        ser.is_valid(raise_exception=True)
+        ser.save()
+        log_activity(request, 'update', 'settings', 'email_smtp_config', '', details={'id': config.pk})
+        return Response(EmailSmtpConfigSerializer(config).data)
 
 
 # ---------- Attendance Adjust (audit trail) ----------
@@ -1188,6 +1240,80 @@ class BonusOverviewView(APIView):
                 'avg_bonus': avg_bonus,
             },
             'employees': employees,
+        })
+
+
+class BonusEmployeeDetailsView(APIView):
+    """GET: for Bonus page Details — when bonus was given (shift OT + manual), OT per day, punch in/out per day."""
+    def get(self, request):
+        _, allowed_emp_codes = get_request_admin(request)
+        emp_code = request.query_params.get('emp_code', '').strip()
+        month = request.query_params.get('month', '').strip()
+        year = request.query_params.get('year', '').strip()
+        if not emp_code or not month or not year:
+            return Response({'error': 'emp_code, month, year required'}, status=400)
+        try:
+            month, year = int(month), int(year)
+        except ValueError:
+            return Response({'error': 'Invalid month/year'}, status=400)
+        if allowed_emp_codes is not None and emp_code not in allowed_emp_codes:
+            return Response({'error': 'Not allowed for this employee'}, status=403)
+        from calendar import monthrange
+        _, last_day = monthrange(year, month)
+        month_start = date(year, month, 1)
+        month_end = date(year, month, last_day)
+
+        # Shift OT bonus: date, bonus_hours, description (when they were given bonus for 12h+ shift)
+        shift_ot_list = list(
+            ShiftOvertimeBonus.objects.filter(
+                emp_code=emp_code,
+                date__gte=month_start,
+                date__lte=month_end,
+            ).order_by('date').values('date', 'bonus_hours', 'description')
+        )
+        for r in shift_ot_list:
+            r['date'] = r['date'].isoformat()
+            r['bonus_hours'] = float(r['bonus_hours'] or 0)
+
+        # Manual bonus grants from audit log (when admin awarded bonus)
+        manual_grants = []
+        for log in AuditLog.objects.filter(
+            module='bonus',
+            target_id=emp_code,
+            action='update',
+        ).order_by('-created_at')[:50]:
+            details = log.details or {}
+            if details.get('action') != 'give_bonus':
+                continue
+            manual_grants.append({
+                'given_at': log.created_at.isoformat() if log.created_at else None,
+                'hours': details.get('hours'),
+                'new_total': details.get('new_bonus'),
+            })
+        manual_grants.reverse()
+
+        # Attendance for month: date, punch_in, punch_out, total_working_hours, over_time
+        att_list = list(
+            Attendance.objects.filter(
+                emp_code=emp_code,
+                date__gte=month_start,
+                date__lte=month_end,
+            ).order_by('date').values('date', 'punch_in', 'punch_out', 'total_working_hours', 'over_time')
+        )
+        for r in att_list:
+            r['date'] = r['date'].isoformat()
+            r['punch_in'] = str(r['punch_in'])[:5] if r.get('punch_in') else None
+            r['punch_out'] = str(r['punch_out'])[:5] if r.get('punch_out') else None
+            r['total_working_hours'] = float(r['total_working_hours'] or 0)
+            r['over_time'] = float(r['over_time'] or 0)
+
+        return Response({
+            'emp_code': emp_code,
+            'month': month,
+            'year': year,
+            'shift_ot_bonus': shift_ot_list,
+            'manual_bonus_grants': manual_grants,
+            'attendance': att_list,
         })
 
 
