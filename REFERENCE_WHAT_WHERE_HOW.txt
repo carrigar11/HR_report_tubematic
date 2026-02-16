@@ -1,0 +1,262 @@
+================================================================================
+HR ATTENDANCE SYSTEM — REFERENCE: WHAT IS USED WHERE, LOGIC, AND DATA FLOW
+================================================================================
+Read this to understand in ~10 min: OT calculation, shift calculation, punch
+in/out, bonus, penalty, salary gross, and where each is calculated, called,
+stored, and pushed. All file paths are under backend/core/ unless noted.
+
+================================================================================
+1. MAIN DATA MODELS (WHERE THINGS LIVE)
+================================================================================
+
+  attendance (table: attendance)
+    - punch_in, punch_out (time)     → set by: Excel upload, Adjustment API, Force-punch upload
+    - total_working_hours (decimal)  → set by: same; or from Excel "total working hours" column
+    - over_time (decimal)            → OT for THAT DAY (see §2)
+    - shift_from, shift_to (time)   → from Employee or existing row
+    - status (Present/Absent/...)
+
+  employees (table: employees)
+    - shift_from, shift_to, shift   → used when attendance has no shift
+    - salary_type: Hourly | Monthly | Fixed
+    - base_salary
+
+  salary (table: salaries)
+    - month, year, emp_code
+    - overtime_hours                 → SUM of attendance.over_time for that month
+    - total_working_hours            → SUM of attendance.total_working_hours
+    - bonus (decimal)               → HOURS (manual + auto). Money = bonus × hourly_rate
+    - days_present
+
+  shift_overtime_bonus (table: shift_overtime_bonus)
+    - emp_code, date, bonus_hours, description
+    - One row per (emp, date) when they got "12h+ shift" bonus (1h per 2h extra)
+
+  penalty (table: penalty)
+    - emp_code, date, minutes_late, deduction_amount, is_manual
+    - Late-coming: only Hourly; 2.5 Rs/min up to 300 Rs/month, then 5 Rs/min
+
+  salary_advance (table: salary_advances)
+    - emp_code, month, year, amount
+
+================================================================================
+2. PUNCH IN / PUNCH OUT AND TOTAL WORKING HOURS
+================================================================================
+
+  WHERE SET (total_working_hours and punch_in/punch_out):
+  -------------------------------------------------------
+  (A) views.py — AttendanceAdjustView.post()
+      - User changes punch_in / punch_out in Adjustment page.
+      - total_working_hours = out_h - in_h (decimal hours); if out < in, +24.
+      - over_time = _calc_overtime_from_punch(...)  [see §3]
+      - Then: recalculate_shift_overtime_bonus_for_date, recalculate_late_penalty_for_date.
+
+  (B) excel_upload.py — upload_attendance_excel()
+      - Reads Excel: punch in, punch out, optional "total working hours".
+      - If Excel has total working hours: uses _parse_working_hours or _safe_decimal.
+      - Else: total_working from punch diff via _working_hours_from_punch (if both present).
+      - over_time = _calc_overtime_for_employee(total_working, shift_from, shift_to, salary_type).
+      - After save: apply_shift_overtime_bonus_for_date, recalculate_late_penalty_for_date.
+
+  (C) excel_upload.py — upload_force_punch_excel()
+      - Overwrites punch_in, punch_out on EXISTING attendance rows.
+      - total_working: from Excel "total working hours" or keep existing.
+      - over_time = _calc_overtime_for_employee(total_working, existing shift, salary_type).
+      - After update: apply_shift_overtime_bonus_for_date, recalculate_late_penalty_for_date.
+
+  HELPERS:
+  - excel_upload._working_hours_from_punch(punch_in, punch_out) → Decimal hours (out - in, +24 if next day).
+  - views._time_to_decimal_hours(t) → float hours (e.g. 09:30 → 9.5).
+
+  WHERE USED:
+  - attendance.total_working_hours: salary_logic (Sum for month → Salary.total_working_hours),
+    shift_bonus (if > 12h → shift OT bonus), export_excel (daily earnings = rate × hours).
+  - punch_in/punch_out: penalty_logic (minutes late vs shift_from), serializers/APIs for display.
+
+================================================================================
+3. OVERTIME (OT) CALCULATION — ALL PLACES AND FORMULA
+================================================================================
+
+  RULE:
+  - Hourly: normal = 12h per day. OT = max(0, total_working_hours - 12). Stored as WHOLE hours (int).
+  - Monthly/Fixed: OT = total_working_hours - expected_shift_duration (whole hours). Expected = shift_to - shift_from (+24 if next day).
+
+  WHERE DEFINED:
+  ---------------
+  (1) views.py
+      - HOURLY_NORMAL_WORK_HOURS = 12
+      - _calc_overtime_from_punch(punch_in, punch_out, shift_from, shift_to, salary_type)
+        Uses: total_working = out_h - in_h (+24 if next day). Hourly: ot = total_working - 12 (int). Else: ot = total_working - _shift_duration_hours(shift_from, shift_to) (int).
+      - Used in: AttendanceAdjustView — when user saves punch in/out.
+
+  (2) excel_upload.py
+      - HOURLY_NORMAL_WORK_HOURS = 12
+      - _calc_overtime(total_working_hours, shift_from, shift_to) → for non-Hourly: twh - expected_shift (int).
+      - _calc_overtime_for_employee(twh, shift_from, shift_to, salary_type) → Hourly: max(0, twh-12) int; else _calc_overtime(...).
+      - Used in: upload_attendance_excel (when building att_data), upload_force_punch_excel (over_time for each row).
+      - Also in: _recalc_overtime_for_month() — loops attendance, recomputes over_time via _calc_overtime_for_employee, updates if changed.
+
+  (3) management/commands/recalc_monthly_ot.py
+      - For each Attendance in month where employee is Hourly: new_ot = _calc_overtime_for_employee(twh, shift_from, shift_to, 'Hourly').
+      - Updates attendance.over_time if changed.
+      - Then calls ensure_monthly_salaries(year, month) to refresh Salary rows.
+
+  WHERE STORED:
+  - attendance.over_time = OT for THAT day (per record).
+  - salary.overtime_hours = Sum(attendance.over_time) for that month (set in salary_logic.ensure_monthly_salaries).
+
+  WHERE USED (READ):
+  - Salary report: Salary.overtime_hours.
+  - Bonus overview: from Salary + Attendance aggregate (total_ot=Sum('over_time')).
+  - Export payroll: daily cols = rate × total_working_hours; total can include bonus (see §6).
+  - Gross pay: _gross_and_rate(..., overtime_hours, ...) for Monthly type.
+
+================================================================================
+4. SHIFT CALCULATION (EXPECTED HOURS, DURATION)
+================================================================================
+
+  WHERE DEFINED:
+  - views._shift_duration_hours(shift_from, shift_to) → expected hours (to - from, +24 if next day). Used in _calc_overtime_from_punch for non-Hourly.
+  - excel_upload._shift_duration_hours(shift_from, shift_to) → same idea for OT in upload.
+
+  WHERE USED:
+  - OT for Monthly/Fixed: OT = total_working - shift_duration (whole hours).
+  - export_excel._shift_hours(shift_from, shift_to) → for payroll row "du" (duration); default 8 if missing.
+
+  Shift times (shift_from, shift_to) come from:
+  - Employee.shift_from, shift_to (master); or
+  - Attendance.shift_from, shift_to (copied from employee when saving attendance in Excel upload or when missing in Adjustment).
+
+================================================================================
+5. BONUS — ALL SOURCES AND WHERE PUSHED
+================================================================================
+
+  (A) Salary.bonus (HOURS, not money)
+      - Stored in: salary.bonus (decimal).
+      - Money in gross = bonus_hours × hourly_rate (see §7).
+
+  SOURCES OF BONUS HOURS:
+  -----------------------
+  1) Manual award (Bonus page / leaderboard/bonus API)
+     - views.GiveBonusView: sal.bonus += bonus_hours; save. No per-date record; audit log has "give_bonus".
+
+  2) Auto from OT for Hourly (salary_logic.ensure_monthly_salaries)
+     - When creating/updating Salary: if Hourly and overtime_hours > 0, bonus = floor(overtime_hours / 2).
+     - Overwrites auto part; manual part is "preserved" only in the sense that ensure_monthly_salaries can set bonus from OT/2 for that month.
+
+  3) Shift OT bonus (12h+ rule) — shift_bonus.py
+     - If attendance.total_working_hours > 12 for (emp, date): extra = twh - 12, bonus_hours = floor(extra/2).
+     - Only for date in (today, yesterday, day-before-yesterday).
+     - Creates ShiftOvertimeBonus(emp_code, date, bonus_hours, description).
+     - ADDS to Salary.bonus for that month: sal.bonus += bonus_hours.
+     - Called from: excel_upload (after attendance save/update), views (after adjustment).
+
+  WHEN SHIFT OT BONUS IS CALLED:
+  - excel_upload.upload_attendance_excel: after each new/updated row → apply_shift_overtime_bonus_for_date(emp_code, date).
+  - excel_upload.upload_force_punch_excel: after each update → apply_shift_overtime_bonus_for_date(emp_code, att_date).
+  - views.AttendanceAdjustView: after att.save() → recalculate_shift_overtime_bonus_for_date(emp_code, adj_date).
+  - recalculate_shift_overtime_bonus_for_date: used when we need to sync after punch change (adjust, force-punch); can update or delete ShiftOvertimeBonus and adjust Salary.bonus.
+
+  WHERE BONUS IS READ / USED:
+  - Salary report: Salary.bonus (shown as hours).
+  - Bonus overview API: from Salary + shift_ot_bonus aggregate.
+  - Gross pay: _gross_and_rate(..., bonus_hours) → bonus × hourly_rate added to gross.
+  - Export payroll: _add_bonus_to_payroll_rows adds bonus money (bonus_hrs × rate) to row total when exporting by month/year.
+
+================================================================================
+6. PENALTY (LATE COMING)
+================================================================================
+
+  WHERE DEFINED: penalty_logic.py
+  - SHIFT_START_DEFAULT = 9:00.
+  - _minutes_late(punch_in, shift_start) → max(0, punch_minutes - shift_start_minutes).
+  - recalculate_late_penalty_for_date(emp_code, date, attendance=None):
+    - Only for Hourly. If punch_in after shift_start: 2.5 Rs/min until 300 Rs/month, then 5 Rs/min.
+    - Creates/updates Penalty(emp_code, date, minutes_late, deduction_amount, is_manual=False) or deletes if on time/no punch.
+
+  WHEN CALLED:
+  - excel_upload.upload_attendance_excel: after new/updated row → recalculate_late_penalty_for_date(emp_code, date).
+  - excel_upload.upload_force_punch_excel: after each update → recalculate_late_penalty_for_date(emp_code, att_date).
+  - views.AttendanceAdjustView: after att.save() → recalculate_late_penalty_for_date(emp_code, adj_date, attendance=att).
+
+  WHERE STORED: penalty table (emp_code, date, month, year, minutes_late, deduction_amount, rate_used, is_manual).
+  WHERE USED: Salary report / net pay: Sum(penalty.deduction_amount) for that emp+month subtracted from gross (Hourly only).
+
+================================================================================
+7. SALARY AGGREGATION AND GROSS PAY
+================================================================================
+
+  ensure_monthly_salaries(year, month) — salary_logic.py
+  --------------------------------------
+  - Aggregates from Attendance for that month: Sum(over_time), Sum(total_working_hours), Count(Present).
+  - For each Employee: get or create Salary(emp_code, month, year).
+  - Sets: overtime_hours, total_working_hours, days_present; for Hourly also bonus = floor(overtime_hours/2) (can overwrite previous auto bonus).
+  - Called from: SalaryMonthlyView (GET), BonusOverviewView (GET), shift_bonus (before adding shift OT bonus), recalc_monthly_ot command.
+
+  _gross_and_rate(salary_type, base_salary, total_working_hours, overtime_hours, bonus_hours) — views.py
+  ------------------------------------------------------------------------------------------------------
+  - Returns (gross, hourly_rate). Bonus is in HOURS; bonus money = bonus_hours × hourly_rate.
+  - Hourly: hourly_rate = base_salary; gross = (total_working_hours + bonus_hours) × base_salary.
+  - Fixed: hourly_rate = base/208; gross = base_salary + (bonus_hours × hourly_rate).
+  - Monthly: hourly_rate = base/208; gross = (total_working_hours + overtime_hours + bonus_hours) × hourly_rate.
+  - Used in: Salary monthly API (net_pay), employee profile, ExportEmployeeSalaryHistoryView, payroll Excel (indirect via build_payroll_rows + _add_bonus_to_payroll_rows).
+
+  Advance and penalty in net:
+  - net_pay = gross - advance_total - penalty_total (penalty only for Hourly; advance from salary_advance table).
+
+================================================================================
+8. EXPORT PAYROLL EXCEL (DAILY EARNINGS, TOTAL, BONUS)
+================================================================================
+
+  export_excel.py
+  ---------------
+  - build_payroll_rows(employees, attendance_queryset, advance_by_emp):
+    - For each (emp, date): amount = hourly_rate × attendance.total_working_hours (from att_map).
+    - row['total'] = sum of daily amounts (or base for Fixed). advance in row from advance_by_emp.
+  - _add_bonus_to_payroll_rows(payroll_rows, month, year):
+    - For each row: get Salary.bonus (hours) and base_salary; bonus_money = bonus_hours × hourly_rate; row['total'] += bonus_money.
+    - Called when export is by month+year (and in previous-day report for month total).
+  - generate_payroll_excel(..., month, year, ...): filters attendance by month, build_payroll_rows, then _add_bonus_to_payroll_rows if month+year, then write workbook.
+  - Daily columns = that day’s earnings (rate × total_working_hours for that date). TOTAL = sum of daily + bonus when month/year export.
+
+================================================================================
+9. QUICK CALL CHAIN REFERENCE (HOW MANY TIMES / WHERE CALLED)
+================================================================================
+
+  _calc_overtime_from_punch (views)
+    → 1 place: AttendanceAdjustView.post() when punch_in and punch_out both set.
+
+  _calc_overtime_for_employee (excel_upload)
+    → upload_attendance_excel (per row with total_working), upload_force_punch_excel (per row), _recalc_overtime_for_month (per att in month).
+
+  ensure_monthly_salaries
+    → SalaryMonthlyView.get(), BonusOverviewView.get(), shift_bonus.apply_shift_overtime_bonus_for_date, shift_bonus.recalculate_shift_overtime_bonus_for_date, recalc_monthly_ot command.
+
+  apply_shift_overtime_bonus_for_date
+    → excel_upload.upload_attendance_excel (new + updated rows), excel_upload.upload_force_punch_excel (each updated).
+
+  recalculate_shift_overtime_bonus_for_date
+    → views.AttendanceAdjustView.post() only (after manual adjust).
+
+  recalculate_late_penalty_for_date
+    → excel_upload.upload_attendance_excel (new + updated), upload_force_punch_excel (each updated), views.AttendanceAdjustView.post().
+
+  _gross_and_rate
+    → Salary monthly response (net_pay), employee profile, ExportEmployeeSalaryHistoryView, and conceptually in export_excel via _add_bonus_to_payroll_rows (bonus money added to total).
+
+================================================================================
+10. FILE LOCATIONS (BACKEND)
+================================================================================
+
+  views.py           — Auth, admins, attendance list, adjust API, dashboard, salary monthly, bonus give/set, bonus overview, export, SMTP config, employee profile, etc.
+  excel_upload.py    — Upload employees, attendance, shift, force-punch; _calc_overtime_for_employee, _working_hours_from_punch, apply_shift_overtime_bonus_for_date, recalculate_late_penalty_for_date.
+  salary_logic.py    — ensure_monthly_salaries (Salary create/update from attendance aggregates).
+  shift_bonus.py     — apply_shift_overtime_bonus_for_date, recalculate_shift_overtime_bonus_for_date; 12h+ rule, ShiftOvertimeBonus + Salary.bonus.
+  penalty_logic.py   — recalculate_late_penalty_for_date, _minutes_late; Penalty create/update/delete.
+  export_excel.py    — build_payroll_rows, _add_bonus_to_payroll_rows, generate_payroll_excel, previous-day report.
+  models.py          — Admin, Employee, Attendance, Salary, SalaryAdvance, Adjustment, ShiftOvertimeBonus, Penalty, etc.
+  management/commands/recalc_monthly_ot.py — Recalc attendance.over_time for Hourly in a month; then ensure_monthly_salaries.
+
+================================================================================
+END OF REFERENCE
+================================================================================
