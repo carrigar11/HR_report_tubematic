@@ -660,14 +660,13 @@ class AttendanceAdjustView(APIView):
         # Store previous for audit
         old_punch_in, old_punch_out = att.punch_in, att.punch_out
         old_ot = att.over_time
-        # Update
-        punch_in = data.get('punch_in') if data.get('punch_in') is not None else att.punch_in
-        punch_out = data.get('punch_out') if data.get('punch_out') is not None else att.punch_out
-        if data.get('punch_in') is not None:
+        # Update punch_in / punch_out (allow explicit null = "no punch out", carry forward to next day)
+        if 'punch_in' in data:
             att.punch_in = data['punch_in']
-        if data.get('punch_out') is not None:
+        if 'punch_out' in data:
             att.punch_out = data['punch_out']
-        # Auto-calculate overtime when punch_in and punch_out are set
+        punch_in = att.punch_in
+        punch_out = att.punch_out
         # Use shift from attendance record, or fallback to employee's assigned shift
         shift_from = att.shift_from
         shift_to = att.shift_to
@@ -683,7 +682,6 @@ class AttendanceAdjustView(APIView):
                 att.shift_to = shift_to
         if punch_in and punch_out:
             att.over_time = _calc_overtime_from_punch(punch_in, punch_out, shift_from, shift_to, emp_salary_type)
-            # Also update total_working_hours and punch_spans_next_day from punch times
             in_h = _time_to_decimal_hours(punch_in)
             out_h = _time_to_decimal_hours(punch_out)
             diff = out_h - in_h
@@ -691,8 +689,14 @@ class AttendanceAdjustView(APIView):
                 diff += 24
             att.total_working_hours = Decimal(str(round(diff, 2)))
             att.punch_spans_next_day = _punch_spans_next_day(punch_in, punch_out)
-        elif data.get('over_time') is not None:
-            att.over_time = data['over_time']
+        else:
+            # No punch out (nil): person has not punched out, work carries to next day
+            if not punch_out:
+                att.total_working_hours = Decimal('0')
+                att.over_time = Decimal('0')
+                att.punch_spans_next_day = False
+            if data.get('over_time') is not None:
+                att.over_time = data['over_time']
         att.save()
         # Audit log (who made the change)
         Adjustment.objects.create(
@@ -1014,13 +1018,22 @@ class SalaryAdvanceDetailView(APIView):
 # ---------- Leaderboard ----------
 class LeaderboardView(APIView):
     def get(self, request):
+        from calendar import monthrange
         _, allowed_emp_codes = get_request_admin(request)
         today = timezone.localdate()
-        month_start = today.replace(day=1)
-        week_start = today - timedelta(days=6)
+        try:
+            year = int(request.query_params.get('year', today.year))
+            month = int(request.query_params.get('month', today.month))
+        except (TypeError, ValueError):
+            year, month = today.year, today.month
+        _, last_day = monthrange(year, month)
+        month_start = date(year, month, 1)
+        month_end = date(year, month, last_day)
 
         rewards = PerformanceReward.objects.filter(
-            is_on_leaderboard=True, entry_type='REWARD'
+            is_on_leaderboard=True, entry_type='REWARD',
+            created_at__date__gte=month_start,
+            created_at__date__lte=month_end,
         )
         if allowed_emp_codes is not None:
             rewards = rewards.filter(emp_code__in=allowed_emp_codes) if allowed_emp_codes else rewards.none()
@@ -1039,10 +1052,11 @@ class LeaderboardView(APIView):
             ):
                 emp_lookup[e['emp_code']] = e
 
-        # Monthly stats per employee
+        # Monthly stats for selected month (use month_end or today if future)
+        end_date = min(month_end, today)
         monthly_stats = {}
         for a in Attendance.objects.filter(
-            emp_code__in=emp_codes, date__gte=month_start, date__lte=today
+            emp_code__in=emp_codes, date__gte=month_start, date__lte=end_date
         ).values('emp_code').annotate(
             total_hours=Sum('total_working_hours'),
             total_ot=Sum('over_time'),
@@ -1050,22 +1064,37 @@ class LeaderboardView(APIView):
         ):
             monthly_stats[a['emp_code']] = a
 
-        # Streak count per employee (how many streak rewards this month)
+        # Streak count in selected month
         streak_counts = {}
         for r in PerformanceReward.objects.filter(
             emp_code__in=emp_codes,
             entry_type='REWARD',
             trigger_reason__icontains='Streak',
             created_at__date__gte=month_start,
+            created_at__date__lte=month_end,
         ).values('emp_code').annotate(count=Count('id')):
             streak_counts[r['emp_code']] = r['count']
 
-        # Bonus hours from Salary for current month
+        # Bonus hours from Salary for selected month
         bonus_lookup = {}
         for s in Salary.objects.filter(
-            emp_code__in=emp_codes, month=today.month, year=today.year
+            emp_code__in=emp_codes, month=month, year=year
         ).values('emp_code', 'bonus'):
             bonus_lookup[s['emp_code']] = s['bonus']
+
+        # Last time bonus was awarded (give_bonus / set_bonus) per employee
+        last_bonus_at = {}
+        if emp_codes:
+            bonus_logs = AuditLog.objects.filter(
+                module='bonus', action='update', target_id__in=emp_codes
+            ).filter(
+                Q(details__action='give_bonus') | Q(details__action='set_bonus')
+            ).values('target_id', 'created_at').order_by('-created_at')
+            for log in bonus_logs:
+                ec = log['target_id']
+                if ec not in last_bonus_at:
+                    created = log['created_at']
+                    last_bonus_at[ec] = created.isoformat() if hasattr(created, 'isoformat') else str(created)
 
         for r in reward_list:
             ec = r['emp_code']
@@ -1082,6 +1111,7 @@ class LeaderboardView(APIView):
             r['days_present'] = stats.get('days_present', 0)
             r['streak_count'] = streak_counts.get(ec, 0)
             r['bonus_hours'] = str(bonus_lookup.get(ec, 0))
+            r['last_bonus_awarded_at'] = last_bonus_at.get(ec)
 
         return Response(reward_list)
 
@@ -1115,13 +1145,22 @@ class GiveBonusView(APIView):
         except Exception:
             return Response({'error': 'Invalid bonus_hours'}, status=400)
         today = timezone.localdate()
+        month = request.data.get('month')
+        year = request.data.get('year')
+        if month is not None and year is not None:
+            try:
+                month, year = int(month), int(year)
+            except (TypeError, ValueError):
+                month, year = today.month, today.year
+        else:
+            month, year = today.month, today.year
         sal, created = Salary.objects.get_or_create(
-            emp_code=emp_code, month=today.month, year=today.year,
+            emp_code=emp_code, month=month, year=year,
             defaults={'salary_type': 'Monthly', 'base_salary': Decimal('0')}
         )
-        sal.bonus = sal.bonus + bonus_hours
+        sal.bonus = (sal.bonus or Decimal('0')) + bonus_hours
         sal.save()
-        log_activity(request, 'update', 'bonus', 'salary', emp_code, details={'action': 'give_bonus', 'hours': str(bonus_hours), 'new_bonus': str(sal.bonus)})
+        log_activity(request, 'update', 'bonus', 'salary', emp_code, details={'action': 'give_bonus', 'hours': str(bonus_hours), 'new_bonus': str(sal.bonus), 'month': month, 'year': year})
         return Response({'success': True, 'emp_code': emp_code, 'new_bonus': str(sal.bonus)})
 
 
@@ -1275,18 +1314,36 @@ class BonusEmployeeDetailsView(APIView):
             r['date'] = r['date'].isoformat()
             r['bonus_hours'] = float(r['bonus_hours'] or 0)
 
-        # Manual bonus grants from audit log (when admin awarded bonus)
+        # Grants the user has "removed" (hidden) — we exclude these from the list
+        hidden = set()
+        for log in AuditLog.objects.filter(module='bonus', target_id=emp_code, action='update').order_by('-created_at')[:300]:
+            d = log.details or {}
+            if d.get('action') == 'hide_bonus_grant' and d.get('month') == month and d.get('year') == year:
+                hidden.add((str(d.get('hours')), d.get('given_at') or ''))
+
+        # Manual bonus grants from audit log (this month only); skip hidden
         manual_grants = []
         for log in AuditLog.objects.filter(
             module='bonus',
             target_id=emp_code,
             action='update',
-        ).order_by('-created_at')[:50]:
+        ).order_by('-created_at')[:100]:
             details = log.details or {}
             if details.get('action') != 'give_bonus':
                 continue
+            log_month = details.get('month')
+            log_year = details.get('year')
+            if log_month is not None and log_year is not None:
+                try:
+                    if int(log_month) != month or int(log_year) != year:
+                        continue
+                except (TypeError, ValueError):
+                    pass
+            given_at_str = log.created_at.isoformat() if log.created_at else ''
+            if (str(details.get('hours')), given_at_str) in hidden:
+                continue
             manual_grants.append({
-                'given_at': log.created_at.isoformat() if log.created_at else None,
+                'given_at': given_at_str or None,
                 'hours': details.get('hours'),
                 'new_total': details.get('new_bonus'),
             })
@@ -1317,8 +1374,32 @@ class BonusEmployeeDetailsView(APIView):
         })
 
 
+class HideBonusGrantView(APIView):
+    """Mark a manual bonus grant as removed so it no longer appears in the list. Call after set_bonus to subtract."""
+    def post(self, request):
+        _, allowed_emp_codes = get_request_admin(request)
+        emp_code = request.data.get('emp_code')
+        month = request.data.get('month')
+        year = request.data.get('year')
+        hours = request.data.get('hours')
+        given_at = request.data.get('given_at', '')
+        if not emp_code or month is None or year is None:
+            return Response({'error': 'emp_code, month, year required'}, status=400)
+        if allowed_emp_codes is not None and emp_code not in allowed_emp_codes:
+            return Response({'error': 'Not allowed for this employee'}, status=403)
+        try:
+            month, year = int(month), int(year)
+        except (TypeError, ValueError):
+            return Response({'error': 'Invalid month/year'}, status=400)
+        log_activity(
+            request, 'update', 'bonus', 'salary', emp_code,
+            details={'action': 'hide_bonus_grant', 'month': month, 'year': year, 'hours': str(hours), 'given_at': given_at}
+        )
+        return Response({'success': True})
+
+
 class SetBonusView(APIView):
-    """Set bonus to an exact value (overwrite) or reset to 0."""
+    """Set bonus to an exact value (overwrite) or reset to 0. Optional month/year for target month."""
     def post(self, request):
         _, allowed_emp_codes = get_request_admin(request)
         emp_code = request.data.get('emp_code')
@@ -1334,13 +1415,22 @@ class SetBonusView(APIView):
         if bonus_hours < 0:
             return Response({'error': 'bonus_hours cannot be negative'}, status=400)
         today = timezone.localdate()
+        month = request.data.get('month')
+        year = request.data.get('year')
+        if month is not None and year is not None:
+            try:
+                month, year = int(month), int(year)
+            except (TypeError, ValueError):
+                month, year = today.month, today.year
+        else:
+            month, year = today.month, today.year
         sal, created = Salary.objects.get_or_create(
-            emp_code=emp_code, month=today.month, year=today.year,
+            emp_code=emp_code, month=month, year=year,
             defaults={'salary_type': 'Monthly', 'base_salary': Decimal('0')}
         )
         sal.bonus = bonus_hours
         sal.save()
-        log_activity(request, 'update', 'bonus', 'salary', emp_code, details={'action': 'set_bonus', 'bonus_hours': str(bonus_hours)})
+        log_activity(request, 'update', 'bonus', 'salary', emp_code, details={'action': 'set_bonus', 'bonus_hours': str(bonus_hours), 'month': month, 'year': year})
         return Response({'success': True, 'emp_code': emp_code, 'new_bonus': str(sal.bonus)})
 
 

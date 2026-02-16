@@ -1,5 +1,37 @@
 .adjustmentIntro {
+  margin-bottom: 1rem;
+}
+
+.adjustmentTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
   margin-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.5rem;
+}
+
+.adjustmentTab {
+  padding: 0.5rem 1rem;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--textMuted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+
+.adjustmentTab:hover {
+  color: var(--text);
+  background: var(--surface2);
+}
+
+.adjustmentTab.active {
+  color: var(--accent);
+  background: rgba(34, 197, 94, 0.1);
+  border-color: var(--accent);
 }
 
 .adjustmentShiftBanner {
@@ -170,6 +202,45 @@
   min-width: 120px;
 }
 
+.adjustmentPunchRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem;
+  width: 100%;
+}
+
+.adjustmentPunchRow .adjustmentField {
+  flex: 0 0 auto;
+}
+
+.adjustmentNoPunchOutCompact {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0 0.2rem 0;
+  padding: 0.35rem 0;
+  font-size: 0.8rem;
+  color: var(--textMuted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.adjustmentNoPunchOutCompact input[type="checkbox"] {
+  margin: 0;
+  width: 1em;
+  height: 1em;
+  flex-shrink: 0;
+}
+
+.adjustmentNoPunchOutCompact:hover {
+  color: var(--text);
+}
+
+.adjustmentNoPunchOutCompact.active {
+  color: var(--accent);
+}
+
 .adjustmentFieldWide {
   min-width: 200px;
 }
@@ -244,4 +315,98 @@
 
 .adjustmentLogCard .tableCard {
   overflow-x: auto;
+}
+
+.adjustmentBonusCurrent {
+  font-size: 1.1rem;
+  margin: 0;
+}
+
+.adjustmentBonusHistorySubtitle {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--textMuted);
+  margin: 1rem 0 0.5rem;
+}
+.adjustmentBonusHistorySubtitle:first-of-type {
+  margin-top: 0;
+}
+
+.adjustmentBonusHistoryNote {
+  font-size: 0.8rem;
+  color: var(--textMuted);
+  margin: 0 0 0.5rem 0;
+  line-height: 1.4;
+}
+.adjustmentBonusHistoryNote strong {
+  color: var(--text);
+}
+
+.adjustmentBonusHistoryTable {
+  width: 100%;
+  border-collapse: collapse;
+}
+.adjustmentBonusHistoryTable th,
+.adjustmentBonusHistoryTable td {
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.adjustmentBonusHistoryTable th {
+  font-size: 0.75rem;
+  color: var(--textMuted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.adjustmentBonusHistoryAction {
+  text-align: right;
+  white-space: nowrap;
+}
+.adjustmentBonusRemoveBtn {
+  font-size: 0.7rem;
+  padding: 0.2rem 0.4rem;
+  min-height: auto;
+  line-height: 1.2;
+}
+
+.adjustmentPenaltyList,
+.adjustmentAdvanceList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.adjustmentPenaltyItem,
+.adjustmentAdvanceItem {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.95rem;
+}
+
+.adjustmentPenaltyItem:last-child,
+.adjustmentAdvanceItem:last-child {
+  border-bottom: none;
+}
+
+.adjustmentPenaltyAmount,
+.adjustmentAdvanceAmount {
+  font-weight: 600;
+  color: var(--text);
+  min-width: 90px;
+}
+
+.adjustmentPenaltyMeta,
+.adjustmentAdvanceNote {
+  color: var(--textMuted);
+  flex: 1;
+}
+
+.adjustmentAdvanceDelete {
+  margin-left: auto;
+  font-size: 0.85rem;
 }

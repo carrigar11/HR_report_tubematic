@@ -1,8 +1,24 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { adjustments, attendance, employees, penalty as penaltyApi } from '../api'
+import { adjustments, attendance, employees, penalty as penaltyApi, bonus, advance, salary } from '../api'
 import './Table.css'
 import './AdjustmentPanel.css'
+
+const ADJUST_TABS = [
+  { id: 'attendance', label: 'Attendance' },
+  { id: 'bonus', label: 'Bonus' },
+  { id: 'penalty', label: 'Penalty' },
+  { id: 'advance', label: 'Advance' },
+]
+const MONTHS = [
+  { value: 1, label: 'Jan' }, { value: 2, label: 'Feb' }, { value: 3, label: 'Mar' },
+  { value: 4, label: 'Apr' }, { value: 5, label: 'May' }, { value: 6, label: 'Jun' },
+  { value: 7, label: 'Jul' }, { value: 8, label: 'Aug' }, { value: 9, label: 'Sep' },
+  { value: 10, label: 'Oct' }, { value: 11, label: 'Nov' }, { value: 12, label: 'Dec' },
+]
+const currentYear = new Date().getFullYear()
+const currentMonth = new Date().getMonth() + 1
+const YEARS = Array.from({ length: 7 }, (_, i) => currentYear - 3 + i)
 
 function timeToInputValue(t) {
   if (!t) return ''
@@ -44,11 +60,13 @@ function calcOvertime(punchIn, punchOut, shiftFrom, shiftTo) {
 }
 
 export default function AdjustmentPanel() {
+  const [activeTab, setActiveTab] = useState('attendance')
   const [list, setList] = useState([])
   const [listLoading, setListLoading] = useState(true)
   const [listFilters, setListFilters] = useState({ emp_code: '', date_from: '', date_to: '' })
 
   const [form, setForm] = useState({ emp_code: '', date: '', punch_in: '', punch_out: '', reason: '', created_by_admin: 'admin' })
+  const [noPunchOut, setNoPunchOut] = useState(false) // true = no punch out yet, carry forward to next day
   const [submitLoading, setSubmitLoading] = useState(false)
   const [message, setMessage] = useState('')
   const [empSearch, setEmpSearch] = useState('')
@@ -58,6 +76,34 @@ export default function AdjustmentPanel() {
 
   const [currentRecord, setCurrentRecord] = useState(null)
   const [currentRecordLoading, setCurrentRecordLoading] = useState(false)
+
+  // Bonus tab (uses form.emp_code)
+  const [bonusMonth, setBonusMonth] = useState(currentMonth)
+  const [bonusYear, setBonusYear] = useState(currentYear)
+  const [bonusHours, setBonusHours] = useState('')
+  const [bonusMode, setBonusMode] = useState('give') // 'give' = add, 'set' = set exact
+  const [bonusLoading, setBonusLoading] = useState(false)
+  const [bonusCurrent, setBonusCurrent] = useState(null)
+  const [bonusMessage, setBonusMessage] = useState('')
+  const [bonusDetails, setBonusDetails] = useState(null) // history: shift_ot_bonus, manual_bonus_grants
+  const [bonusDetailsLoading, setBonusDetailsLoading] = useState(false)
+
+  // Penalty tab (uses form.emp_code)
+  const [penaltyList, setPenaltyList] = useState([])
+  const [penaltyAmount, setPenaltyAmount] = useState('')
+  const [penaltyDesc, setPenaltyDesc] = useState('')
+  const [penaltyDate, setPenaltyDate] = useState(new Date().toISOString().slice(0, 10))
+  const [penaltyLoading, setPenaltyLoading] = useState(false)
+  const [penaltyMessage, setPenaltyMessage] = useState('')
+
+  // Advance tab (uses form.emp_code)
+  const [advanceMonth, setAdvanceMonth] = useState(currentMonth)
+  const [advanceYear, setAdvanceYear] = useState(currentYear)
+  const [advanceList, setAdvanceList] = useState([])
+  const [advanceAmount, setAdvanceAmount] = useState('')
+  const [advanceNote, setAdvanceNote] = useState('')
+  const [advanceLoading, setAdvanceLoading] = useState(false)
+  const [advanceMessage, setAdvanceMessage] = useState('')
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -98,18 +144,22 @@ export default function AdjustmentPanel() {
         const record = Array.isArray(results) && results.length ? results[0] : null
         setCurrentRecord(record)
         if (record) {
+          const hasNoPunchOut = !record.punch_out
           setForm((f) => ({
             ...f,
             punch_in: timeToInputValue(record.punch_in),
-            punch_out: timeToInputValue(record.punch_out),
+            punch_out: hasNoPunchOut ? '' : timeToInputValue(record.punch_out),
           }))
+          setNoPunchOut(hasNoPunchOut)
         } else {
           setForm((f) => ({ ...f, punch_in: '', punch_out: '' }))
+          setNoPunchOut(false)
         }
       })
       .catch(() => {
         setCurrentRecord(null)
         setForm((f) => ({ ...f, punch_in: '', punch_out: '' }))
+        setNoPunchOut(false)
       })
       .finally(() => setCurrentRecordLoading(false))
   }, [form.emp_code, form.date])
@@ -153,7 +203,11 @@ export default function AdjustmentPanel() {
         created_by_admin: form.created_by_admin,
       }
       if (form.punch_in) payload.punch_in = form.punch_in + (form.punch_in.length === 5 ? ':00' : '')
-      if (form.punch_out) payload.punch_out = form.punch_out + (form.punch_out.length === 5 ? ':00' : '')
+      if (noPunchOut) {
+        payload.punch_out = null
+      } else if (form.punch_out) {
+        payload.punch_out = form.punch_out + (form.punch_out.length === 5 ? ':00' : '')
+      }
       // OT is auto-calculated by backend from punch times + shift
       const res = await attendance.adjust(payload)
       const penaltyNote = res.data?.penalty_note
@@ -186,6 +240,192 @@ export default function AdjustmentPanel() {
       .finally(() => setListLoading(false))
   }
 
+  // Load current bonus for selected emp + month/year
+  useEffect(() => {
+    if (!form.emp_code || !bonusMonth || !bonusYear || activeTab !== 'bonus') {
+      setBonusCurrent(null)
+      return
+    }
+    salary.monthly(bonusMonth, bonusYear, '', form.emp_code)
+      .then((r) => {
+        const rows = Array.isArray(r.data) ? r.data : (r.data?.rows ?? [])
+        const row = rows.find((x) => (x.emp_code || '').toString().toLowerCase() === (form.emp_code || '').toString().toLowerCase())
+        setBonusCurrent(row ? { bonus: row.bonus, emp_code: row.emp_code } : null)
+      })
+      .catch(() => setBonusCurrent(null))
+  }, [form.emp_code, bonusMonth, bonusYear, activeTab])
+
+  // Load bonus history (shift OT + manual grants) for selected emp + month/year
+  useEffect(() => {
+    if (!form.emp_code || !bonusMonth || !bonusYear || activeTab !== 'bonus') {
+      setBonusDetails(null)
+      return
+    }
+    setBonusDetailsLoading(true)
+    bonus.employeeDetails(form.emp_code, bonusMonth, bonusYear)
+      .then((r) => setBonusDetails(r.data || null))
+      .catch(() => setBonusDetails(null))
+      .finally(() => setBonusDetailsLoading(false))
+  }, [form.emp_code, bonusMonth, bonusYear, activeTab])
+
+  const refreshBonusData = () => {
+    if (!form.emp_code || !bonusMonth || !bonusYear) return Promise.resolve()
+    return Promise.all([
+      salary.monthly(bonusMonth, bonusYear, '', form.emp_code).then((r) => {
+        const rows = Array.isArray(r.data) ? r.data : (r.data?.rows ?? [])
+        const row = rows.find((x) => (x.emp_code || '').toString().toLowerCase() === (form.emp_code || '').toString().toLowerCase())
+        setBonusCurrent(row ? { bonus: row.bonus, emp_code: row.emp_code } : null)
+      }).catch(() => {}),
+      bonus.employeeDetails(form.emp_code, bonusMonth, bonusYear).then((r) => setBonusDetails(r.data || null)).catch(() => {}),
+    ])
+  }
+
+  const handleBonusSubmit = async (e) => {
+    e.preventDefault()
+    const hrs = parseFloat(bonusHours)
+    if (!form.emp_code || (bonusMode === 'give' ? (hrs <= 0 || isNaN(hrs)) : (isNaN(hrs) || hrs < 0))) {
+      setBonusMessage('Select employee and enter valid bonus hours.')
+      return
+    }
+    setBonusLoading(true)
+    setBonusMessage('')
+    try {
+      if (bonusMode === 'give') {
+        await bonus.give(form.emp_code, hrs, bonusMonth, bonusYear)
+        setBonusMessage(`Added ${hrs}h bonus.`)
+      } else {
+        await bonus.set(form.emp_code, hrs, bonusMonth, bonusYear)
+        setBonusMessage(`Bonus set to ${hrs}h.`)
+      }
+      setBonusHours('')
+      refreshBonusData()
+    } catch (err) {
+      setBonusMessage(err.response?.data?.error || err.message || 'Failed')
+    } finally {
+      setBonusLoading(false)
+    }
+  }
+
+  const handleBonusClear = async () => {
+    if (!form.emp_code || !window.confirm(`Set bonus to 0 for this employee for ${bonusMonth}/${bonusYear}?`)) return
+    setBonusLoading(true)
+    setBonusMessage('')
+    try {
+      await bonus.set(form.emp_code, 0, bonusMonth, bonusYear)
+      setBonusMessage('Bonus cleared (set to 0).')
+      refreshBonusData()
+    } catch (err) {
+      setBonusMessage(err.response?.data?.error || err.message || 'Failed')
+    } finally {
+      setBonusLoading(false)
+    }
+  }
+
+  const handleBonusRemoveGrant = async (row) => {
+    const hours = row.hours != null ? parseFloat(String(row.hours)) : 0
+    if (!form.emp_code || isNaN(hours) || hours <= 0) return
+    const current = bonusCurrent && bonusCurrent.bonus != null ? parseFloat(String(bonusCurrent.bonus)) : 0
+    const newTotal = Math.max(0, current - hours)
+    if (!window.confirm(`Remove ${hours}h from bonus? New total will be ${newTotal}h.`)) return
+    const month = parseInt(bonusMonth, 10)
+    const year = parseInt(bonusYear, 10)
+    if (isNaN(month) || isNaN(year)) {
+      setBonusMessage('Invalid month/year.')
+      return
+    }
+    setBonusLoading(true)
+    setBonusMessage('')
+    try {
+      await bonus.set(form.emp_code, newTotal, month, year)
+      await bonus.hideGrant(form.emp_code, month, year, row.hours, row.given_at || '')
+      setBonusMessage(`Removed ${hours}h.`)
+      await refreshBonusData()
+    } catch (err) {
+      const msg = err.response?.data?.error || err.response?.data?.detail || err.message || 'Failed'
+      setBonusMessage(typeof msg === 'string' ? msg : JSON.stringify(msg))
+    } finally {
+      setBonusLoading(false)
+    }
+  }
+
+  // Load penalties for selected employee
+  useEffect(() => {
+    if (!form.emp_code || activeTab !== 'penalty') {
+      setPenaltyList([])
+      return
+    }
+    penaltyApi.list({ emp_code: form.emp_code }).then((r) => setPenaltyList(r.data?.results ?? r.data ?? [])).catch(() => setPenaltyList([]))
+  }, [form.emp_code, activeTab])
+
+  const handlePenaltyCreate = async (e) => {
+    e.preventDefault()
+    const amt = parseFloat(penaltyAmount)
+    if (!form.emp_code || isNaN(amt) || amt < 0) {
+      setPenaltyMessage('Select employee and enter valid amount.')
+      return
+    }
+    setPenaltyLoading(true)
+    setPenaltyMessage('')
+    try {
+      await penaltyApi.create({ emp_code: form.emp_code, deduction_amount: amt, description: penaltyDesc || 'Manual penalty', date: penaltyDate })
+      setPenaltyMessage('Penalty added.')
+      setPenaltyAmount('')
+      setPenaltyDesc('')
+      penaltyApi.list({ emp_code: form.emp_code }).then((r) => setPenaltyList(r.data?.results ?? r.data ?? [])).catch(() => {})
+    } catch (err) {
+      setPenaltyMessage(err.response?.data?.error || err.message || 'Failed')
+    } finally {
+      setPenaltyLoading(false)
+    }
+  }
+
+  const loadAdvanceList = () => {
+    if (!form.emp_code || !advanceMonth || !advanceYear) {
+      setAdvanceList([])
+      return
+    }
+    advance.list(advanceMonth, advanceYear).then((r) => {
+      const data = r.data?.results ?? r.data ?? []
+      setAdvanceList(Array.isArray(data) ? data.filter((a) => (a.emp_code || '').toString().toLowerCase() === (form.emp_code || '').toString().toLowerCase()) : [])
+    }).catch(() => setAdvanceList([]))
+  }
+
+  useEffect(() => {
+    if (activeTab === 'advance') loadAdvanceList()
+  }, [form.emp_code, advanceMonth, advanceYear, activeTab])
+
+  const handleAdvanceCreate = async (e) => {
+    e.preventDefault()
+    const amt = parseFloat(advanceAmount)
+    if (!form.emp_code || isNaN(amt) || amt <= 0) {
+      setAdvanceMessage('Select employee and enter valid amount.')
+      return
+    }
+    setAdvanceLoading(true)
+    setAdvanceMessage('')
+    try {
+      await advance.create({ emp_code: form.emp_code, amount: amt, month: advanceMonth, year: advanceYear, note: advanceNote })
+      setAdvanceMessage('Advance added.')
+      setAdvanceAmount('')
+      setAdvanceNote('')
+      loadAdvanceList()
+    } catch (err) {
+      setAdvanceMessage(err.response?.data?.error || err.message || 'Failed')
+    } finally {
+      setAdvanceLoading(false)
+    }
+  }
+
+  const handleAdvanceDelete = async (id) => {
+    if (!window.confirm('Remove this advance?')) return
+    try {
+      await advance.delete(id)
+      loadAdvanceList()
+    } catch (err) {
+      setAdvanceMessage(err.response?.data?.error || err.message || 'Failed')
+    }
+  }
+
   // Calculated OT from punch times + shift (preview)
   const calculatedOT = currentRecord && form.punch_in && form.punch_out && currentRecord.shift_from && currentRecord.shift_to
     ? calcOvertime(form.punch_in, form.punch_out, currentRecord.shift_from, currentRecord.shift_to)
@@ -194,29 +434,26 @@ export default function AdjustmentPanel() {
   return (
     <div className="pageContent">
       <h2 className="sectionTitle">Adjustment Panel</h2>
-      <p className="muted adjustmentIntro">Select employee and date to load existing attendance, then edit and save. Overtime is auto-calculated from punch times and shift. All changes are logged below.</p>
+      <p className="muted adjustmentIntro">Adjust attendance, bonus, penalty, or advance per employee. Use the tabs below.</p>
 
-      {/* Shift info from database (when record loaded) */}
-      {currentRecord && (currentRecord.shift || currentRecord.shift_from || currentRecord.shift_to) && (
-        <div className="card adjustmentShiftBanner">
-          <h4 className="adjustmentShiftTitle">Shift from database</h4>
-          <div className="adjustmentShiftInfo">
-            <span className="adjustmentShiftLabel">Shift:</span>
-            <span className="adjustmentShiftValue">{currentRecord.shift || '—'}</span>
-            <span className="adjustmentShiftLabel">From:</span>
-            <span className="adjustmentShiftValue">{currentRecord.shift_from ? timeToInputValue(currentRecord.shift_from) : '—'}</span>
-            <span className="adjustmentShiftLabel">To:</span>
-            <span className="adjustmentShiftValue">{currentRecord.shift_to ? timeToInputValue(currentRecord.shift_to) : '—'}</span>
-            <span className="adjustmentShiftNote">(OT is calculated when working hours exceed shift duration)</span>
-          </div>
-        </div>
-      )}
+      <div className="adjustmentTabs">
+        {ADJUST_TABS.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            className={`adjustmentTab ${activeTab === tab.id ? 'active' : ''}`}
+            onClick={() => setActiveTab(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
 
-      {/* Step 1: Filter — Emp + Date */}
-      <div className="card adjustmentFilterCard">
-        <h3 className="adjustmentCardTitle">1. Find record</h3>
+      {/* Employee selector — shown for all tabs */}
+      <div className="card adjustmentFilterCard" ref={suggestRef}>
+        <h3 className="adjustmentCardTitle">{activeTab === 'attendance' ? '1. Find record' : 'Select employee'}</h3>
         <div className="adjustmentFilterRow">
-          <div className="adjustmentFilterGroup" ref={suggestRef}>
+          <div className="adjustmentFilterGroup">
             <label className="label">Employee (Code or Name)</label>
             <input
               type="text"
@@ -238,18 +475,70 @@ export default function AdjustmentPanel() {
               </ul>
             )}
           </div>
-          <div className="adjustmentFilterGroup">
-            <label className="label">Date</label>
-            <input
-              type="date"
-              className="input"
-              value={form.date}
-              onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))}
-            />
+          {activeTab === 'attendance' && (
+            <div className="adjustmentFilterGroup">
+              <label className="label">Date</label>
+              <input
+                type="date"
+                className="input"
+                value={form.date}
+                onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))}
+              />
+            </div>
+          )}
+          {activeTab === 'bonus' && (
+            <>
+              <div className="adjustmentFilterGroup">
+                <label className="label">Month</label>
+                <select className="input" value={bonusMonth} onChange={(e) => setBonusMonth(e.target.value)}>
+                  {MONTHS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                </select>
+              </div>
+              <div className="adjustmentFilterGroup">
+                <label className="label">Year</label>
+                <select className="input" value={bonusYear} onChange={(e) => setBonusYear(e.target.value)}>
+                  {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </div>
+            </>
+          )}
+          {activeTab === 'advance' && (
+            <>
+              <div className="adjustmentFilterGroup">
+                <label className="label">Month</label>
+                <select className="input" value={advanceMonth} onChange={(e) => setAdvanceMonth(e.target.value)}>
+                  {MONTHS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                </select>
+              </div>
+              <div className="adjustmentFilterGroup">
+                <label className="label">Year</label>
+                <select className="input" value={advanceYear} onChange={(e) => setAdvanceYear(e.target.value)}>
+                  {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </div>
+            </>
+          )}
+        </div>
+        {activeTab === 'attendance' && currentRecordLoading && <p className="muted adjustmentLoadStatus">Loading record…</p>}
+      </div>
+
+      {activeTab === 'attendance' && (
+        <>
+      {/* Shift info from database (when record loaded) */}
+      {currentRecord && (currentRecord.shift || currentRecord.shift_from || currentRecord.shift_to) && (
+        <div className="card adjustmentShiftBanner">
+          <h4 className="adjustmentShiftTitle">Shift from database</h4>
+          <div className="adjustmentShiftInfo">
+            <span className="adjustmentShiftLabel">Shift:</span>
+            <span className="adjustmentShiftValue">{currentRecord.shift || '—'}</span>
+            <span className="adjustmentShiftLabel">From:</span>
+            <span className="adjustmentShiftValue">{currentRecord.shift_from ? timeToInputValue(currentRecord.shift_from) : '—'}</span>
+            <span className="adjustmentShiftLabel">To:</span>
+            <span className="adjustmentShiftValue">{currentRecord.shift_to ? timeToInputValue(currentRecord.shift_to) : '—'}</span>
+            <span className="adjustmentShiftNote">(OT is calculated when working hours exceed shift duration)</span>
           </div>
         </div>
-        {currentRecordLoading && <p className="muted adjustmentLoadStatus">Loading record…</p>}
-      </div>
+      )}
 
       {/* Current record display */}
       {form.emp_code && form.date && !currentRecordLoading && (
@@ -263,7 +552,7 @@ export default function AdjustmentPanel() {
               </div>
               <div className="currentRecordItem">
                 <span className="currentRecordLabel">Punch Out</span>
-                <span className="currentRecordValue">{currentRecord.punch_out ? timeToInputValue(currentRecord.punch_out) : '—'}</span>
+                <span className="currentRecordValue">{currentRecord.punch_out ? timeToInputValue(currentRecord.punch_out) : '— (no punch out)'}</span>
               </div>
               <div className="currentRecordItem">
                 <span className="currentRecordLabel">Working Hrs</span>
@@ -329,13 +618,33 @@ export default function AdjustmentPanel() {
       <div className="card adjustmentFormCard">
         <h3 className="adjustmentCardTitle">2. Edit and save</h3>
         <form onSubmit={handleAdjust} className="adjustmentForm">
-          <div className="adjustmentField">
-            <label className="label">Punch In</label>
-            <input type="time" className="input" value={form.punch_in} onChange={(e) => setForm((f) => ({ ...f, punch_in: e.target.value }))} />
-          </div>
-          <div className="adjustmentField">
-            <label className="label">Punch Out</label>
-            <input type="time" className="input" value={form.punch_out} onChange={(e) => setForm((f) => ({ ...f, punch_out: e.target.value }))} />
+          <div className="adjustmentPunchRow">
+            <div className="adjustmentField">
+              <label className="label">Punch In</label>
+              <input type="time" className="input" value={form.punch_in} onChange={(e) => setForm((f) => ({ ...f, punch_in: e.target.value }))} />
+            </div>
+            <div className="adjustmentField">
+              <label className="label">Punch Out</label>
+              <input
+                type="time"
+                className="input"
+                value={form.punch_out}
+                onChange={(e) => setForm((f) => ({ ...f, punch_out: e.target.value }))}
+                disabled={noPunchOut}
+                title={noPunchOut ? 'Clear "No punch out" to enter time' : ''}
+              />
+            </div>
+            <label className={`adjustmentNoPunchOutCompact ${noPunchOut ? 'active' : ''}`}>
+              <input
+                type="checkbox"
+                checked={noPunchOut}
+                onChange={(e) => {
+                  setNoPunchOut(e.target.checked)
+                  if (e.target.checked) setForm((f) => ({ ...f, punch_out: '' }))
+                }}
+              />
+              <span>No punch out — carry to next day</span>
+            </label>
           </div>
           <div className="adjustmentField">
             <label className="label">Overtime (auto)</label>
@@ -439,6 +748,218 @@ export default function AdjustmentPanel() {
         )}
         {!listLoading && Array.isArray(list) && list.length === 0 && <p className="muted">No adjustments match the filters.</p>}
       </div>
+        </>
+      )}
+
+      {activeTab === 'bonus' && (
+        <>
+          <div className="card adjustmentCurrentCard">
+            <h3 className="adjustmentCardTitle">Current bonus</h3>
+            {form.emp_code && bonusMonth && bonusYear ? (
+              bonusCurrent != null ? (
+                <p className="adjustmentBonusCurrent"><strong>{Number(bonusCurrent.bonus ?? 0).toFixed(2)}</strong> hours for this month</p>
+              ) : (
+                <p className="muted">No bonus record for this employee/month.</p>
+              )
+            ) : (
+              <p className="muted">Select employee and month/year above.</p>
+            )}
+          </div>
+
+          <div className="card adjustmentBonusHistoryCard">
+            <h3 className="adjustmentCardTitle">Bonus history</h3>
+            {bonusDetailsLoading ? (
+              <p className="muted">Loading…</p>
+            ) : form.emp_code && bonusMonth && bonusYear && bonusDetails ? (
+              <>
+                <h4 className="adjustmentBonusHistorySubtitle">Shift OT bonus (this month)</h4>
+                {Array.isArray(bonusDetails.shift_ot_bonus) && bonusDetails.shift_ot_bonus.length > 0 ? (
+                  <div className="tableCard">
+                    <table className="adjustmentBonusHistoryTable">
+                      <thead>
+                        <tr>
+                          <th>Date</th>
+                          <th>Hours</th>
+                          <th>Description</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {bonusDetails.shift_ot_bonus.map((row, i) => (
+                          <tr key={i}>
+                            <td>{row.date || '—'}</td>
+                            <td>{Number(row.bonus_hours ?? 0).toFixed(2)}</td>
+                            <td>{row.description || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="muted">No shift OT bonus for this month.</p>
+                )}
+                <h4 className="adjustmentBonusHistorySubtitle">Manual bonus (this month)</h4>
+                {Array.isArray(bonusDetails.manual_bonus_grants) && bonusDetails.manual_bonus_grants.length > 0 ? (
+                  <div className="tableCard">
+                    <table className="adjustmentBonusHistoryTable">
+                      <thead>
+                        <tr>
+                          <th>When</th>
+                          <th>Hours</th>
+                          <th>Total after</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {bonusDetails.manual_bonus_grants.map((row, i) => (
+                          <tr key={i}>
+                            <td>{row.given_at ? new Date(row.given_at).toLocaleString() : '—'}</td>
+                            <td>{row.hours != null ? Number(row.hours).toFixed(2) : '—'}</td>
+                            <td>{row.new_total != null ? Number(row.new_total).toFixed(2) : '—'}</td>
+                            <td className="adjustmentBonusHistoryAction">
+                              <button
+                                type="button"
+                                className="btn btn-secondary adjustmentBonusRemoveBtn"
+                                onClick={() => handleBonusRemoveGrant(row)}
+                                disabled={bonusLoading || (row.hours != null && parseFloat(row.hours) <= 0)}
+                                title="Subtract this grant from current bonus"
+                              >
+                                Remove
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="muted">No manual bonus grants on record.</p>
+                )}
+              </>
+            ) : (
+              <p className="muted">Select employee and month/year above to see history.</p>
+            )}
+          </div>
+
+          <div className="card adjustmentFormCard">
+            <h3 className="adjustmentCardTitle">Add or set bonus</h3>
+            <form onSubmit={handleBonusSubmit} className="adjustmentForm">
+              <div className="adjustmentField">
+                <label className="label">Mode</label>
+                <select className="input" value={bonusMode} onChange={(e) => setBonusMode(e.target.value)}>
+                  <option value="give">Give (add hours)</option>
+                  <option value="set">Set (exact hours)</option>
+                </select>
+              </div>
+              <div className="adjustmentField">
+                <label className="label">Hours</label>
+                <input type="number" step="0.5" min="0" className="input" value={bonusHours} onChange={(e) => setBonusHours(e.target.value)} placeholder="0" />
+              </div>
+              <div className="adjustmentField adjustmentSubmit">
+                <button type="submit" className="btn btn-primary" disabled={bonusLoading || !form.emp_code}>
+                  {bonusLoading ? 'Saving…' : bonusMode === 'give' ? 'Add bonus' : 'Set bonus'}
+                </button>
+              </div>
+              <div className="adjustmentField adjustmentSubmit">
+                <button type="button" className="btn btn-secondary" onClick={handleBonusClear} disabled={bonusLoading || !form.emp_code}>
+                  Clear bonus (set to 0)
+                </button>
+              </div>
+            </form>
+            {bonusMessage && <p className={`adjustmentMessage ${bonusMessage.includes('Failed') ? 'error' : 'success'}`}>{bonusMessage}</p>}
+          </div>
+        </>
+      )}
+
+      {activeTab === 'penalty' && (
+        <>
+          <div className="card adjustmentCurrentCard">
+            <h3 className="adjustmentCardTitle">Penalties for this employee</h3>
+            {form.emp_code ? (
+              penaltyList.length > 0 ? (
+                <ul className="adjustmentPenaltyList">
+                  {penaltyList.map((p) => (
+                    <li key={p.id} className="adjustmentPenaltyItem">
+                      <span className="adjustmentPenaltyAmount">Rs {Number(p.deduction_amount || 0).toFixed(2)}</span>
+                      <span className="adjustmentPenaltyMeta">{p.date || '—'} — {p.description || '—'}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="muted">No penalties on record.</p>
+              )
+            ) : (
+              <p className="muted">Select employee above.</p>
+            )}
+          </div>
+          <div className="card adjustmentFormCard">
+            <h3 className="adjustmentCardTitle">Add penalty</h3>
+            <form onSubmit={handlePenaltyCreate} className="adjustmentForm">
+              <div className="adjustmentField">
+                <label className="label">Amount (Rs)</label>
+                <input type="number" step="0.01" min="0" className="input" value={penaltyAmount} onChange={(e) => setPenaltyAmount(e.target.value)} placeholder="0" />
+              </div>
+              <div className="adjustmentField adjustmentFieldWide">
+                <label className="label">Description</label>
+                <input type="text" className="input" value={penaltyDesc} onChange={(e) => setPenaltyDesc(e.target.value)} placeholder="e.g. Late arrival" />
+              </div>
+              <div className="adjustmentField">
+                <label className="label">Date</label>
+                <input type="date" className="input" value={penaltyDate} onChange={(e) => setPenaltyDate(e.target.value)} />
+              </div>
+              <div className="adjustmentField adjustmentSubmit">
+                <button type="submit" className="btn btn-primary" disabled={penaltyLoading || !form.emp_code}>
+                  {penaltyLoading ? 'Adding…' : 'Add penalty'}
+                </button>
+              </div>
+            </form>
+            {penaltyMessage && <p className={`adjustmentMessage ${penaltyMessage.includes('Failed') ? 'error' : 'success'}`}>{penaltyMessage}</p>}
+          </div>
+        </>
+      )}
+
+      {activeTab === 'advance' && (
+        <>
+          <div className="card adjustmentCurrentCard">
+            <h3 className="adjustmentCardTitle">Advances for this employee (month/year)</h3>
+            {form.emp_code && advanceMonth && advanceYear ? (
+              advanceList.length > 0 ? (
+                <ul className="adjustmentAdvanceList">
+                  {advanceList.map((a) => (
+                    <li key={a.id} className="adjustmentAdvanceItem">
+                      <span className="adjustmentAdvanceAmount">Rs {Number(a.amount || 0).toFixed(2)}</span>
+                      <span className="adjustmentAdvanceNote">{a.note || '—'}</span>
+                      <button type="button" className="btn btn-secondary adjustmentAdvanceDelete" onClick={() => handleAdvanceDelete(a.id)}>Remove</button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="muted">No advances for this month/year.</p>
+              )
+            ) : (
+              <p className="muted">Select employee and month/year above.</p>
+            )}
+          </div>
+          <div className="card adjustmentFormCard">
+            <h3 className="adjustmentCardTitle">Add advance</h3>
+            <form onSubmit={handleAdvanceCreate} className="adjustmentForm">
+              <div className="adjustmentField">
+                <label className="label">Amount (Rs)</label>
+                <input type="number" step="0.01" min="0" className="input" value={advanceAmount} onChange={(e) => setAdvanceAmount(e.target.value)} placeholder="0" />
+              </div>
+              <div className="adjustmentField adjustmentFieldWide">
+                <label className="label">Note</label>
+                <input type="text" className="input" value={advanceNote} onChange={(e) => setAdvanceNote(e.target.value)} placeholder="Optional" />
+              </div>
+              <div className="adjustmentField adjustmentSubmit">
+                <button type="submit" className="btn btn-primary" disabled={advanceLoading || !form.emp_code}>
+                  {advanceLoading ? 'Adding…' : 'Add advance'}
+                </button>
+              </div>
+            </form>
+            {advanceMessage && <p className={`adjustmentMessage ${advanceMessage.includes('Failed') ? 'error' : 'success'}`}>{advanceMessage}</p>}
+          </div>
+        </>
+      )}
     </div>
   )
 }

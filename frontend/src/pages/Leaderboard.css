@@ -1,111 +1,160 @@
-/* ─── Leaderboard Page ─── */
+/* ─── Leaderboard Page (clean redesign) ─── */
 .lbPage {
-  max-width: 1100px;
+  max-width: 1000px;
   margin: 0 auto;
+  padding-bottom: 2rem;
+}
+
+/* Filter bar (top) */
+.lbFilterBar {
+  display: flex;
+  align-items: flex-end;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+  padding: 0.85rem 1rem;
+  background: var(--cardBg);
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+.lbFilterGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.lbFilterLabel {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--textMuted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.lbFilterSelect {
+  padding: 0.45rem 0.65rem;
+  font-size: 0.875rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  min-width: 80px;
 }
 
 /* Header */
 .lbHeader {
-  margin-bottom: 1.5rem;
+  margin-bottom: 2rem;
+}
+.lbHeaderRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
 }
 .lbTitle {
-  font-size: 1.5rem;
-  font-weight: 800;
+  font-size: 1.65rem;
+  font-weight: 700;
   color: var(--text);
   margin: 0 0 0.2rem;
   letter-spacing: -0.02em;
 }
 .lbSubtitle {
-  font-size: 0.85rem;
+  display: block;
+  font-size: 0.875rem;
   color: var(--textMuted);
   font-weight: 400;
+}
+.lbRunEngineBtn {
+  flex-shrink: 0;
+  font-size: 0.8125rem;
+}
+.lbError {
+  margin: 0.75rem 0 0;
+  padding: 0.65rem 0.85rem;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: 8px;
+  color: #f87171;
+  font-size: 0.875rem;
 }
 
 /* ─── Podium (Top 3) ─── */
 .lbPodium {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 1.25rem;
-  margin-bottom: 2rem;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 2.5rem;
+  align-items: end;
 }
 .lbPodiumCard {
-  background: var(--surface);
+  background: var(--cardBg, #1a1d24);
   border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 1.75rem 1.25rem 1.5rem;
+  border-radius: 12px;
+  padding: 1.5rem 1.25rem;
   text-align: center;
-  position: relative;
-  transition: transform 0.2s, box-shadow 0.2s;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 0.5rem;
+  transition: box-shadow 0.2s;
 }
 .lbPodiumCard:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 12px 32px rgba(0,0,0,0.1);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
 }
 
-/* Gold / Silver / Bronze accents */
+/* 1st = slight prominence, 2nd/3rd = subtle */
 .lbMedal1 {
-  border-color: #ffd700;
-  background: linear-gradient(180deg, rgba(255,215,0,0.06) 0%, var(--surface) 50%);
+  border-color: rgba(34, 197, 94, 0.35);
+  box-shadow: 0 4px 16px rgba(34, 197, 94, 0.08);
 }
 .lbMedal2 {
-  border-color: #c0c0c0;
-  background: linear-gradient(180deg, rgba(192,192,192,0.06) 0%, var(--surface) 50%);
+  border-color: var(--border);
 }
 .lbMedal3 {
-  border-color: #cd7f32;
-  background: linear-gradient(180deg, rgba(205,127,50,0.06) 0%, var(--surface) 50%);
+  border-color: var(--border);
 }
 
 .lbPodiumRank {
-  font-size: 0.85rem;
-  font-weight: 700;
+  font-size: 0.8rem;
+  font-weight: 600;
   color: var(--textMuted);
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.15rem;
 }
-.lbMedal1 .lbPodiumRank { color: #b8860b; }
-.lbMedal2 .lbPodiumRank { color: #808080; }
-.lbMedal3 .lbPodiumRank { color: #b5651d; }
+.lbMedal1 .lbPodiumRank { color: var(--accent); }
 
 .lbPodiumAvatar {
-  width: 56px;
-  height: 56px;
+  width: 52px;
+  height: 52px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--accent), #2563eb);
-  color: #fff;
-  font-weight: 700;
-  font-size: 1.1rem;
+  background: var(--border);
+  color: var(--text);
+  font-weight: 600;
+  font-size: 1rem;
   display: flex;
   align-items: center;
   justify-content: center;
-  letter-spacing: 0.04em;
-  margin-bottom: 0.25rem;
+  letter-spacing: 0.02em;
 }
-.lbMedal1 .lbPodiumAvatar { background: linear-gradient(135deg, #ffd700, #ff9800); }
-.lbMedal2 .lbPodiumAvatar { background: linear-gradient(135deg, #b0bec5, #78909c); }
-.lbMedal3 .lbPodiumAvatar { background: linear-gradient(135deg, #cd7f32, #a0522d); }
+.lbMedal1 .lbPodiumAvatar {
+  background: var(--accent);
+  color: #fff;
+}
 
 .lbPodiumName {
-  font-size: 1rem;
-  font-weight: 700;
+  font-size: 0.95rem;
+  font-weight: 600;
   color: var(--text);
   line-height: 1.2;
 }
 .lbPodiumDept {
   font-size: 0.75rem;
   color: var(--textMuted);
-  font-weight: 400;
 }
 
 .lbPodiumStats {
   display: flex;
   justify-content: center;
-  gap: 1.25rem;
-  margin: 0.5rem 0;
-  padding: 0.6rem 0;
+  gap: 1rem;
+  margin: 0.4rem 0;
+  padding: 0.5rem 0;
   width: 100%;
   border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
@@ -114,226 +163,311 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.1rem;
+  gap: 0.05rem;
 }
 .lbPodiumStatNum {
-  font-size: 1.15rem;
-  font-weight: 800;
+  font-size: 1rem;
+  font-weight: 700;
   color: var(--text);
 }
 .lbPodiumStatLabel {
-  font-size: 0.62rem;
+  font-size: 0.65rem;
   color: var(--textMuted);
   text-transform: uppercase;
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
 }
 
 .lbPodiumTrigger {
-  margin: 0.2rem 0 0.4rem;
+  margin: 0.1rem 0;
 }
+.lbBadge {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+.lbBadgeGreen { background: rgba(34, 197, 94, 0.12); color: var(--accent); }
+.lbBadgePurple { background: rgba(168, 85, 247, 0.12); color: #a855f7; }
+.lbBadgeBlue { background: rgba(59, 130, 246, 0.12); color: #3b82f6; }
 
+.lbLastAwarded {
+  font-size: 0.7rem;
+  color: var(--textMuted);
+  margin-top: 0.1rem;
+}
+.lbLastAwardedNone {
+  color: var(--textMuted);
+  opacity: 0.8;
+}
 .lbPodiumActions {
   display: flex;
-  gap: 0.5rem;
+  gap: 0.4rem;
   width: 100%;
+  margin-top: 0.25rem;
 }
-
 .lbCardBtn {
   flex: 1;
-  padding: 0.5rem 0.6rem;
+  padding: 0.45rem 0.5rem;
   border-radius: 8px;
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: opacity 0.15s, border-color 0.15s;
   text-align: center;
   text-decoration: none;
-  border: none;
+  border: 1px solid transparent;
 }
 .lbCardBtnView {
   background: var(--accent);
   color: #fff;
+  border-color: transparent;
 }
-.lbCardBtnView:hover {
-  opacity: 0.88;
-}
-.lbCardBtnBonus {
-  background: transparent;
+.lbCardBtnView:hover { opacity: 0.9; }
+.lbGiveBonusBtn {
+  flex: 1;
+  padding: 0.45rem 0.65rem;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
   border: 1px solid var(--border);
+  background: var(--cardBg);
   color: var(--text);
+  transition: border-color 0.15s, color 0.15s;
 }
-.lbCardBtnBonus:hover {
+.lbGiveBonusBtn:hover {
   border-color: var(--accent);
   color: var(--accent);
 }
+.lbGiveBonusBtnSm {
+  flex: none;
+  padding: 0.35rem 0.55rem;
+  font-size: 0.72rem;
+}
 
-/* Bonus bar inline */
+/* Bonus history (shown before giving bonus) */
+.lbBonusHistory {
+  font-size: 0.72rem;
+  color: var(--textMuted);
+  margin-bottom: 0.4rem;
+}
+.lbBonusHistoryNone {
+  font-style: italic;
+}
+.lbBonusHistoryLabel {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.2rem;
+  color: var(--text);
+}
+.lbBonusHistoryList {
+  margin: 0 0 0 1rem;
+  padding: 0;
+  list-style: disc;
+}
+.lbBonusHistoryList li {
+  margin-bottom: 0.1rem;
+}
+.lbBonusBarWrap {
+  width: 100%;
+}
+
+/* Bonus bar (inline in card) */
 .lbBonusBar {
   display: flex;
   align-items: center;
   gap: 0.4rem;
   width: 100%;
-  margin-top: 0.4rem;
+  margin-top: 0.35rem;
   padding-top: 0.5rem;
-  border-top: 1px dashed var(--border);
+  border-top: 1px solid var(--border);
+}
+.lbBonusFormRow {
+  background: rgba(255, 255, 255, 0.02);
+}
+.lbBonusFormCell {
+  padding: 0.6rem 0.85rem !important;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.lbBonusFormCell .lbBonusHistory {
+  margin-bottom: 0.5rem;
+}
+.lbBonusBarInline {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.lbBonusBarInline .lbBonusInput {
+  width: 80px;
+  flex: none;
+}
+.lbBonusBarLabel {
+  font-size: 0.8125rem;
+  color: var(--textMuted);
+  white-space: nowrap;
+}
+.lbBonusCancel {
+  margin-left: 0.15rem;
+  padding: 0.35rem 0.55rem;
+  font-size: 0.75rem;
 }
 .lbBonusInput {
   flex: 1;
+  min-width: 0;
   padding: 0.4rem 0.5rem;
   border: 1px solid var(--border);
   border-radius: 6px;
   font-size: 0.8rem;
-  background: var(--surface);
+  background: var(--bg);
   color: var(--text);
-  text-align: center;
 }
 .lbBonusInput:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.15);
 }
 .lbBonusSubmit {
-  padding: 0.4rem 0.85rem;
+  padding: 0.4rem 0.75rem;
   border: none;
   border-radius: 6px;
   background: var(--accent);
   color: #fff;
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   font-weight: 600;
   cursor: pointer;
-  transition: opacity 0.15s;
-  white-space: nowrap;
 }
-.lbBonusSubmit:hover { opacity: 0.85; }
+.lbBonusSubmit:hover { opacity: 0.9; }
 .lbBonusSubmit:disabled { opacity: 0.5; cursor: not-allowed; }
 .lbBonusFeedback {
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   color: var(--accent);
   font-weight: 500;
-  white-space: nowrap;
 }
-
-/* ─── Badge (Reward type) ─── */
-.lbBadge {
-  display: inline-block;
-  padding: 0.22rem 0.6rem;
-  border-radius: 20px;
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-}
-.lbBadgeGreen { background: rgba(34,197,94,0.12); color: var(--accent); }
-.lbBadgePurple { background: rgba(168,85,247,0.12); color: #a855f7; }
-.lbBadgeBlue { background: rgba(59,130,246,0.12); color: #3b82f6; }
 
 /* ─── Other Performers Table ─── */
 .lbListSection {
-  margin-top: 0.5rem;
+  margin-top: 0;
 }
 .lbListTitle {
-  font-size: 1rem;
-  font-weight: 700;
-  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--textMuted);
   margin: 0 0 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
-.lbTable { width: 100%; }
+.tableCard {
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.lbTable {
+  width: 100%;
+  border-collapse: collapse;
+}
 .lbTable th {
   font-size: 0.7rem;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   color: var(--textMuted);
-  font-weight: 700;
-  padding: 0.75rem 0.6rem;
+  font-weight: 600;
+  padding: 0.7rem 0.85rem;
+  text-align: left;
+  background: rgba(0, 0, 0, 0.2);
+  border-bottom: 1px solid var(--border);
 }
+.lbTable th:first-child { text-align: center; }
 .lbTable td {
   vertical-align: middle;
-  padding: 0.65rem 0.6rem;
+  padding: 0.7rem 0.85rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.875rem;
 }
+.lbTable tbody tr:last-child td { border-bottom: none; }
 .lbTable tbody tr:hover {
-  background: rgba(34, 197, 94, 0.03);
+  background: rgba(255, 255, 255, 0.02);
 }
+.lbTable td:first-child { text-align: center; }
 
 .lbRankNum {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 0.35rem;
+  border-radius: 6px;
   background: var(--border);
   color: var(--textMuted);
-  font-size: 0.78rem;
-  font-weight: 700;
-}
-
-.lbEmpCell {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-.lbEmpInfo {
-  display: flex;
-  flex-direction: column;
-  gap: 0.05rem;
-}
-.lbEmpName {
+  font-size: 0.75rem;
   font-weight: 600;
-  font-size: 0.85rem;
-  color: var(--text);
-}
-.lbEmpDept {
-  font-size: 0.7rem;
-  color: var(--textMuted);
 }
 
-/* Mini stat chips for table rows */
-.lbMiniStats {
-  display: flex;
-  gap: 0.35rem;
-}
+.lbEmpCell { display: flex; align-items: center; }
+.lbEmpInfo { display: flex; flex-direction: column; gap: 0.05rem; }
+.lbEmpName { font-weight: 600; font-size: 0.875rem; color: var(--text); }
+.lbEmpDept { font-size: 0.75rem; color: var(--textMuted); }
+
+.lbMiniStats { display: flex; gap: 0.35rem; flex-wrap: wrap; }
 .lbMini {
-  padding: 0.12rem 0.4rem;
+  padding: 0.15rem 0.45rem;
   border-radius: 4px;
   font-size: 0.7rem;
   font-weight: 600;
-  white-space: nowrap;
 }
-.lbMiniBlue  { background: rgba(59,130,246,0.1);  color: #3b82f6; }
-.lbMiniPurple{ background: rgba(168,85,247,0.1);  color: #a855f7; }
-.lbMiniGreen { background: rgba(34,197,94,0.1);   color: var(--accent); }
+.lbMiniBlue  { background: rgba(59, 130, 246, 0.12);  color: #60a5fa; }
+.lbMiniPurple{ background: rgba(168, 85, 247, 0.12);  color: #a78bfa; }
+.lbMiniGreen { background: rgba(34, 197, 94, 0.12);   color: var(--accent); }
 
+.lbTableActions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
 .lbTableLink {
-  font-size: 0.78rem;
-  font-weight: 600;
+  font-size: 0.8rem;
+  font-weight: 500;
   color: var(--accent);
   text-decoration: none;
 }
 .lbTableLink:hover { text-decoration: underline; }
+.lbBonusCell {
+  display: block;
+  font-weight: 600;
+  color: var(--text);
+}
+.lbLastAwardedInline {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--textMuted);
+  margin-top: 0.15rem;
+}
+.lbLastAwardedInline.lbLastAwardedNone { opacity: 0.8; }
 
 /* Empty state */
 .lbEmpty {
   text-align: center;
-  padding: 3rem 1rem;
+  padding: 3rem 1.5rem;
+  background: var(--cardBg);
+  border-radius: 12px;
+  border: 1px solid var(--border);
 }
 
-/* ─── Responsive ─── */
+/* Responsive */
 @media (max-width: 900px) {
   .lbPodium {
     grid-template-columns: 1fr;
-    gap: 1rem;
+    align-items: stretch;
   }
 }
 @media (max-width: 600px) {
-  .lbPodiumCard {
-    padding: 1.25rem 1rem 1rem;
-  }
-  .lbMiniStats {
-    flex-direction: column;
-    gap: 0.2rem;
-  }
-  .lbPage {
-    padding: 0.5rem;
-  }
+  .lbPodiumCard { padding: 1.25rem 1rem; }
+  .lbTable th, .lbTable td { padding: 0.55rem 0.5rem; font-size: 0.8125rem; }
+  .lbMiniStats { flex-direction: row; }
 }

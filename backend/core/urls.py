@@ -38,6 +38,7 @@ urlpatterns = [
     path('bonus/overview/', views.BonusOverviewView.as_view()),
     path('bonus/employee-details/', views.BonusEmployeeDetailsView.as_view()),
     path('bonus/set/', views.SetBonusView.as_view()),
+    path('bonus/hide-grant/', views.HideBonusGrantView.as_view()),
     path('export/payroll-excel/', views.ExportPayrollExcelView.as_view()),
     path('export/employee-salary-history/', views.ExportEmployeeSalaryHistoryView.as_view()),
     path('export/', views.ExportView.as_view()),

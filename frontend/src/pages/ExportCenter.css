@@ -45,10 +45,10 @@
   line-height: 1.5;
 }
 
-/* Page-level: How it works & where data comes from */
+/* Page-level: How it works & where data comes from (top section, full width) */
 .exportHowWhereCard {
-  max-width: 720px;
-  margin: 0 auto 1.75rem;
+  width: 100%;
+  margin: 0 0 1.75rem 0;
   padding: 0;
   border-radius: 12px;
   border: 1px solid var(--border);
@@ -100,34 +100,23 @@
 
 .exportHowWhereBody {
   margin: 0;
-  padding: 1.25rem 1.5rem;
+  padding: 1rem 1.25rem;
   font-size: 0.875rem;
   color: var(--textMuted);
-  line-height: 1.65;
+  line-height: 1.6;
   background: rgba(0, 0, 0, 0.15);
 }
 
-.exportHowWhereBody p {
-  margin: 0 0 0.6rem;
-  color: var(--text);
-  font-size: 0.9rem;
-}
-
+.exportHowWhereBody p { margin: 0 0 0.5rem; color: var(--text); font-size: 0.9rem; }
 .exportHowWhereBody p:first-child { margin-top: 0; }
 .exportHowWhereBody p + ul { margin-top: 0.25rem; }
-.exportHowWhereBody ul {
-  margin: 0 0 1rem 1.25rem;
-  padding-left: 0.25rem;
-}
+.exportHowWhereBody ul { margin: 0.35rem 0 1rem 1.25rem; padding-left: 0.5rem; }
 .exportHowWhereBody ul:last-child { margin-bottom: 0; }
-.exportHowWhereBody li {
-  margin-bottom: 0.5rem;
-}
-.exportHowWhereBody li:last-child { margin-bottom: 0; }
+.exportHowWhereBody li { margin-bottom: 0.35rem; }
 .exportHowWhereBody code {
   font-size: 0.82em;
-  padding: 0.2em 0.5em;
-  border-radius: 6px;
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
   background: var(--bg);
   color: var(--accent);
   border: 1px solid var(--border);
