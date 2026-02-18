@@ -241,7 +241,10 @@ class UploadAttendanceView(APIView):
         if not f:
             return Response({'success': False, 'error': 'No file'}, status=400)
         preview = request.data.get('preview', 'false').lower() == 'true'
-        result = upload_attendance_excel(f, preview=preview)
+        try:
+            result = upload_attendance_excel(f, preview=preview)
+        except Exception as e:
+            return Response({'success': False, 'error': str(e)}, status=500)
         if not result.get('success'):
             return Response(result, status=400)
         # Auto-run reward engine after actual upload (not preview)

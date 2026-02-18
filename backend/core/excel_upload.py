@@ -510,12 +510,36 @@ def upload_attendance_excel(file, preview=False) -> dict:
     # Shift OT bonus: >12h in a shift -> 1h bonus per 2h extra (once per emp per date)
     from .shift_bonus import apply_shift_overtime_bonus_for_date
     from .penalty_logic import recalculate_late_penalty_for_date
+
+    def _parse_date(d):
+        """Parse date from string YYYY-MM-DD or return as-is if already date."""
+        if isinstance(d, date) and not isinstance(d, datetime):
+            return d
+        if isinstance(d, datetime):
+            return d.date()
+        if isinstance(d, str):
+            try:
+                return datetime.strptime(d[:10], '%Y-%m-%d').date()
+            except (ValueError, TypeError):
+                return None
+        return None
+
     for att_data in to_insert:
-        apply_shift_overtime_bonus_for_date(att_data['emp_code'], att_data['date'])
-        recalculate_late_penalty_for_date(att_data['emp_code'], att_data['date'])
+        d = _parse_date(att_data['date'])
+        if d:
+            try:
+                apply_shift_overtime_bonus_for_date(att_data['emp_code'], d)
+                recalculate_late_penalty_for_date(att_data['emp_code'], d)
+            except Exception:
+                pass  # don't fail upload if bonus/penalty calc fails
     for update_data in to_update:
-        apply_shift_overtime_bonus_for_date(update_data['emp_code'], update_data['date'])
-        recalculate_late_penalty_for_date(update_data['emp_code'], update_data['date'])
+        d = _parse_date(update_data['date'])
+        if d:
+            try:
+                apply_shift_overtime_bonus_for_date(update_data['emp_code'], d)
+                recalculate_late_penalty_for_date(update_data['emp_code'], d)
+            except Exception:
+                pass
 
     return {
         'success': True,
