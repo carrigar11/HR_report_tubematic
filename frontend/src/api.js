@@ -72,6 +72,7 @@ export const employees = {
   list: (params) => api.get('/employees/', { params }),
   get: (id) => api.get(`/employees/${id}/`),
   profile: (empCode) => api.get(`/employees/${empCode}/profile/`),
+  update: (id, data) => api.patch(`/employees/${id}/`, data),
 }
 
 export const attendance = {

@@ -5,7 +5,8 @@ import './Table.css'
 import './AttendanceTable.css'
 
 const today = new Date().toISOString().slice(0, 10)
-const PAGE_SIZE = 50
+const PAGE_SIZE_OPTIONS = [50, 200, 500, 1000]
+const DEFAULT_PAGE_SIZE = 50
 
 /** Format "2026-02-12" → "12 Feb 2026" */
 function formatDate(dateStr) {
@@ -27,6 +28,7 @@ export default function AttendanceTable() {
   const [list, setList] = useState([])
   const [loading, setLoading] = useState(false)
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [count, setCount] = useState(0)
   const [sortBy, setSortBy] = useState('date')
   const [sortOrder, setSortOrder] = useState('desc')
@@ -39,12 +41,12 @@ export default function AttendanceTable() {
   // Reset to page 1 when filters or sort change
   useEffect(() => {
     setPage(1)
-  }, [dateFrom, dateTo, useRange, showAllDates, searchDebounced, punchinFilter, statusFilter, sortBy, sortOrder])
+  }, [dateFrom, dateTo, useRange, showAllDates, searchDebounced, punchinFilter, statusFilter, sortBy, sortOrder, pageSize])
 
   useEffect(() => {
     setLoading(true)
     const ordering = sortOrder === 'desc' ? `-${sortBy}` : sortBy
-    const params = { page, page_size: PAGE_SIZE, ordering }
+    const params = { page, page_size: pageSize, ordering }
     if (searchDebounced) params.search = searchDebounced
     if (!showAllDates) {
       if (useRange) {
@@ -67,11 +69,11 @@ export default function AttendanceTable() {
         setCount(0)
       })
       .finally(() => setLoading(false))
-  }, [page, dateFrom, dateTo, useRange, showAllDates, searchDebounced, punchinFilter, statusFilter, sortBy, sortOrder])
+  }, [page, dateFrom, dateTo, useRange, showAllDates, searchDebounced, punchinFilter, statusFilter, sortBy, sortOrder, pageSize])
 
-  const totalPages = Math.max(1, Math.ceil(count / PAGE_SIZE))
-  const from = count === 0 ? 0 : (page - 1) * PAGE_SIZE + 1
-  const to = Math.min(page * PAGE_SIZE, count)
+  const totalPages = Math.max(1, Math.ceil(count / pageSize))
+  const from = count === 0 ? 0 : (page - 1) * pageSize + 1
+  const to = Math.min(page * pageSize, count)
 
   const handleSort = (field) => {
     if (sortBy === field) {
@@ -208,6 +210,18 @@ export default function AttendanceTable() {
             <div className="attTableMeta">
               <p className="muted attSortHint">Click column headers to sort ↑↓</p>
               <span className="attRecordCount">{count} records total — showing {from}–{to}</span>
+              <label className="attPerPageLabel">
+                Per page
+                <select
+                  className="input attPerPageSelect"
+                  value={pageSize}
+                  onChange={(e) => setPageSize(Number(e.target.value))}
+                >
+                  {PAGE_SIZE_OPTIONS.map((n) => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
+              </label>
             </div>
             <div className="attTableWrap">
               <table className="attTable">

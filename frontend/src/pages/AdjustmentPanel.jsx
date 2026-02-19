@@ -10,6 +10,27 @@ const ADJUST_TABS = [
   { id: 'penalty', label: 'Penalty' },
   { id: 'advance', label: 'Advance' },
 ]
+const STATUS_OPTIONS = [
+  { value: 'Active', label: 'Active' },
+  { value: 'Inactive', label: 'Inactive' },
+  { value: 'Week off', label: 'Week off' },
+  { value: 'Holiday', label: 'Holiday' },
+]
+const SALARY_TYPE_OPTIONS = [
+  { value: 'Monthly', label: 'Monthly' },
+  { value: 'Hourly', label: 'Hourly' },
+  { value: 'Fixed', label: 'Fixed' },
+]
+
+/** Per-hour rate: Hourly = base_salary; Monthly/Fixed = base_salary / 208 (26 days × 8 h, same as backend). */
+function perHourFromBase(baseSalary, salaryType) {
+  if (baseSalary == null || baseSalary === '') return null
+  const base = Number(baseSalary)
+  if (Number.isNaN(base) || base < 0) return null
+  const st = (salaryType || 'Monthly').toLowerCase()
+  if (st === 'hourly') return base
+  return base / 208
+}
 const MONTHS = [
   { value: 1, label: 'Jan' }, { value: 2, label: 'Feb' }, { value: 3, label: 'Mar' },
   { value: 4, label: 'Apr' }, { value: 5, label: 'May' }, { value: 6, label: 'Jun' },
@@ -105,6 +126,11 @@ export default function AdjustmentPanel() {
   const [advanceLoading, setAdvanceLoading] = useState(false)
   const [advanceMessage, setAdvanceMessage] = useState('')
 
+  const [selectedEmployee, setSelectedEmployee] = useState(null)
+  const [statusUpdateLoading, setStatusUpdateLoading] = useState(false)
+  const [salaryEdit, setSalaryEdit] = useState({ base_salary: '', salary_type: 'Monthly' })
+  const [salarySaving, setSalarySaving] = useState(false)
+
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (suggestRef.current && !suggestRef.current.contains(e.target)) setShowSuggestions(false)
@@ -185,6 +211,29 @@ export default function AdjustmentPanel() {
     setEmpSearch(`${emp.emp_code} - ${emp.name || ''}`)
     setShowSuggestions(false)
     setEmpSuggestions([])
+    setSelectedEmployee(emp)
+    setSalaryEdit({
+      base_salary: emp.base_salary != null ? String(emp.base_salary) : '',
+      salary_type: emp.salary_type || 'Monthly',
+    })
+  }
+
+  const saveSalary = () => {
+    if (!selectedEmployee?.id) return
+    const baseVal = salaryEdit.base_salary.trim()
+    const baseNum = baseVal === '' ? null : parseFloat(baseVal)
+    if (baseVal !== '' && (Number.isNaN(baseNum) || baseNum < 0)) return
+    const payload = {
+      base_salary: baseVal === '' ? null : baseNum,
+      salary_type: salaryEdit.salary_type,
+    }
+    setSalarySaving(true)
+    employees.update(selectedEmployee.id, payload)
+      .then(() => {
+        setSelectedEmployee((prev) => prev ? { ...prev, base_salary: payload.base_salary, salary_type: payload.salary_type } : null)
+      })
+      .catch(() => {})
+      .finally(() => setSalarySaving(false))
   }
 
   const handleAdjust = async (e) => {
@@ -520,6 +569,84 @@ export default function AdjustmentPanel() {
           )}
         </div>
         {activeTab === 'attendance' && currentRecordLoading && <p className="muted adjustmentLoadStatus">Loading record…</p>}
+        {selectedEmployee && (
+          <>
+            <div className="adjustmentEmployeeBlock">
+              <div className="adjustmentStatusRow">
+                <label className="label">Employee status</label>
+                <select
+                  className="input adjustmentStatusSelect"
+                  value={selectedEmployee.status || 'Active'}
+                  disabled={statusUpdateLoading}
+                  onChange={(e) => {
+                    const newStatus = e.target.value
+                    if (newStatus === selectedEmployee.status) return
+                    setStatusUpdateLoading(true)
+                    employees.update(selectedEmployee.id, { status: newStatus })
+                      .then(() => setSelectedEmployee((prev) => prev ? { ...prev, status: newStatus } : null))
+                      .catch(() => {})
+                      .finally(() => setStatusUpdateLoading(false))
+                  }}
+                >
+                  {STATUS_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="adjustmentSalaryRow">
+                <div className="adjustmentSalaryGroup">
+                  <label className="label">Shift</label>
+                  <span className="adjustmentSalaryReadOnly">{selectedEmployee.shift || '—'}</span>
+                </div>
+                <div className="adjustmentSalaryGroup">
+                  <label className="label">Base salary (₹)</label>
+                  <input
+                    type="number"
+                    className="input"
+                    min="0"
+                    step="0.01"
+                    placeholder="0"
+                    value={salaryEdit.base_salary}
+                    disabled={salarySaving}
+                    onChange={(e) => setSalaryEdit((s) => ({ ...s, base_salary: e.target.value }))}
+                    onBlur={saveSalary}
+                  />
+                </div>
+                <div className="adjustmentSalaryGroup">
+                  <label className="label">Salary type</label>
+                  <select
+                    className="input"
+                    value={salaryEdit.salary_type}
+                    disabled={salarySaving}
+                    onChange={(e) => {
+                      const v = e.target.value
+                      setSalaryEdit((s) => ({ ...s, salary_type: v }))
+                      if (selectedEmployee?.id) {
+                        setSalarySaving(true)
+                        employees.update(selectedEmployee.id, { salary_type: v })
+                          .then(() => setSelectedEmployee((prev) => prev ? { ...prev, salary_type: v } : null))
+                          .catch(() => {})
+                          .finally(() => setSalarySaving(false))
+                      }
+                    }}
+                  >
+                    {SALARY_TYPE_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="adjustmentSalaryGroup">
+                  <label className="label">Per hour salary</label>
+                  <span className="adjustmentPerHourValue">
+                    {perHourFromBase(salaryEdit.base_salary, salaryEdit.salary_type) != null
+                      ? `₹${Number(perHourFromBase(salaryEdit.base_salary, salaryEdit.salary_type)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                      : '—'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       {activeTab === 'attendance' && (

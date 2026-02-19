@@ -1439,15 +1439,25 @@ class SetBonusView(APIView):
 
 # ---------- Penalty (late-coming deduction for Hourly employees) ----------
 class PenaltyListView(APIView):
-    """List penalties with filters: emp_code, month, year, date_from, date_to."""
+    """List penalties with filters: search + search_type (emp_code|name), emp_code, month, year, date_from, date_to."""
     def get(self, request):
         _, allowed_emp_codes = get_request_admin(request)
         qs = Penalty.objects.all().order_by('-date', 'emp_code')
         if allowed_emp_codes is not None:
             qs = qs.filter(emp_code__in=allowed_emp_codes) if allowed_emp_codes else qs.none()
-        emp_code = request.query_params.get('emp_code', '').strip()
-        if emp_code:
-            qs = qs.filter(emp_code__icontains=emp_code)
+        search = request.query_params.get('search', '').strip()
+        if search:
+            # Inbuilt: match emp_code OR name (one search box)
+            emp_qs = Employee.objects.filter(
+                Q(emp_code__icontains=search) | Q(name__icontains=search)
+            )
+            if allowed_emp_codes is not None:
+                emp_qs = emp_qs.filter(emp_code__in=allowed_emp_codes) if allowed_emp_codes else emp_qs.none()
+            emp_codes = list(emp_qs.values_list('emp_code', flat=True))
+            if emp_codes:
+                qs = qs.filter(emp_code__in=emp_codes)
+            else:
+                qs = qs.none()
         month = request.query_params.get('month', '').strip()
         year = request.query_params.get('year', '').strip()
         if month:
@@ -1467,16 +1477,23 @@ class PenaltyListView(APIView):
             except ValueError:
                 pass
         attendance_map = {}
+        name_by_emp_code = {}
         if qs.exists():
             penalty_keys = list(qs.values_list('emp_code', 'date'))
+            emp_codes = list(set(k[0] for k in penalty_keys))
             attendances = Attendance.objects.filter(
-                emp_code__in=[k[0] for k in penalty_keys],
+                emp_code__in=emp_codes,
                 date__in=[k[1] for k in penalty_keys]
             ).values('emp_code', 'date', 'punch_in', 'shift_from')
             for a in attendances:
                 key = (a['emp_code'], str(a['date']))
                 attendance_map[key] = {'punch_in': a['punch_in'], 'shift_from': a['shift_from']}
-        data = PenaltySerializer(qs, many=True, context={'attendance_map': attendance_map}).data
+            for e in Employee.objects.filter(emp_code__in=emp_codes).values('emp_code', 'name'):
+                name_by_emp_code[e['emp_code']] = e.get('name') or ''
+        data = PenaltySerializer(
+            qs, many=True,
+            context={'attendance_map': attendance_map, 'name_by_emp_code': name_by_emp_code}
+        ).data
         return Response(data)
 
 
@@ -1734,7 +1751,7 @@ class ExportView(APIView):
             rows = list(qs)
             fieldnames = ['emp_code', 'name', 'mobile', 'email', 'gender', 'dept_name', 'designation', 'status', 'employment_type', 'salary_type', 'base_salary']
         elif report == 'attendance':
-            qs = Attendance.objects.all().order_by('date', 'emp_code')
+            qs = Attendance.objects.all()
             if allowed_emp_codes is not None:
                 qs = qs.filter(emp_code__in=allowed_emp_codes) if allowed_emp_codes else qs.none()
             if emp_code_filter:
@@ -1743,11 +1760,103 @@ class ExportView(APIView):
                 qs = qs.filter(date__gte=date_from)
             if date_to:
                 qs = qs.filter(date__lte=date_to)
-            rows = list(qs.values(
-                'emp_code', 'name', 'date', 'shift', 'shift_from', 'shift_to',
-                'punch_in', 'punch_out', 'punch_spans_next_day', 'total_working_hours', 'total_break', 'status', 'over_time'
+            # Newest first so all dates of an employee are easy to read (no limit – full set)
+            qs = qs.order_by('-date', 'emp_code')
+            raw_rows = list(qs.values(
+                'date', 'emp_code', 'name', 'punch_in', 'punch_out', 'status',
+                'total_working_hours', 'total_break', 'over_time',
+                'shift', 'shift_from', 'shift_to', 'punch_spans_next_day'
             ))
-            fieldnames = ['emp_code', 'name', 'date', 'shift', 'shift_from', 'shift_to', 'punch_in', 'punch_out', 'punch_spans_next_day', 'total_working_hours', 'total_break', 'status', 'over_time']
+            # Per (emp_code, date): penalty on that day (amount, minutes late) – sum amount if multiple
+            date_keys = set((r['emp_code'], r['date']) for r in raw_rows)
+            penalty_by_date = {}  # (emp_code, date) -> {'amount': Decimal, 'minutes_late': int}
+            if date_keys:
+                emp_codes = set(k[0] for k in date_keys)
+                dates = set(k[1] for k in date_keys)
+                for p in Penalty.objects.filter(emp_code__in=emp_codes, date__in=dates).values(
+                    'emp_code', 'date', 'deduction_amount', 'minutes_late'
+                ):
+                    key = (p['emp_code'], p['date'])
+                    amt = p.get('deduction_amount') or Decimal('0')
+                    mins = p.get('minutes_late') or 0
+                    if key not in penalty_by_date:
+                        penalty_by_date[key] = {'amount': amt, 'minutes_late': mins}
+                    else:
+                        penalty_by_date[key]['amount'] += amt
+                        penalty_by_date[key]['minutes_late'] = max(penalty_by_date[key]['minutes_late'], mins)
+            # Per (emp_code, month, year): advance, penalty total, to_be_paid (net for that month)
+            periods = set((r['date'].month, r['date'].year) for r in raw_rows)
+            advance_map = {}  # (emp_code, month, year) -> advance total
+            penalty_map = {}  # (emp_code, month, year) -> penalty total
+            to_be_paid_map = {}  # (emp_code, month, year) -> net pay
+            for (m, y) in periods:
+                adv = get_advance_totals_by_emp(month=m, year=y)
+                if allowed_emp_codes is not None:
+                    adv = {k: v for k, v in adv.items() if k in allowed_emp_codes}
+                pen_qs = Penalty.objects.filter(month=m, year=y).values('emp_code').annotate(total=Sum('deduction_amount'))
+                pen = {r['emp_code']: (r['total'] or Decimal('0')) for r in pen_qs}
+                if allowed_emp_codes is not None:
+                    pen = {k: v for k, v in pen.items() if k in allowed_emp_codes}
+                emp_codes_in_period = set(r['emp_code'] for r in raw_rows if (r['date'].month, r['date'].year) == (m, y))
+                for ec in emp_codes_in_period:
+                    advance_map[(ec, m, y)] = adv.get(ec, Decimal('0'))
+                    penalty_map[(ec, m, y)] = pen.get(ec, Decimal('0'))
+                # Gross and to_be_paid from Salary for this month
+                sal_list = list(Salary.objects.filter(month=m, year=y, emp_code__in=emp_codes_in_period).values(
+                    'emp_code', 'salary_type', 'base_salary', 'total_working_hours', 'overtime_hours', 'bonus'
+                ))
+                for s in sal_list:
+                    ec = s['emp_code']
+                    gross, _ = _gross_and_rate(
+                        s.get('salary_type'),
+                        s.get('base_salary'),
+                        s.get('total_working_hours'),
+                        s.get('overtime_hours'),
+                        s.get('bonus'),
+                    )
+                    adv_val = advance_map.get((ec, m, y), Decimal('0'))
+                    pen_val = penalty_map.get((ec, m, y), Decimal('0'))
+                    to_be_paid_map[(ec, m, y)] = round(gross - adv_val - pen_val, 2)
+            # Easy-to-read column order and headers for attendance (with penalty this day, advance, penalty month, to be paid)
+            fieldnames = [
+                'Date', 'Employee Code', 'Employee Name', 'Punch In', 'Punch Out', 'Status',
+                'Working Hours', 'Break (hrs)', 'Overtime', 'Shift', 'Shift Start', 'Shift End', 'Punch to next day',
+                'Penalty (this day)', 'Minutes late (this day)',
+                'Advance (month)', 'Penalty (month)', 'To be paid (month)'
+            ]
+            rows = []
+            for r in raw_rows:
+                d = r.get('date')
+                ec = r.get('emp_code')
+                m, y = d.month, d.year
+                key = (ec, m, y)
+                date_key = (ec, d)
+                penalty_today = penalty_by_date.get(date_key, {})
+                penalty_amount_today = penalty_today.get('amount', Decimal('0'))
+                minutes_late_today = penalty_today.get('minutes_late', '')
+                advance_val = advance_map.get(key, Decimal('0'))
+                penalty_val = penalty_map.get(key, Decimal('0'))
+                to_be_paid_val = to_be_paid_map.get(key, '')
+                rows.append({
+                    'Date': d,
+                    'Employee Code': ec,
+                    'Employee Name': r.get('name'),
+                    'Punch In': r.get('punch_in'),
+                    'Punch Out': r.get('punch_out'),
+                    'Status': r.get('status'),
+                    'Working Hours': r.get('total_working_hours'),
+                    'Break (hrs)': r.get('total_break'),
+                    'Overtime': r.get('over_time'),
+                    'Shift': r.get('shift'),
+                    'Shift Start': r.get('shift_from'),
+                    'Shift End': r.get('shift_to'),
+                    'Punch to next day': 'Yes' if r.get('punch_spans_next_day') else 'No',
+                    'Penalty (this day)': penalty_amount_today,
+                    'Minutes late (this day)': minutes_late_today,
+                    'Advance (month)': advance_val,
+                    'Penalty (month)': penalty_val,
+                    'To be paid (month)': to_be_paid_val,
+                })
         else:
             rows = []
             fieldnames = []
@@ -1759,7 +1868,15 @@ class ExportView(APIView):
                 if v is None:
                     return ''
                 if hasattr(v, 'isoformat'):
-                    return v.isoformat()
+                    s = v.isoformat()
+                    # Date only: YYYY-MM-DD (strip time if present)
+                    if 'T' in s:
+                        s = s.split('T')[0]
+                    elif len(s) > 10 and s[10:11] == ' ':
+                        s = s.split(' ')[0]
+                    return s
+                if hasattr(v, 'hour'):  # time object
+                    return v.strftime('%H:%M') if v else ''
                 return str(v)
 
             csv_filename = f'{report}.csv'

@@ -19,13 +19,23 @@
   box-sizing: border-box;
 }
 
+html {
+  height: 100%;
+  overflow-x: hidden;
+}
+
 body {
   margin: 0;
+  height: 100%;
+  overflow: hidden;
   font-family: var(--font);
   background: var(--bg);
   color: var(--text);
-  min-height: 100vh;
   line-height: 1.5;
+}
+
+#root {
+  height: 100%;
 }
 
 a {
@@ -218,4 +228,5 @@ tbody tr:hover {
   width: 100%;
   max-width: 1200px;
   margin: 0 auto;
+  min-width: 0; /* prevent flex overflow from causing horizontal scroll */
 }

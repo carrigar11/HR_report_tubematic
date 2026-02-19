@@ -179,15 +179,19 @@ class AdjustmentSerializer(serializers.ModelSerializer):
 class PenaltySerializer(serializers.ModelSerializer):
     punch_in_time = serializers.SerializerMethodField()
     shift_start_time = serializers.SerializerMethodField()
+    name = serializers.SerializerMethodField()
 
     class Meta:
         model = Penalty
         fields = [
-            'id', 'emp_code', 'date', 'month', 'year', 'minutes_late',
+            'id', 'emp_code', 'name', 'date', 'month', 'year', 'minutes_late',
             'deduction_amount', 'rate_used', 'description', 'is_manual', 'created_at',
             'punch_in_time', 'shift_start_time'
         ]
         read_only_fields = ['created_at']
+
+    def get_name(self, obj):
+        return (self.context.get('name_by_emp_code') or {}).get(obj.emp_code, '')
 
     def get_punch_in_time(self, obj):
         if obj.is_manual:

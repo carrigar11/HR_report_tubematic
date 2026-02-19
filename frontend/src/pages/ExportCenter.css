@@ -284,6 +284,74 @@
   max-width: 200px;
 }
 
+.exportFieldEmployee {
+  position: relative;
+  max-width: 320px;
+}
+
+.exportEmployeeWrap {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.exportEmployeeWrap .exportInput {
+  flex: 1;
+}
+
+.exportEmployeeClear {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface2);
+  color: var(--textMuted);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.exportEmployeeClear:hover {
+  background: var(--border);
+  color: var(--text);
+}
+
+.exportSuggestionsList {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin: 0.25rem 0 0;
+  padding: 0;
+  list-style: none;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+  z-index: 100;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.exportSuggestionItem {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.exportSuggestionItem:hover {
+  background: var(--border);
+}
+
 .exportFieldLabel {
   display: block;
   font-size: 0.75rem;

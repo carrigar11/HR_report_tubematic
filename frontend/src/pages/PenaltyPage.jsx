@@ -11,7 +11,13 @@ const monthNames = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 
 export default function PenaltyPage() {
   const [list, setList] = useState([])
   const [loading, setLoading] = useState(true)
-  const [filters, setFilters] = useState({ emp_code: '', month: '', year: '', date_from: '', date_to: '' })
+  const [filters, setFilters] = useState({
+    search: '',
+    month: '',
+    year: '',
+    date_from: '',
+    date_to: '',
+  })
   const [manualEmp, setManualEmp] = useState('')
   const [manualAmount, setManualAmount] = useState('')
   const [manualDesc, setManualDesc] = useState('')
@@ -24,7 +30,7 @@ export default function PenaltyPage() {
   const loadList = () => {
     setLoading(true)
     const params = {}
-    if (filters.emp_code) params.emp_code = filters.emp_code
+    if (filters.search.trim()) params.search = filters.search.trim()
     if (filters.month) params.month = filters.month
     if (filters.year) params.year = filters.year
     if (filters.date_from) params.date_from = filters.date_from
@@ -35,7 +41,7 @@ export default function PenaltyPage() {
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { loadList() }, [filters.emp_code, filters.month, filters.year, filters.date_from, filters.date_to])
+  useEffect(() => { loadList() }, [filters.search, filters.month, filters.year, filters.date_from, filters.date_to])
 
   useEffect(() => {
     employees.list({ page_size: 500 })
@@ -121,8 +127,14 @@ export default function PenaltyPage() {
         <h3 className="penaltyCardTitle">Filters</h3>
         <div className="penaltyFilterRow">
           <div className="penaltyField">
-            <label>Emp code</label>
-            <input type="text" className="input" value={filters.emp_code} onChange={(e) => setFilters((f) => ({ ...f, emp_code: e.target.value }))} placeholder="Search" />
+            <label>Search</label>
+            <input
+              type="text"
+              className="input"
+              value={filters.search}
+              onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
+              placeholder="Emp code or name..."
+            />
           </div>
           <div className="penaltyField">
             <label>Month</label>
@@ -156,6 +168,7 @@ export default function PenaltyPage() {
             <thead>
               <tr>
                 <th>Emp code</th>
+                <th>Name</th>
                 <th>Date</th>
                 <th>Type</th>
                 <th>Came at</th>
@@ -169,11 +182,12 @@ export default function PenaltyPage() {
             </thead>
             <tbody>
               {list.length === 0 ? (
-                <tr><td colSpan={10} className="muted">No penalties match filters.</td></tr>
+                <tr><td colSpan={11} className="muted">No penalties match filters.</td></tr>
               ) : (
                 list.map((row) => (
                   <tr key={row.id}>
                     <td><strong>{row.emp_code}</strong></td>
+                    <td>{row.name || '—'}</td>
                     <td>{row.date}</td>
                     <td>
                       {row.is_manual

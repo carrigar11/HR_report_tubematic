@@ -122,6 +122,67 @@
   margin-bottom: 0.35rem;
 }
 
+.adjustmentStatusRow {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  max-width: 220px;
+}
+
+.adjustmentStatusRow .label {
+  display: block;
+  margin-bottom: 0.35rem;
+}
+
+.adjustmentStatusSelect {
+  width: 100%;
+}
+
+.adjustmentEmployeeBlock {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.adjustmentSalaryRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 1.5rem;
+  margin-top: 1rem;
+  align-items: flex-end;
+}
+
+.adjustmentSalaryGroup {
+  min-width: 120px;
+}
+
+.adjustmentSalaryGroup .label {
+  display: block;
+  margin-bottom: 0.35rem;
+}
+
+.adjustmentSalaryGroup .input {
+  width: 100%;
+  max-width: 160px;
+}
+
+.adjustmentSalaryReadOnly {
+  display: inline-block;
+  font-size: 0.95rem;
+  color: var(--text);
+  min-height: 2.25rem;
+  line-height: 2.25rem;
+}
+
+.adjustmentPerHourValue {
+  display: inline-block;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--accent);
+  min-height: 2.25rem;
+  line-height: 2.25rem;
+}
+
 .adjustmentLoadStatus {
   margin: 0.75rem 0 0;
   font-size: 0.9rem;

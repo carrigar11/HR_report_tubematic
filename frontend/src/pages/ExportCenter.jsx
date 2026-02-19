@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { exportReport, exportPayrollExcel, exportPayrollPreviousDay } from '../api'
+import { useState, useEffect, useRef } from 'react'
+import { exportReport, exportPayrollExcel, exportPayrollPreviousDay, employees } from '../api'
 import './Table.css'
 import './ExportCenter.css'
 
@@ -17,7 +17,11 @@ export default function ExportCenter() {
   const [report, setReport] = useState('attendance')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
-  const [empCode, setEmpCode] = useState('') // optional: export only this employee
+  const [empCode, setEmpCode] = useState('')
+  const [empSearch, setEmpSearch] = useState('')
+  const [empSuggestions, setEmpSuggestions] = useState([])
+  const [showEmpSuggestions, setShowEmpSuggestions] = useState(false)
+  const csvEmpRef = useRef(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
@@ -61,6 +65,45 @@ export default function ExportCenter() {
     } finally {
       setLoading(false)
     }
+  }
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (csvEmpRef.current && !csvEmpRef.current.contains(e.target)) setShowEmpSuggestions(false)
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  useEffect(() => {
+    if (!empSearch.trim()) {
+      setEmpSuggestions([])
+      return
+    }
+    const t = setTimeout(() => {
+      employees.list({ search: empSearch.trim(), page_size: 20 })
+        .then((r) => {
+          const data = r.data.results ?? r.data ?? []
+          setEmpSuggestions(Array.isArray(data) ? data : [])
+          setShowEmpSuggestions(true)
+        })
+        .catch(() => setEmpSuggestions([]))
+    }, 200)
+    return () => clearTimeout(t)
+  }, [empSearch])
+
+  const selectCsvEmployee = (emp) => {
+    setEmpCode(emp.emp_code)
+    setEmpSearch(`${emp.emp_code} — ${emp.name || ''}`)
+    setShowEmpSuggestions(false)
+    setEmpSuggestions([])
+  }
+
+  const clearCsvEmployee = () => {
+    setEmpCode('')
+    setEmpSearch('')
+    setShowEmpSuggestions(false)
+    setEmpSuggestions([])
   }
 
   const getBlobError = async (blob) => {
@@ -301,9 +344,32 @@ export default function ExportCenter() {
                   <option value="attendance">Attendance</option>
                 </select>
               </div>
-              <div className="exportField">
-                <label className="exportFieldLabel">Emp code (optional)</label>
-                <input type="text" className="input exportInput" value={empCode} onChange={(e) => setEmpCode(e.target.value)} placeholder="e.g. EMP001" />
+              <div className="exportField exportFieldEmployee" ref={csvEmpRef}>
+                <label className="exportFieldLabel">Employee (optional)</label>
+                <div className="exportEmployeeWrap">
+                  <input
+                    type="text"
+                    className="input exportInput"
+                    value={empSearch}
+                    onChange={(e) => setEmpSearch(e.target.value)}
+                    onFocus={() => empSuggestions.length > 0 && setShowEmpSuggestions(true)}
+                    placeholder="Type name or emp code to search..."
+                  />
+                  {empCode && (
+                    <button type="button" className="exportEmployeeClear" onClick={clearCsvEmployee} title="Clear selection">×</button>
+                  )}
+                </div>
+                {showEmpSuggestions && empSuggestions.length > 0 && (
+                  <ul className="exportSuggestionsList">
+                    {empSuggestions.map((emp) => (
+                      <li key={emp.id}>
+                        <button type="button" className="exportSuggestionItem" onClick={() => selectCsvEmployee(emp)}>
+                          <strong>{emp.emp_code}</strong> — {emp.name || '—'}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             </div>
             {report === 'attendance' && (

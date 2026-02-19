@@ -231,6 +231,22 @@
   font-weight: 500;
 }
 
+.attPerPageLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+  color: var(--textMuted);
+  font-weight: 500;
+}
+
+.attPerPageSelect {
+  width: auto;
+  min-width: 4rem;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.8rem;
+}
+
 /* Date column — fixed width, no wrapping */
 .attDateCol {
   min-width: 120px;

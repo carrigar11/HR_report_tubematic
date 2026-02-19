@@ -7,19 +7,41 @@ import './EmployeeProfile.css'
 const formatDate = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'
 const formatCurrency = (n) => n != null ? `₹${Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—'
 
+/** Per-hour rate: Hourly = base_salary; Monthly/Fixed = base_salary / 208 (26 days × 8 h, same as backend). */
+function perHourSalary(baseSalary, salaryType) {
+  if (baseSalary == null) return null
+  const base = Number(baseSalary)
+  if (!base) return 0
+  const st = (salaryType || '').toLowerCase()
+  if (st === 'hourly') return base
+  return base / 208
+}
+
+const STATUS_OPTIONS = [
+  { value: 'Active', label: 'Active' },
+  { value: 'Inactive', label: 'Inactive' },
+  { value: 'Week off', label: 'Week off' },
+  { value: 'Holiday', label: 'Holiday' },
+]
+
 export default function EmployeeProfile() {
   const { empCode } = useParams()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [statusUpdating, setStatusUpdating] = useState(false)
 
-  useEffect(() => {
+  const fetchProfile = () => {
     if (!empCode) return
     setLoading(true)
     employees.profile(empCode)
       .then((r) => setData(r.data))
       .catch((e) => setError(e.response?.data?.error || e.message || 'Not found'))
       .finally(() => setLoading(false))
+  }
+
+  useEffect(() => {
+    fetchProfile()
   }, [empCode])
 
   if (loading) return <div className="pageContent"><p className="muted">Loading…</p></div>
@@ -60,8 +82,31 @@ export default function EmployeeProfile() {
         <div className="profileHeaderInfo">
           <h2>{emp?.name}</h2>
           <span className="profileCode">{emp?.emp_code}</span>
-          <span className={`profileStatus ${emp?.status === 'Active' ? 'profileStatusActive' : 'profileStatusInactive'}`}>
-            {emp?.status}
+          <span className="profileStatusWrap">
+            <span className={`profileStatus ${emp?.status === 'Active' ? 'profileStatusActive' : emp?.status === 'Inactive' ? 'profileStatusInactive' : 'profileStatusOther'}`}>
+              {emp?.status}
+            </span>
+            <select
+              className="profileStatusSelect"
+              value={emp?.status || ''}
+              disabled={statusUpdating}
+              onChange={(e) => {
+                const newStatus = e.target.value
+                if (!emp?.id || newStatus === emp?.status) return
+                setStatusUpdating(true)
+                employees.update(emp.id, { status: newStatus })
+                  .then(() => {
+                    setData((d) => d ? { ...d, employee: { ...d.employee, status: newStatus } } : d)
+                  })
+                  .catch(() => {})
+                  .finally(() => setStatusUpdating(false))
+              }}
+              title="Update employee status"
+            >
+              {STATUS_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
           </span>
         </div>
       </div>
@@ -110,6 +155,7 @@ export default function EmployeeProfile() {
           <DetailItem label="Employment Type" value={emp?.employment_type} empty />
           <DetailItem label="Salary Type" value={emp?.salary_type} empty />
           <DetailItem label="Base Salary" value={emp?.base_salary != null ? formatCurrency(emp?.base_salary) : null} empty className="highlight" />
+          <DetailItem label="Per hour salary" value={emp?.base_salary != null ? formatCurrency(perHourSalary(emp?.base_salary, emp?.salary_type)) : null} empty className="highlight" />
           <DetailItem label="Joined" value={emp?.created_at ? formatDate(emp.created_at) : null} empty />
           <DetailItem label="Last Updated" value={emp?.updated_at ? formatDate(emp.updated_at) : null} empty />
         </div>

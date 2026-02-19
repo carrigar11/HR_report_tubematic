@@ -1,0 +1,57 @@
+This is the Plant Report sheet from your payroll Excel (the first sheet when you download "Payroll to Excel" or "Previous day"). It's a department-wise (PLANT-wise) summary for the date(s) in the report.
+
+Here's what each part is and how it works.
+
+================================================================================
+WHAT THIS SHEET IS
+================================================================================
+- One row per department (PLANT) – e.g. Accounts, HR, Laser Cutting, Welding, Powder Coating, etc.
+- Date column (e.g. 16-02-26) – That column is one day's data (in Previous day it's yesterday; in a range export it's that date).
+- So this sheet answers: "For this date (or these dates), how did each department do in terms of hours, people, salary and absenteeism?"
+
+================================================================================
+COLUMN-BY-COLUMN MEANING
+================================================================================
+
+Column              | What it is
+--------------------|------------------------------------------------------------------
+Sr No               | Serial number for the PLANT row. (1, 2, 3, …)
+PLANT               | Department name. From employee's dept_name (or "No Dept" if blank).
+Total Man Hrs       | Total working hours for that department on the date(s) in the report.
+                    | Sum of total_working_hours from attendance for that date (and that department).
+16-02-26 (date col) | Salary amount for that date for that department.
+                    | Sum of (hourly rate × hours) for each employee in that department for that day only. Same logic as the daily columns in the Payroll sheet.
+Total Worker Present| Number of workers present that day in that department.
+                    | Count of attendance rows where status = Present (or punch-in exists) for that date and department.
+Total Worker Absent | Number of workers absent that day in that department.
+                    | Count of attendance rows where status ≠ Present for that date and department.
+Average Salary      | Average salary per present worker for that date.
+                    | Total salary for that date (date column) ÷ Total Worker Present. So "average pay per present person for this day".
+Average Salary/hr   | Average salary per man-hour for that department for that date.
+                    | Total salary for that date ÷ Total Man Hrs. So cost per hour of work.
+Absenteeism %       | Share of workers who were absent that day.
+                    | Total Worker Absent ÷ (Present + Absent) × 100.
+Total Salary        | For Previous day report: month-to-date total salary for that department (1st of month through yesterday), including bonus. For other exports: can be same as date column total when there's only one date.
+                    | In Previous day: comes from the month payroll run (same "Total Salary" as in the main Payroll sheet), summed by department.
+
+So in short:
+- Date column (16-02-26) = that day's salary for the PLANT.
+- Total Salary (in Previous day) = current month's total salary for the PLANT (what you use for "how much we're paying this month by department").
+
+================================================================================
+BOTTOM ROW ("TOTAL SALARY")
+================================================================================
+- Total Man Hrs = sum of all PLANTs' man-hours.
+- Date column (16-02-26) = sum of all PLANTs' salary for that date.
+- Total Worker Present / Absent = company-wide present/absent counts.
+- Average Salary = overall average (total salary for that date ÷ total present).
+- Average Salary/hr = total salary for that date ÷ total man-hours.
+- Total Salary = sum of each PLANT's Total Salary (month-to-date in Previous day).
+
+================================================================================
+HOW THIS FITS "PREVIOUS DAY"
+================================================================================
+- Date column 16-02-26 = yesterday's (or that day's) earnings by department.
+- Total Salary = current month (1st through that day) total salary by department, including bonus – same concept as the "TOTAL" column on the Payroll sheet.
+
+So this sheet is the department-level view of the same data: one day's snapshot (date column, present/absent, averages, absenteeism %) plus month-to-date Total Salary when it's the Previous day report.
