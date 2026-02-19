@@ -197,8 +197,9 @@ def _add_bonus_to_payroll_rows(payroll_rows, month, year):
         row['total'] = round((row.get('total') or 0) + bonus_money, 2)
 
 
-def _set_bonus_columns_for_date_range(payroll_rows, sorted_dates):
-    """Set bonus_hours and bonus_amount on each row by summing bonus for all (month, year) in sorted_dates. Does not add to total."""
+def _set_bonus_columns_for_date_range(payroll_rows, sorted_dates, add_bonus_to_total=True):
+    """Set bonus_hours and bonus_amount on each row by summing bonus for all (month, year) in sorted_dates.
+    If add_bonus_to_total True, also add bonus amount to row['total'] (so All dates / From–to Total Salary includes bonus)."""
     if not payroll_rows or not sorted_dates:
         return
     months_years = sorted(set((d.month, d.year) for d in sorted_dates if hasattr(d, 'month')))
@@ -235,6 +236,8 @@ def _set_bonus_columns_for_date_range(payroll_rows, sorted_dates):
             total_amt += bonus_hrs * hourly_rate
         row['bonus_hours'] = round(total_hrs, 2)
         row['bonus_amount'] = round(total_amt, 2)
+        if add_bonus_to_total and total_amt > 0:
+            row['total'] = round((row.get('total') or 0) + total_amt, 2)
 
 
 def write_payroll_sheet(ws, sorted_dates, payroll_rows, include_punch_columns=False, include_bonus_columns=False):
@@ -357,10 +360,13 @@ def build_plant_report_rows(payroll_rows, sorted_dates, attendance_queryset, mon
     # Aggregate bonus by department (from payroll_rows: bonus from start-of-month till date or as per range)
     dept_bonus_hrs = defaultdict(float)
     dept_bonus_amount = defaultdict(float)
+    # Total Salary per dept = sum of each employee's row total (includes Fixed salary + bonus; matches Payroll sheet)
+    dept_total_from_rows = defaultdict(float)
     for row in payroll_rows:
         dept = row.get('department') or ''
         dept_bonus_hrs[dept] += float(row.get('bonus_hours') or 0)
         dept_bonus_amount[dept] += float(row.get('bonus_amount') or 0)
+        dept_total_from_rows[dept] += float(row.get('total') or 0)
 
     depts = sorted(set(emp_to_dept.values()))
     dept_list = [d for d in depts if d]
@@ -387,9 +393,12 @@ def build_plant_report_rows(payroll_rows, sorted_dates, attendance_queryset, mon
         avg_salary_hr = round(total_salary / total_man_hrs, 2) if total_man_hrs else 0
         total_worker = total_present + total_absent
         absenteeism = round(100.0 * total_absent / total_worker, 2) if total_worker else 0
-        # Total Salary: whole month when month_total_per_dept provided, else sum of date cols
+        # Total Salary: when month_total_per_dept provided (Single day) use it; else use sum of row totals per dept
+        # (so All dates / Month&year / From–to include Fixed salary and bonus and match Payroll sheet TOTAL)
         if month_total_per_dept is not None:
             total_salary = month_total_per_dept.get(dept, 0)
+        else:
+            total_salary = dept_total_from_rows.get(dept, 0)
         day_salary_sum = sum(day_totals)  # for avg_salary (always day-based: salary to give that day / present)
         plant_rows.append({
             'sr': sr,

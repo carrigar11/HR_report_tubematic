@@ -34,6 +34,7 @@ Absenteeism %       | Share of workers who were absent that day.
 Total Salary        | For Previous day report: month-to-date total salary for that department (1st of month through yesterday), including bonus. For other exports: can be same as date column total when there's only one date.
                     | In Previous day: comes from the month payroll run (same "Total Salary" as in the main Payroll sheet), summed by department.
 
+                    
 So in short:
 - Date column (16-02-26) = that day's salary for the PLANT.
 - Total Salary (in Previous day) = current month's total salary for the PLANT (what you use for "how much we're paying this month by department").
