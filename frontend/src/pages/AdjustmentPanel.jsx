@@ -130,6 +130,15 @@ export default function AdjustmentPanel() {
   const [statusUpdateLoading, setStatusUpdateLoading] = useState(false)
   const [salaryEdit, setSalaryEdit] = useState({ base_salary: '', salary_type: 'Monthly' })
   const [salarySaving, setSalarySaving] = useState(false)
+  const [deptDesignationEdit, setDeptDesignationEdit] = useState({ dept_name: '', designation: '' })
+  const [deptDesignationSaving, setDeptDesignationSaving] = useState(false)
+  const [filterOptions, setFilterOptions] = useState({ departments: [], designations: [] })
+
+  useEffect(() => {
+    employees.list({ include_filters: 'true', page_size: 1 })
+      .then((r) => setFilterOptions(r.data?.filters || { departments: [], designations: [] }))
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -216,6 +225,22 @@ export default function AdjustmentPanel() {
       base_salary: emp.base_salary != null ? String(emp.base_salary) : '',
       salary_type: emp.salary_type || 'Monthly',
     })
+    setDeptDesignationEdit({
+      dept_name: emp.dept_name || '',
+      designation: emp.designation || '',
+    })
+  }
+
+  const saveDeptDesignation = () => {
+    if (!selectedEmployee?.id) return
+    setDeptDesignationSaving(true)
+    employees.update(selectedEmployee.id, {
+      dept_name: (deptDesignationEdit.dept_name || '').trim() || null,
+      designation: (deptDesignationEdit.designation || '').trim() || null,
+    })
+      .then(() => setSelectedEmployee((prev) => prev ? { ...prev, dept_name: deptDesignationEdit.dept_name, designation: deptDesignationEdit.designation } : null))
+      .catch(() => {})
+      .finally(() => setDeptDesignationSaving(false))
   }
 
   const saveSalary = () => {
@@ -592,6 +617,40 @@ export default function AdjustmentPanel() {
                     <option key={o.value} value={o.value}>{o.label}</option>
                   ))}
                 </select>
+              </div>
+              <div className="adjustmentSalaryRow">
+                <div className="adjustmentSalaryGroup">
+                  <label className="label">Department</label>
+                  <input
+                    type="text"
+                    className="input"
+                    value={deptDesignationEdit.dept_name}
+                    disabled={deptDesignationSaving}
+                    onChange={(e) => setDeptDesignationEdit((d) => ({ ...d, dept_name: e.target.value }))}
+                    onBlur={saveDeptDesignation}
+                    placeholder="Department"
+                    list="adjustmentDeptList"
+                  />
+                  <datalist id="adjustmentDeptList">
+                    {(filterOptions.departments || []).map((d) => <option key={d} value={d} />)}
+                  </datalist>
+                </div>
+                <div className="adjustmentSalaryGroup">
+                  <label className="label">Designation</label>
+                  <input
+                    type="text"
+                    className="input"
+                    value={deptDesignationEdit.designation}
+                    disabled={deptDesignationSaving}
+                    onChange={(e) => setDeptDesignationEdit((d) => ({ ...d, designation: e.target.value }))}
+                    onBlur={saveDeptDesignation}
+                    placeholder="Designation"
+                    list="adjustmentDesigList"
+                  />
+                  <datalist id="adjustmentDesigList">
+                    {(filterOptions.designations || []).map((d) => <option key={d} value={d} />)}
+                  </datalist>
+                </div>
               </div>
               <div className="adjustmentSalaryRow">
                 <div className="adjustmentSalaryGroup">

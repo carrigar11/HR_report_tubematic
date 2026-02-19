@@ -30,6 +30,7 @@ from .excel_upload import upload_employees_excel, upload_attendance_excel, uploa
 from .reward_engine import run_reward_engine
 from .export_excel import generate_payroll_excel, generate_payroll_excel_previous_day
 from .audit_logging import log_activity, log_activity_manual
+from .google_sheets_sync import get_sheet_id, sync_all
 
 
 # ---------- Auth & request admin ----------
@@ -130,17 +131,20 @@ class AdminProfileView(APIView):
 
 # ---------- Super admin: list/create/update other admins (access) ----------
 class DepartmentsListView(APIView):
-    """GET: list distinct department names from employees (for Manage Admins dropdown). Super admin only."""
+    """GET: list distinct department names from employees and from admins (so admin-created depts appear). Super admin only."""
     def get(self, request):
         current, _ = get_request_admin(request)
         if not current or not current.is_super_admin:
             return Response({'error': 'Super admin only'}, status=403)
-        depts = sorted(
-            set(
-                Employee.objects.exclude(dept_name='').exclude(dept_name__isnull=True)
-                .values_list('dept_name', flat=True).distinct()
-            )
+        from_employees = set(
+            Employee.objects.exclude(dept_name='').exclude(dept_name__isnull=True)
+            .values_list('dept_name', flat=True).distinct()
         )
+        from_admins = set(
+            Admin.objects.exclude(department='').exclude(department__isnull=True)
+            .values_list('department', flat=True).distinct()
+        )
+        depts = sorted(set(from_employees) | set(from_admins))
         return Response({'departments': [d.strip() for d in depts if (d or '').strip()]})
 
 
@@ -362,10 +366,12 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             e['month_hours'] = stats.get('month_hours', '0')
             e['month_days'] = stats.get('month_days', 0)
 
-        # Also return distinct filter options
+        # Also return distinct filter options (include departments from admins so admin-created depts appear)
         if request.query_params.get('include_filters', '').lower() == 'true':
             all_emps = self.get_queryset().filter(status__in=Employee.EMPLOYED_STATUSES)
-            departments = sorted(set(all_emps.values_list('dept_name', flat=True).distinct()) - {''})
+            dept_from_emps = set(all_emps.values_list('dept_name', flat=True).distinct()) - {''}
+            dept_from_admins = set(Admin.objects.exclude(department='').exclude(department__isnull=True).values_list('department', flat=True).distinct())
+            departments = sorted(set(dept_from_emps) | set(d for d in dept_from_admins if (d or '').strip()))
             designations = sorted(set(all_emps.values_list('designation', flat=True).distinct()) - {''})
             shifts = sorted(set(all_emps.exclude(shift='').values_list('shift', flat=True).distinct()))
             genders = sorted(set(all_emps.values_list('gender', flat=True).distinct()) - {''})
@@ -402,6 +408,28 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         ec, name = instance.emp_code, instance.name
         log_activity(self.request, 'delete', 'employees', 'employee', ec, details={'name': name})
         instance.delete()
+
+    @action(detail=False, methods=['get'], url_path='next_emp_code')
+    def next_emp_code(self, request):
+        """Return a suggested next emp_code as plain number (e.g. 380, 381)."""
+        import re
+        _, allowed_emp_codes = get_request_admin(request)
+        qs = Employee.objects.values_list('emp_code', flat=True)
+        if allowed_emp_codes is not None:
+            qs = qs.filter(emp_code__in=allowed_emp_codes) if allowed_emp_codes else qs.none()
+        existing = list(qs)
+        max_num = 0
+        for code in existing:
+            if not code:
+                continue
+            s = str(code).strip()
+            m = re.search(r'(\d+)$', s)
+            if m:
+                max_num = max(max_num, int(m.group(1)))
+            elif s.isdigit():
+                max_num = max(max_num, int(s))
+        next_num = max_num + 1
+        return Response({'next_emp_code': str(next_num)})
 
 
 class AttendanceViewSet(viewsets.ReadOnlyModelViewSet):
@@ -579,6 +607,56 @@ class EmailSmtpConfigView(APIView):
         ser.save()
         log_activity(request, 'update', 'settings', 'email_smtp_config', '', details={'id': config.pk})
         return Response(EmailSmtpConfigSerializer(config).data)
+
+
+# ---------- Google Sheet settings & manual sync ----------
+class GoogleSheetConfigView(APIView):
+    """GET: return google_sheet_id and last_sync. PATCH: update google_sheet_id (body: { google_sheet_id })."""
+    def get(self, request):
+        current_admin, _ = get_request_admin(request)
+        if not current_admin or not (getattr(current_admin, 'is_super_admin', False) or (current_admin.access or {}).get('settings')):
+            return Response({'error': 'Not allowed'}, status=403)
+        sheet_id = get_sheet_id()
+        last_sync = None
+        try:
+            obj = SystemSetting.objects.get(key='google_sheet_last_sync')
+            last_sync = obj.value or None
+        except SystemSetting.DoesNotExist:
+            pass
+        return Response({'google_sheet_id': sheet_id or '', 'last_sync': last_sync})
+
+    def patch(self, request):
+        current_admin, _ = get_request_admin(request)
+        if not current_admin or not (getattr(current_admin, 'is_super_admin', False) or (current_admin.access or {}).get('settings')):
+            return Response({'error': 'Not allowed'}, status=403)
+        new_id = (request.data.get('google_sheet_id') or '').strip()
+        obj, _ = SystemSetting.objects.get_or_create(
+            key='google_sheet_id',
+            defaults={'value': new_id, 'description': 'Google Sheet ID for live sync'}
+        )
+        obj.value = new_id
+        obj.save(update_fields=['value'])
+        log_activity(request, 'update', 'settings', 'google_sheet_id', '', details={'google_sheet_id': new_id[:20] + '...' if len(new_id) > 20 else new_id})
+        last_sync = None
+        try:
+            ls = SystemSetting.objects.get(key='google_sheet_last_sync')
+            last_sync = ls.value or None
+        except SystemSetting.DoesNotExist:
+            pass
+        return Response({'google_sheet_id': obj.value, 'last_sync': last_sync})
+
+
+class GoogleSheetSyncView(APIView):
+    """POST: trigger manual sync to Google Sheet. Returns { success, message, last_sync }."""
+    def post(self, request):
+        current_admin, _ = get_request_admin(request)
+        if not current_admin or not (getattr(current_admin, 'is_super_admin', False) or (current_admin.access or {}).get('settings')):
+            return Response({'error': 'Not allowed'}, status=403)
+        result = sync_all(force_full=True)
+        log_activity(request, 'export', 'settings', 'google_sheet_sync', '', details=result)
+        if result['success']:
+            return Response(result, status=200)
+        return Response(result, status=400)
 
 
 # ---------- Attendance Adjust (audit trail) ----------

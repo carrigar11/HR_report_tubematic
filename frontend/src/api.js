@@ -72,7 +72,9 @@ export const employees = {
   list: (params) => api.get('/employees/', { params }),
   get: (id) => api.get(`/employees/${id}/`),
   profile: (empCode) => api.get(`/employees/${empCode}/profile/`),
+  create: (data) => api.post('/employees/', data),
   update: (id, data) => api.patch(`/employees/${id}/`, data),
+  getNextEmpCode: () => api.get('/employees/next_emp_code/'),
 }
 
 export const attendance = {
@@ -134,6 +136,12 @@ export const settings = {
 export const smtpConfig = {
   get: () => api.get('/settings/smtp/'),
   update: (data) => api.patch('/settings/smtp/', data),
+}
+
+export const googleSheet = {
+  getConfig: () => api.get('/settings/google-sheet/'),
+  updateConfig: (data) => api.patch('/settings/google-sheet/', data),
+  sync: () => api.post('/settings/google-sheet/sync/'),
 }
 
 export const exportReport = (params) => api.get('/export/', { params, responseType: 'blob' })

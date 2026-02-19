@@ -345,32 +345,20 @@ export default function ManageAdmins() {
               </div>
               <div className="manageAdminsField">
                 <label>Department (for Dept Admin)</label>
-                <select
+                <input
+                  type="text"
                   className="input"
-                  value={departmentOptions.includes(createDepartment) ? createDepartment : (createDepartment ? '__other__' : '')}
-                  onChange={(e) => {
-                    const v = e.target.value
-                    if (v === '__other__') setCreateDepartment('')
-                    else setCreateDepartment(v)
-                  }}
-                >
-                  <option value="">Select department</option>
+                  value={createDepartment}
+                  onChange={(e) => setCreateDepartment(e.target.value)}
+                  placeholder="Select or type new department name"
+                  list="adminCreateDeptList"
+                />
+                <datalist id="adminCreateDeptList">
                   {departmentOptions.map((d) => (
-                    <option key={d} value={d}>{d}</option>
+                    <option key={d} value={d} />
                   ))}
-                  <option value="__other__">— Other (type below) —</option>
-                </select>
-                {(createDepartment && !departmentOptions.includes(createDepartment)) && (
-                  <input
-                    type="text"
-                    className="input"
-                    value={createDepartment}
-                    onChange={(e) => setCreateDepartment(e.target.value)}
-                    placeholder="Type department name"
-                    style={{ marginTop: '0.5rem' }}
-                  />
-                )}
-                <span className="manageAdminsHint">They will only see data for this department.</span>
+                </datalist>
+                <span className="manageAdminsHint">Select existing or type a new department to create it. They will only see data for this department.</span>
               </div>
               <div className="manageAdminsField">
                 <label>Role</label>
@@ -552,32 +540,20 @@ export default function ManageAdmins() {
                   <h4 className="manageAdminsEditSectionTitle">Department &amp; Access</h4>
                   <div className="manageAdminsField">
                     <label>Department</label>
-                    <select
+                    <input
+                      type="text"
                       className="input"
-                      value={departmentOptions.includes(editDepartment) ? editDepartment : (editDepartment ? '__other__' : '')}
-                      onChange={(e) => {
-                        const v = e.target.value
-                        if (v === '__other__') setEditDepartment('')
-                        else setEditDepartment(v)
-                      }}
-                    >
-                      <option value="">No department</option>
+                      value={editDepartment}
+                      onChange={(e) => setEditDepartment(e.target.value)}
+                      placeholder="Select or type new department name"
+                      list="adminEditDeptList"
+                    />
+                    <datalist id="adminEditDeptList">
                       {departmentOptions.map((d) => (
-                        <option key={d} value={d}>{d}</option>
+                        <option key={d} value={d} />
                       ))}
-                      <option value="__other__">— Other (type below) —</option>
-                    </select>
-                    {(editDepartment && !departmentOptions.includes(editDepartment)) && (
-                      <input
-                        type="text"
-                        className="input"
-                        value={editDepartment}
-                        onChange={(e) => setEditDepartment(e.target.value)}
-                        placeholder="Type department name"
-                        style={{ marginTop: '0.5rem' }}
-                      />
-                    )}
-                    <span className="manageAdminsHint">They will only see data for this department.</span>
+                    </datalist>
+                    <span className="manageAdminsHint">Select existing or type a new department to create it. They will only see data for this department.</span>
                   </div>
                   <div className="manageAdminsField">
                     <label>Role &amp; access preset</label>

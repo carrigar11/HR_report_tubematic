@@ -34,6 +34,8 @@ urlpatterns = [
     path('penalty/<int:pk>/', views.PenaltyDetailView.as_view()),
     path('reward-engine/run/', views.RunRewardEngineView.as_view()),
     path('settings/smtp/', views.EmailSmtpConfigView.as_view()),
+    path('settings/google-sheet/', views.GoogleSheetConfigView.as_view()),
+    path('settings/google-sheet/sync/', views.GoogleSheetSyncView.as_view()),
     path('leaderboard/bonus/', views.GiveBonusView.as_view()),
     path('bonus/overview/', views.BonusOverviewView.as_view()),
     path('bonus/employee-details/', views.BonusEmployeeDetailsView.as_view()),

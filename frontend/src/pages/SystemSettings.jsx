@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { settings, runRewardEngine, admins, smtpConfig } from '../api'
-import { IconUser, IconSettings, IconTrophy, IconMail } from '../components/Icons'
+import { settings, runRewardEngine, admins, smtpConfig, googleSheet } from '../api'
+import { IconUser, IconSettings, IconTrophy, IconMail, IconExport } from '../components/Icons'
 import './Table.css'
 import './SystemSettings.css'
 
@@ -40,6 +40,13 @@ export default function SystemSettings() {
     debug_logfile: '',
     is_active: true,
   })
+
+  const [googleSheetId, setGoogleSheetId] = useState('')
+  const [googleSheetLastSync, setGoogleSheetLastSync] = useState(null)
+  const [googleSheetLoading, setGoogleSheetLoading] = useState(true)
+  const [googleSheetSaving, setGoogleSheetSaving] = useState(false)
+  const [googleSheetSyncing, setGoogleSheetSyncing] = useState(false)
+  const [googleSheetMessage, setGoogleSheetMessage] = useState('')
 
   const adminId = (() => {
     try {
@@ -93,6 +100,16 @@ export default function SystemSettings() {
       })
       .catch(() => setSmtp(null))
       .finally(() => setSmtpLoading(false))
+  }, [])
+
+  useEffect(() => {
+    googleSheet.getConfig()
+      .then((r) => {
+        setGoogleSheetId(r.data.google_sheet_id || '')
+        setGoogleSheetLastSync(r.data.last_sync || null)
+      })
+      .catch(() => {})
+      .finally(() => setGoogleSheetLoading(false))
   }, [])
 
   const handleSaveProfile = async () => {
@@ -149,6 +166,36 @@ export default function SystemSettings() {
       setRunResult('Error: ' + (err.response?.data?.detail || err.message))
     } finally {
       setRunLoading(false)
+    }
+  }
+
+  const handleSaveGoogleSheetConfig = async (e) => {
+    e.preventDefault()
+    setGoogleSheetSaving(true)
+    setGoogleSheetMessage('')
+    try {
+      const { data } = await googleSheet.updateConfig({ google_sheet_id: googleSheetId.trim() })
+      setGoogleSheetId(data.google_sheet_id || '')
+      setGoogleSheetMessage('Google Sheet ID saved.')
+    } catch (err) {
+      setGoogleSheetMessage(err.response?.data?.error || err.response?.data?.detail || err.message || 'Failed to save')
+    } finally {
+      setGoogleSheetSaving(false)
+    }
+  }
+
+  const handleSyncGoogleSheet = async () => {
+    setGoogleSheetSyncing(true)
+    setGoogleSheetMessage('')
+    try {
+      const { data } = await googleSheet.sync()
+      setGoogleSheetLastSync(data.last_sync || null)
+      setGoogleSheetMessage(data.message || 'Sync completed.')
+    } catch (err) {
+      const res = err.response?.data
+      setGoogleSheetMessage(res?.message || res?.error || res?.detail || err.message || 'Sync failed')
+    } finally {
+      setGoogleSheetSyncing(false)
     }
   }
 
@@ -388,6 +435,45 @@ export default function SystemSettings() {
               <button type="submit" className="btn btn-primary" disabled={smtpSaving}>{smtpSaving ? 'Saving…' : 'Save SMTP config'}</button>
             </div>
             {smtpMessage && <p className={`profileMessage ${smtpMessage.includes('Failed') || smtpMessage.includes('No SMTP') ? 'error' : 'success'}`}>{smtpMessage}</p>}
+          </form>
+        )}
+      </section>
+
+      {/* Google Sheet live sync */}
+      <section className="settingsSection card settingsSectionGoogleSheet">
+        <div className="settingsSectionTitleRow">
+          <span className="settingsSectionIcon settingsSectionIconSmtp"><IconExport /></span>
+          <div>
+            <h3 className="settingsSectionTitle">Google Sheet live sync</h3>
+            <p className="muted settingsSectionDesc">Push reports to a Google Sheet (5 sheets: all dates by month, current year, previous day plant report, employees, department payroll). Set Sheet ID and share the sheet with your service account as Editor.</p>
+          </div>
+        </div>
+        {googleSheetLoading ? (
+          <p className="muted">Loading…</p>
+        ) : (
+          <form onSubmit={handleSaveGoogleSheetConfig} className="smtpForm">
+            <div className="profileField">
+              <label className="label">Google Sheet ID</label>
+              <input
+                type="text"
+                className="input"
+                value={googleSheetId}
+                onChange={(e) => setGoogleSheetId(e.target.value)}
+                placeholder="e.g. 1iASMoxgrQosow9_l566HweLauU7"
+                style={{ maxWidth: 420 }}
+              />
+              <p className="muted" style={{ marginTop: 6 }}>From the sheet URL: https://docs.google.com/spreadsheets/d/<strong>SHEET_ID</strong>/edit</p>
+            </div>
+            <div className="profileFormActions">
+              <button type="submit" className="btn btn-primary" disabled={googleSheetSaving}>
+                {googleSheetSaving ? 'Saving…' : 'Save Sheet ID'}
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={handleSyncGoogleSheet} disabled={googleSheetSyncing}>
+                {googleSheetSyncing ? 'Syncing…' : 'Push to Google Sheet now'}
+              </button>
+            </div>
+            {googleSheetLastSync && <p className="muted">Last sync: {new Date(googleSheetLastSync).toLocaleString()}</p>}
+            {googleSheetMessage && <p className={`profileMessage ${googleSheetMessage.includes('Failed') || googleSheetMessage.includes('Error') ? 'error' : 'success'}`}>{googleSheetMessage}</p>}
           </form>
         )}
       </section>

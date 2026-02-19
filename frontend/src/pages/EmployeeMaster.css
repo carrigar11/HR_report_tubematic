@@ -98,3 +98,99 @@
   background: rgba(239, 68, 68, 0.06);
   border-color: #ef4444;
 }
+
+/* Add employee button */
+.empAddBtn {
+  margin-left: auto;
+}
+
+/* Add employee modal */
+.empModalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+
+.empModalCard {
+  background: var(--surface);
+  border-radius: 12px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+  max-width: 560px;
+  width: 100%;
+  max-height: 90vh;
+  overflow: auto;
+}
+
+.empModalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.empModalTitle {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.empModalClose {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  line-height: 1;
+  color: var(--textMuted);
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: 4px;
+}
+
+.empModalClose:hover {
+  color: var(--text);
+  background: var(--border);
+}
+
+.empModalForm {
+  padding: 1.25rem;
+}
+
+.empModalGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.9rem 1rem;
+  margin-bottom: 1rem;
+}
+
+.empModalGrid .profileField {
+  min-width: 0;
+}
+
+.empModalGrid .profileField:first-child,
+.empModalGrid .profileField:nth-child(2) {
+  grid-column: span 1;
+}
+
+.empModalError {
+  color: #dc2626;
+  font-size: 0.85rem;
+  margin-bottom: 0.75rem;
+}
+
+.empModalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.required {
+  color: #dc2626;
+}
