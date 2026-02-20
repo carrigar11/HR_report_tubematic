@@ -462,11 +462,12 @@ def write_plant_report_sheet(ws, sorted_dates, plant_rows):
     avg_overall = round(sum(r['total_salary'] for r in plant_rows) / sum(r['total_present'] for r in plant_rows), 2) if sum(r['total_present'] for r in plant_rows) else 0
     ws.cell(row=tot_row, column=off + 2, value=avg_overall).font = Font(bold=True)
     tot_sal = sum(r['total_salary'] for r in plant_rows)
-    ws.cell(row=tot_row, column=off + 3, value=round(tot_sal / tot_man_hrs, 2) if tot_man_hrs else 0).font = Font(bold=True)
-    ws.cell(row=tot_row, column=off + 4, value='').font = Font(bold=True)
-    ws.cell(row=tot_row, column=off + 5, value=round(tot_sal, 2)).font = Font(bold=True)
     tot_bonus_hrs = sum(r.get('total_bonus_hours', 0) for r in plant_rows)
     tot_bonus_amt = sum(r.get('total_bonus_amount', 0) for r in plant_rows)
+    ws.cell(row=tot_row, column=off + 3, value=round(tot_sal / tot_man_hrs, 2) if tot_man_hrs else 0).font = Font(bold=True)
+    ws.cell(row=tot_row, column=off + 4, value='').font = Font(bold=True)
+    # Total Salary (final) = salary + Total Bonus (Rs), so one combined figure in the total row
+    ws.cell(row=tot_row, column=off + 5, value=round(tot_sal + tot_bonus_amt, 2)).font = Font(bold=True)
     ws.cell(row=tot_row, column=off + 6, value=round(tot_bonus_hrs, 2)).font = Font(bold=True)
     ws.cell(row=tot_row, column=off + 7, value=round(tot_bonus_amt, 2)).font = Font(bold=True)
 
