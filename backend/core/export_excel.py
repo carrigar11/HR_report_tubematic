@@ -12,7 +12,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 
-from .models import Employee, Attendance, SalaryAdvance, Salary, Penalty
+from .models import Employee, Attendance, SalaryAdvance, Salary, Penalty, ShiftOvertimeBonus
 
 
 def _time_to_hours(t):
@@ -325,11 +325,12 @@ def write_payroll_sheet(ws, sorted_dates, payroll_rows, include_punch_columns=Fa
         ws.column_dimensions[get_column_letter(bonus_amt_col)].width = 12
 
 
-def build_plant_report_rows(payroll_rows, sorted_dates, attendance_queryset, month_total_per_dept=None):
+def build_plant_report_rows(payroll_rows, sorted_dates, attendance_queryset, month_total_per_dept=None, month_bonus_per_dept=None):
     """
     One row per department (PLANT). Columns: Sr No, PLANT, Total Man Hrs, [date cols], Total Worker Present,
-    Total Worker Absent, Average Salary, Average Salary/hr, Absenteeism %, Total Salary.
+    Total Worker Absent, Average Salary, Average Salary/hr, Absenteeism %, Total Salary, Total Bonus (hrs), Total Bonus (Rs).
     If month_total_per_dept is provided (dept -> total), use it for Total Salary column; else use sum of date cols.
+    If month_bonus_per_dept is provided (dept -> (bonus_hrs, bonus_amount)), use it for bonus columns; else aggregate from payroll_rows.
     """
     att_list = list(attendance_queryset.values('emp_code', 'date', 'total_working_hours', 'status'))
     emp_to_dept = {r['emp_code']: (r.get('department') or '') for r in payroll_rows}
@@ -357,15 +358,22 @@ def build_plant_report_rows(payroll_rows, sorted_dates, attendance_queryset, mon
             amt = row.get('_day_totals', [])[i] if i < len(row.get('_day_totals', [])) else 0
             dept_date_salary[(dept, d)] += amt
 
-    # Aggregate bonus by department (from payroll_rows: bonus from start-of-month till date or as per range)
+    # Aggregate bonus by department (from payroll_rows unless month_bonus_per_dept provided e.g. Single day MTD)
     dept_bonus_hrs = defaultdict(float)
     dept_bonus_amount = defaultdict(float)
     # Total Salary per dept = sum of each employee's row total (includes Fixed salary + bonus; matches Payroll sheet)
     dept_total_from_rows = defaultdict(float)
+    if month_bonus_per_dept is not None:
+        for dept, (hrs, amt) in (month_bonus_per_dept or {}).items():
+            dept_bonus_hrs[dept] = float(hrs)
+            dept_bonus_amount[dept] = float(amt)
+    else:
+        for row in payroll_rows:
+            dept = row.get('department') or ''
+            dept_bonus_hrs[dept] += float(row.get('bonus_hours') or 0)
+            dept_bonus_amount[dept] += float(row.get('bonus_amount') or 0)
     for row in payroll_rows:
         dept = row.get('department') or ''
-        dept_bonus_hrs[dept] += float(row.get('bonus_hours') or 0)
-        dept_bonus_amount[dept] += float(row.get('bonus_amount') or 0)
         dept_total_from_rows[dept] += float(row.get('total') or 0)
 
     depts = sorted(set(emp_to_dept.values()))
@@ -478,6 +486,67 @@ def write_plant_report_sheet(ws, sorted_dates, plant_rows):
         ws.column_dimensions[get_column_letter(col_idx)].width = 12
     for col_idx in range(off, off + 8):
         ws.column_dimensions[get_column_letter(col_idx)].width = 14
+
+
+def _month_to_date_bonus_per_dept(date_from, date_to, employees, allowed_emp_codes=None, emp_code_filter=None):
+    """
+    Bonus from date_from to date_to (e.g. start of month till selected day), aggregated by department.
+    Uses ShiftOvertimeBonus in range; converts hours to Rs using Employee base_salary/salary_type.
+    Returns dict: dept -> (bonus_hrs, bonus_amount).
+    """
+    from collections import defaultdict
+    # employees may be Employee model instances (not dicts)
+    emp_codes = [getattr(r, 'emp_code', None) or (r.get('emp_code') if isinstance(r, dict) else None) for r in employees]
+    emp_codes = [ec for ec in emp_codes if ec]
+    if not emp_codes:
+        return {}
+    if allowed_emp_codes is not None:
+        emp_codes = [ec for ec in emp_codes if ec in allowed_emp_codes]
+    if emp_code_filter is not None:
+        emp_codes = [ec for ec in emp_codes if ec == emp_code_filter]
+    if not emp_codes:
+        return {}
+
+    # Sum ShiftOvertimeBonus in range per emp_code
+    qs = ShiftOvertimeBonus.objects.filter(
+        date__gte=date_from, date__lte=date_to, emp_code__in=emp_codes
+    ).values('emp_code').annotate(total_hrs=Sum('bonus_hours'))
+    emp_bonus_hrs = {r['emp_code']: float(r['total_hrs'] or 0) for r in qs}
+
+    # Department per emp (Employee has dept_name)
+    emp_to_dept = {}
+    for e in employees:
+        ec = getattr(e, 'emp_code', None) if not isinstance(e, dict) else e.get('emp_code')
+        if ec and ec in emp_codes:
+            dept = getattr(e, 'dept_name', '') or (e.get('department', '') if isinstance(e, dict) else '')
+            emp_to_dept[ec] = dept or ''
+    salary_type_by_emp = {
+        e['emp_code']: (e.get('salary_type') or 'Monthly').strip() or 'Monthly'
+        for e in Employee.objects.filter(emp_code__in=emp_codes).values('emp_code', 'salary_type')
+    }
+    base_by_emp = {
+        e['emp_code']: float(e.get('base_salary') or 0)
+        for e in Employee.objects.filter(emp_code__in=emp_codes).values('emp_code', 'base_salary')
+    }
+
+    dept_hrs = defaultdict(float)
+    dept_amt = defaultdict(float)
+    for ec in emp_codes:
+        hrs = emp_bonus_hrs.get(ec, 0)
+        if hrs <= 0:
+            continue
+        dept = emp_to_dept.get(ec, '')
+        st = salary_type_by_emp.get(ec, 'Monthly')
+        base = base_by_emp.get(ec, 0)
+        if st == 'Hourly':
+            rate = base
+        else:
+            rate = base / 208.0 if base else 0.0
+        amt = round(hrs * rate, 2)
+        dept_hrs[dept] += hrs
+        dept_amt[dept] += amt
+
+    return {dept: (round(dept_hrs[dept], 2), round(dept_amt[dept], 2)) for dept in dept_hrs}
 
 
 def generate_payroll_excel_previous_day(allowed_emp_codes=None):
@@ -639,7 +708,9 @@ def generate_payroll_excel(date_from=None, date_to=None, single_date=None, month
 
     # Total Salary in Plant Report: All dates = sum of all cols; Month&year = whole month (sum of cols);
     # Single day = month-to-date (1st of month till selected date); From–to = sum of range cols.
+    # Single day: Total Bonus (hrs) and Total Bonus (Rs) = from start of month till selected date.
     month_total_per_dept = None
+    month_bonus_per_dept = None
     if single_date:
         month_start = single_date.replace(day=1)
         att_mtd = _get_date_filter_queryset(date_from=month_start, date_to=single_date)
@@ -657,9 +728,15 @@ def generate_payroll_excel(date_from=None, date_to=None, single_date=None, month
             month_total_per_dept[dept] = month_total_per_dept.get(dept, 0) + (row.get('total') or 0)
         for dept in month_total_per_dept:
             month_total_per_dept[dept] = round(month_total_per_dept[dept], 2)
+        # Bonus from start of month till selected date: use ShiftOvertimeBonus in range + prorate Salary.bonus
+        month_bonus_per_dept = _month_to_date_bonus_per_dept(
+            month_start, single_date, employees, allowed_emp_codes=allowed_emp_codes, emp_code_filter=emp_code
+        )
 
     plant_rows = build_plant_report_rows(
-        payroll_rows, sorted_dates, att_qs, month_total_per_dept=month_total_per_dept
+        payroll_rows, sorted_dates, att_qs,
+        month_total_per_dept=month_total_per_dept,
+        month_bonus_per_dept=month_bonus_per_dept,
     )
     return _write_payroll_workbook(
         sorted_dates, payroll_rows, plant_rows,
