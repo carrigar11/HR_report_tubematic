@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { settings, runRewardEngine, admins, smtpConfig, googleSheet } from '../api'
+import { settings, runRewardEngine, admins, smtpConfig, googleSheet, plantReportEmail } from '../api'
 import { IconUser, IconSettings, IconTrophy, IconMail, IconExport } from '../components/Icons'
 import './Table.css'
 import './SystemSettings.css'
@@ -47,6 +47,16 @@ export default function SystemSettings() {
   const [googleSheetSaving, setGoogleSheetSaving] = useState(false)
   const [googleSheetSyncing, setGoogleSheetSyncing] = useState(false)
   const [googleSheetMessage, setGoogleSheetMessage] = useState('')
+
+  const [plantReportLoading, setPlantReportLoading] = useState(true)
+  const [plantReportRecipients, setPlantReportRecipients] = useState([])
+  const [plantReportSendTime, setPlantReportSendTime] = useState('06:00')
+  const [plantReportEnabled, setPlantReportEnabled] = useState(true)
+  const [plantReportLastSent, setPlantReportLastSent] = useState(null)
+  const [plantReportNewEmail, setPlantReportNewEmail] = useState('')
+  const [plantReportSaving, setPlantReportSaving] = useState(false)
+  const [plantReportSendNowLoading, setPlantReportSendNowLoading] = useState(false)
+  const [plantReportMessage, setPlantReportMessage] = useState('')
 
   const adminId = (() => {
     try {
@@ -110,6 +120,19 @@ export default function SystemSettings() {
       })
       .catch(() => {})
       .finally(() => setGoogleSheetLoading(false))
+  }, [])
+
+  useEffect(() => {
+    plantReportEmail.getConfig()
+      .then((r) => {
+        const d = r.data
+        setPlantReportRecipients(d.recipients || [])
+        setPlantReportSendTime(d.send_time || '06:00')
+        setPlantReportEnabled(d.enabled !== false)
+        setPlantReportLastSent(d.last_sent || null)
+      })
+      .catch(() => {})
+      .finally(() => setPlantReportLoading(false))
   }, [])
 
   const handleSaveProfile = async () => {
@@ -196,6 +219,74 @@ export default function SystemSettings() {
       setGoogleSheetMessage(res?.message || res?.error || res?.detail || err.message || 'Sync failed')
     } finally {
       setGoogleSheetSyncing(false)
+    }
+  }
+
+  const handleSavePlantReportConfig = async (e) => {
+    e.preventDefault()
+    setPlantReportSaving(true)
+    setPlantReportMessage('')
+    try {
+      const { data } = await plantReportEmail.updateConfig({
+        send_time: plantReportSendTime.trim() || '06:00',
+        enabled: plantReportEnabled,
+      })
+      setPlantReportRecipients(data.recipients || [])
+      setPlantReportSendTime(data.send_time || '06:00')
+      setPlantReportEnabled(data.enabled !== false)
+      setPlantReportLastSent(data.last_sent || null)
+      setPlantReportMessage('Time and options saved.')
+    } catch (err) {
+      setPlantReportMessage(err.response?.data?.error || err.response?.data?.detail || err.message || 'Failed to save')
+    } finally {
+      setPlantReportSaving(false)
+    }
+  }
+
+  const handleAddPlantReportRecipient = async (e) => {
+    e.preventDefault()
+    const email = plantReportNewEmail.trim().toLowerCase()
+    if (!email) return
+    setPlantReportSaving(true)
+    setPlantReportMessage('')
+    try {
+      const { data } = await plantReportEmail.addRecipient(email)
+      setPlantReportRecipients((prev) => [...prev.filter((r) => r.email !== data.email), data].sort((a, b) => (a.email || '').localeCompare(b.email || '')))
+      setPlantReportNewEmail('')
+      setPlantReportMessage('Recipient added.')
+    } catch (err) {
+      setPlantReportMessage(err.response?.data?.error || err.response?.data?.detail || err.message || 'Failed to add')
+    } finally {
+      setPlantReportSaving(false)
+    }
+  }
+
+  const handleRemovePlantReportRecipient = async (id) => {
+    setPlantReportSaving(true)
+    setPlantReportMessage('')
+    try {
+      await plantReportEmail.removeRecipient(id)
+      setPlantReportRecipients((prev) => prev.filter((r) => r.id !== id))
+      setPlantReportMessage('Recipient removed.')
+    } catch (err) {
+      setPlantReportMessage(err.response?.data?.error || err.response?.data?.detail || err.message || 'Failed to remove')
+    } finally {
+      setPlantReportSaving(false)
+    }
+  }
+
+  const handlePlantReportSendNow = async () => {
+    setPlantReportSendNowLoading(true)
+    setPlantReportMessage('')
+    try {
+      const { data } = await plantReportEmail.sendNow()
+      if (data.last_sent) setPlantReportLastSent(data.last_sent)
+      setPlantReportMessage(data.message || (data.success ? 'Email sent.' : 'Send failed.'))
+    } catch (err) {
+      const res = err.response?.data
+      setPlantReportMessage(res?.message || res?.error || res?.detail || err.message || 'Send failed')
+    } finally {
+      setPlantReportSendNowLoading(false)
     }
   }
 
@@ -475,6 +566,81 @@ export default function SystemSettings() {
             {googleSheetLastSync && <p className="muted">Last sync: {new Date(googleSheetLastSync).toLocaleString()}</p>}
             {googleSheetMessage && <p className={`profileMessage ${googleSheetMessage.includes('Failed') || googleSheetMessage.includes('Error') ? 'error' : 'success'}`}>{googleSheetMessage}</p>}
           </form>
+        )}
+      </section>
+
+      {/* Plant Report (Previous day) daily email */}
+      <section className="settingsSection card settingsSectionGoogleSheet">
+        <div className="settingsSectionTitleRow">
+          <span className="settingsSectionIcon settingsSectionIconSmtp"><IconMail /></span>
+          <div>
+            <h3 className="settingsSectionTitle">Plant Report daily email</h3>
+            <p className="muted settingsSectionDesc">Send the Plant Report (Previous day) Excel to the listed emails every day at the set time. Add/remove emails and change the time below. Requires SMTP configured above.</p>
+          </div>
+        </div>
+        {plantReportLoading ? (
+          <p className="muted">Loading…</p>
+        ) : (
+          <>
+            <div className="profileField" style={{ marginBottom: 12 }}>
+              <label className="label">Recipients</label>
+              <ul className="plantReportRecipientList">
+                {(plantReportRecipients || []).map((r) => (
+                  <li key={r.id}>
+                    <span>{r.email}</span>
+                    <button type="button" className="btn btn-secondary btnSmall" onClick={() => handleRemovePlantReportRecipient(r.id)}>Remove</button>
+                  </li>
+                ))}
+              </ul>
+              <form onSubmit={handleAddPlantReportRecipient} style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                <input
+                  type="email"
+                  className="input"
+                  value={plantReportNewEmail}
+                  onChange={(e) => setPlantReportNewEmail(e.target.value)}
+                  placeholder="Add email address"
+                  style={{ maxWidth: 280 }}
+                />
+                <button type="submit" className="btn btn-primary" disabled={plantReportSaving}>Add</button>
+              </form>
+            </div>
+            <form onSubmit={handleSavePlantReportConfig} className="smtpForm">
+              <div className="smtpFormRow">
+                <div className="profileField">
+                  <label className="label">Send time (24h)</label>
+                  <input
+                    type="time"
+                    className="input"
+                    value={plantReportSendTime}
+                    onChange={(e) => setPlantReportSendTime(e.target.value)}
+                    style={{ width: 120 }}
+                  />
+                </div>
+                <div className="profileField smtpFormActive">
+                  <label className="label checkboxLabel">
+                    <input type="checkbox" checked={plantReportEnabled} onChange={(e) => setPlantReportEnabled(e.target.checked)} />
+                    <span>Send daily at this time</span>
+                  </label>
+                </div>
+              </div>
+              <div className="profileFormActions">
+                <button type="submit" className="btn btn-primary" disabled={plantReportSaving}>
+                  {plantReportSaving ? 'Saving…' : 'Save time & options'}
+                </button>
+                <button type="button" className="btn btn-secondary" onClick={handlePlantReportSendNow} disabled={plantReportSendNowLoading}>
+                  {plantReportSendNowLoading ? 'Sending…' : 'Send now'}
+                </button>
+              </div>
+            </form>
+            {plantReportLastSent && (
+              <p className="muted">
+                Last sent: {plantReportLastSent.length >= 10
+                  ? new Date(plantReportLastSent + (plantReportLastSent.includes('T') ? '' : 'T12:00:00')).toLocaleString()
+                  : plantReportLastSent}
+              </p>
+            )}
+            {plantReportMessage && <p className={`profileMessage ${plantReportMessage.includes('Failed') || plantReportMessage.includes('Error') ? 'error' : 'success'}`}>{plantReportMessage}</p>}
+          </>
         )}
       </section>
 

@@ -1,7 +1,8 @@
 from rest_framework import serializers
 from .models import (
     Admin, Employee, Attendance, Salary, SalaryAdvance, Adjustment,
-    Penalty, PerformanceReward, Holiday, SystemSetting, EmailSmtpConfig, AuditLog
+    Penalty, PerformanceReward, Holiday, SystemSetting, PlantReportRecipient,
+    EmailSmtpConfig, AuditLog
 )
 
 
@@ -234,6 +235,12 @@ class SystemSettingSerializer(serializers.ModelSerializer):
     class Meta:
         model = SystemSetting
         fields = ['id', 'key', 'value', 'description', 'updated_at']
+
+
+class PlantReportRecipientSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PlantReportRecipient
+        fields = ['id', 'email', 'is_active', 'created_at']
 
 
 class EmailSmtpConfigSerializer(serializers.ModelSerializer):

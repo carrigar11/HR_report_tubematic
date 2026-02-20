@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 def _google_sheet_sync_loop():
-    """Run sync_all every 60 seconds. Stops if the app is unloaded."""
+    """Run sync_all every 60 seconds; also check daily Plant Report email time."""
     while True:
         try:
             from core.google_sheets_sync import get_sheet_id, sync_all
@@ -26,6 +26,11 @@ def _google_sheet_sync_loop():
                 logger.debug('Google Sheet ID not set; skipping auto-sync')
         except Exception as e:
             logger.warning('Google Sheet auto-sync error: %s', e, exc_info=True)
+        try:
+            from core.plant_report_email import maybe_send_plant_report_daily
+            maybe_send_plant_report_daily()
+        except Exception as e:
+            logger.warning('Plant Report daily email check error: %s', e, exc_info=True)
         time.sleep(60)
 
 

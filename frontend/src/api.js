@@ -144,6 +144,16 @@ export const googleSheet = {
   sync: () => api.post('/settings/google-sheet/sync/'),
 }
 
+/** Plant Report (Previous day) daily email: recipients, send time, manual send */
+export const plantReportEmail = {
+  getConfig: () => api.get('/settings/plant-report-email/'),
+  updateConfig: (data) => api.patch('/settings/plant-report-email/', data),
+  listRecipients: () => api.get('/settings/plant-report-email/recipients/'),
+  addRecipient: (email) => api.post('/settings/plant-report-email/recipients/', { email }),
+  removeRecipient: (id) => api.delete(`/settings/plant-report-email/recipients/${id}/`),
+  sendNow: () => api.post('/settings/plant-report-email/send-now/'),
+}
+
 export const exportReport = (params) => api.get('/export/', { params, responseType: 'blob' })
 
 /** Payroll Excel: params = { month, year } or { date } or { date_from, date_to } or { emp_code } or {} for all */

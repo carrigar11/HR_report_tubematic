@@ -12,7 +12,7 @@ from decimal import Decimal
 from .models import (
     Admin, Employee, Attendance, Salary, SalaryAdvance, Adjustment,
     ShiftOvertimeBonus, Penalty, PerformanceReward, Holiday, SystemSetting,
-    EmailSmtpConfig, AuditLog
+    PlantReportRecipient, EmailSmtpConfig, AuditLog
 )
 from .serializers import (
     AdminSerializer, AdminProfileSerializer, AdminUpdateSerializer,
@@ -23,7 +23,7 @@ from .serializers import (
     SalarySerializer, SalaryAdvanceSerializer, AdjustmentSerializer,
     PenaltySerializer,
     PerformanceRewardSerializer, HolidaySerializer, SystemSettingSerializer,
-    EmailSmtpConfigSerializer,
+    EmailSmtpConfigSerializer, PlantReportRecipientSerializer,
     AdminLoginSerializer, AttendanceAdjustPayloadSerializer,
 )
 from .excel_upload import upload_employees_excel, upload_attendance_excel, upload_shift_excel, upload_force_punch_excel
@@ -657,6 +657,103 @@ class GoogleSheetSyncView(APIView):
         if result['success']:
             return Response(result, status=200)
         return Response(result, status=400)
+
+
+# ---------- Plant Report daily email (recipients + send time in DB) ----------
+def _plant_report_email_settings_access(request):
+    """True if admin can manage Plant Report email settings."""
+    current_admin, _ = get_request_admin(request)
+    return current_admin and (getattr(current_admin, 'is_super_admin', False) or (current_admin.access or {}).get('settings'))
+
+
+class PlantReportEmailConfigView(APIView):
+    """GET: recipients, send_time, enabled. PATCH: update send_time (HH:MM 24h) and/or enabled (true/false)."""
+    def get(self, request):
+        if not _plant_report_email_settings_access(request):
+            return Response({'error': 'Not allowed'}, status=403)
+        from .plant_report_email import get_plant_report_send_time, is_plant_report_email_enabled, get_plant_report_last_sent_date
+        recipients = list(PlantReportRecipient.objects.filter(is_active=True).order_by('email').values('id', 'email', 'is_active', 'created_at'))
+        h, m = get_plant_report_send_time()
+        send_time = f'{h:02d}:{m:02d}'
+        enabled = is_plant_report_email_enabled()
+        last_sent = get_plant_report_last_sent_date()
+        return Response({
+            'recipients': recipients,
+            'send_time': send_time,
+            'enabled': enabled,
+            'last_sent': last_sent.isoformat() if last_sent else None,
+        })
+
+    def patch(self, request):
+        if not _plant_report_email_settings_access(request):
+            return Response({'error': 'Not allowed'}, status=403)
+        send_time = request.data.get('send_time')
+        enabled = request.data.get('enabled')
+        if send_time is not None:
+            s = (str(send_time).strip() or '06:00')[:5]
+            SystemSetting.objects.update_or_create(
+                key='plant_report_send_time',
+                defaults={'value': s, 'description': 'Daily Plant Report email time (HH:MM 24h)'},
+            )
+        if enabled is not None:
+            v = 'true' if enabled in (True, 'true', '1', 'yes') else 'false'
+            SystemSetting.objects.update_or_create(
+                key='plant_report_enabled',
+                defaults={'value': v, 'description': 'Send daily Plant Report email'},
+            )
+        return self.get(request)
+
+
+class PlantReportRecipientListCreateView(APIView):
+    """GET: list recipients. POST: add recipient (body: { email })."""
+    def get(self, request):
+        if not _plant_report_email_settings_access(request):
+            return Response({'error': 'Not allowed'}, status=403)
+        qs = PlantReportRecipient.objects.filter(is_active=True).order_by('email')
+        return Response(PlantReportRecipientSerializer(qs, many=True).data)
+
+    def post(self, request):
+        if not _plant_report_email_settings_access(request):
+            return Response({'error': 'Not allowed'}, status=403)
+        email = (request.data.get('email') or '').strip().lower()
+        if not email:
+            return Response({'error': 'email required'}, status=400)
+        obj, created = PlantReportRecipient.objects.get_or_create(email=email, defaults={'is_active': True})
+        if not created:
+            obj.is_active = True
+            obj.save(update_fields=['is_active'])
+        log_activity(request, 'create', 'settings', 'plant_report_recipient', obj.email, details={})
+        return Response(PlantReportRecipientSerializer(obj).data, status=201)
+
+
+class PlantReportRecipientDetailView(APIView):
+    """DELETE: remove recipient by id."""
+    def delete(self, request, pk):
+        if not _plant_report_email_settings_access(request):
+            return Response({'error': 'Not allowed'}, status=403)
+        try:
+            obj = PlantReportRecipient.objects.get(pk=pk)
+        except PlantReportRecipient.DoesNotExist:
+            return Response({'error': 'Not found'}, status=404)
+        email = obj.email
+        obj.delete()
+        log_activity(request, 'delete', 'settings', 'plant_report_recipient', email, details={})
+        return Response(status=204)
+
+
+class PlantReportEmailSendNowView(APIView):
+    """POST: send Plant Report email immediately (for testing)."""
+    def post(self, request):
+        if not _plant_report_email_settings_access(request):
+            return Response({'error': 'Not allowed'}, status=403)
+        from .plant_report_email import send_plant_report_email, get_plant_report_last_sent_date
+        result = send_plant_report_email()
+        if result.get('success'):
+            result['last_sent'] = get_plant_report_last_sent_date()
+            if result['last_sent']:
+                result['last_sent'] = result['last_sent'].isoformat()
+        log_activity(request, 'export', 'settings', 'plant_report_email_send', '', details=result)
+        return Response(result, status=200 if result.get('success') else 400)
 
 
 # ---------- Attendance Adjust (audit trail) ----------

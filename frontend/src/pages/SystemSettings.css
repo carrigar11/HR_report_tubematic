@@ -233,3 +233,29 @@
   font-size: 0.9rem;
   color: var(--accent);
 }
+
+.plantReportRecipientList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.plantReportRecipientList li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.plantReportRecipientList li:last-child {
+  border-bottom: none;
+}
+
+.btnSmall {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.8rem;
+}

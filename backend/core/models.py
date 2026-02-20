@@ -282,6 +282,21 @@ class SystemSetting(models.Model):
         return f"{self.key}={self.value}"
 
 
+class PlantReportRecipient(models.Model):
+    """Recipients for daily Plant Report (Previous day) email."""
+    """Email addresses to receive the daily Plant Report (Previous day) at the scheduled time."""
+    email = models.EmailField(unique=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'plant_report_recipients'
+        ordering = ['email']
+
+    def __str__(self):
+        return self.email
+
+
 class EmailSmtpConfig(models.Model):
     """SMTP credentials and options for sending email. One active config is used for push email."""
     smtp_server = models.CharField(max_length=255, default='smtp.gmail.com', help_text='e.g. smtp.gmail.com')
