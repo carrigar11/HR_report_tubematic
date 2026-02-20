@@ -1,13 +1,14 @@
 """
-Daily Plant Report (Previous day) email: send Excel to recipients at configured time.
+Daily Plant Report (Previous day) email: send Excel + image to recipients at configured time.
 Recipients and send time are stored in DB (PlantReportRecipient, SystemSetting).
-Attachment is only the Plant Report (Previous day) sheet – same logic and columns as Google Sheet.
+Attachment: Plant Report sheet (Excel) + PNG image for easy viewing on mobile.
 """
 import logging
 from datetime import date
 from io import BytesIO
 
-from django.core.mail import EmailMessage, get_connection
+from django.core.mail import EmailMultiAlternatives, get_connection
+from email.mime.image import MIMEImage
 from django.utils import timezone
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
@@ -19,6 +20,155 @@ from .google_sheets_sync import _build_sheet3_data
 from .models import PlantReportRecipient, SystemSetting
 
 logger = logging.getLogger(__name__)
+
+# Column indices for color scale (0-based): 7=Avg Salary/hr, 8=Absenteeism %, 10=OT bonus hrs, 11=OT bonus rs
+_COLOR_SCALE_COLS = (7, 8, 10, 11)
+
+
+def _value_to_float(val):
+    """Convert cell value to float for color scale; return None if not numeric."""
+    if val is None or val == '' or (isinstance(val, str) and val.strip().startswith('=')):
+        return None
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return None
+
+
+def _color_scale_rgb(val, lo, hi):
+    """Return (r,g,b) soft green->yellow->red (muted, less vibrant)."""
+    if lo is None or hi is None or lo == hi:
+        return (255, 252, 220)  # very light cream
+    t = (val - lo) / (hi - lo) if hi > lo else 0.5
+    t = max(0, min(1, t))
+    if t <= 0.5:
+        # soft green -> soft yellow
+        u = t * 2
+        return (220, 245, 200 + int(35 * (1 - u)))  # pale green to pale yellow
+    else:
+        # soft yellow -> soft red/coral
+        u = (t - 0.5) * 2
+        return (255, 245 - int(120 * u), 220 - int(150 * u))  # pale yellow to soft coral
+
+
+def build_plant_report_previous_day_image():
+    """
+    Build Plant Report (Previous day) as a PNG image – same data as Google Sheet.
+    Green->yellow->red color scale on Average Salary/hr, Absenteeism %, OT bonus (hrs), OT bonus (rs).
+    Returns BytesIO (PNG).
+    """
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except ImportError:
+        logger.warning('Pillow not installed; cannot generate Plant Report image')
+        return None
+
+    rows = _build_sheet3_data()
+    if not rows:
+        return None
+
+    # Layout
+    cell_h = 26
+    header_h = 32
+    col_widths = [36, 100, 72, 56, 52, 52, 72, 72, 72, 72, 72, 72, 72]  # extend if more cols
+    ncols = max(len(r) for r in rows) if rows else 0
+    while len(col_widths) < ncols:
+        col_widths.append(72)
+    col_widths = col_widths[:ncols]
+    total_w = sum(col_widths) + (ncols + 1) * 1
+    total_h = header_h + (len(rows) - 1) * cell_h + (len(rows) + 1) * 1
+
+    img = Image.new('RGB', (total_w, total_h), (255, 255, 255))
+    draw = ImageDraw.Draw(img)
+
+    import os
+    _font_paths = [
+        'arial.ttf',
+        os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts', 'arial.ttf'),
+        '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+    ]
+    font = font_bold = None
+    for path in _font_paths:
+        try:
+            font = ImageFont.truetype(path, 11)
+            font_bold = font
+            try:
+                font_bold = ImageFont.truetype(
+                    path.replace('arial.ttf', 'arialbd.ttf').replace('DejaVuSans.ttf', 'DejaVuSans-Bold.ttf'), 11
+                )
+            except (OSError, IOError):
+                pass
+            break
+        except (OSError, IOError):
+            continue
+    if font is None:
+        font = font_bold = ImageFont.load_default()
+
+    # Compute min/max per column for color scale (data rows only, numeric)
+    col_mins = [None] * ncols
+    col_maxs = [None] * ncols
+    for ri, row in enumerate(rows):
+        if ri == 0:
+            continue
+        for ci in _COLOR_SCALE_COLS:
+            if ci < len(row):
+                v = _value_to_float(row[ci])
+                if v is not None:
+                    if col_mins[ci] is None or v < col_mins[ci]:
+                        col_mins[ci] = v
+                    if col_maxs[ci] is None or v > col_maxs[ci]:
+                        col_maxs[ci] = v
+
+    def draw_cell(r, c, text, fill=(255, 255, 255), font_=font, bold=False):
+        x0 = 1 + sum(col_widths[:c]) + c
+        y0 = 1 if r == 0 else (1 + header_h + 1 + (r - 1) * (cell_h + 1))
+        w = col_widths[c] if c < len(col_widths) else 72
+        h = header_h if r == 0 else cell_h
+        draw.rectangle([x0, y0, x0 + w, y0 + h], fill=fill, outline=(180, 180, 180))
+        s = str(text)[:14] + ('…' if len(str(text)) > 14 else '')
+        # center text in cell (simple)
+        bbox = draw.textbbox((0, 0), s, font=font_)
+        tw = bbox[2] - bbox[0]
+        th = bbox[3] - bbox[1]
+        tx = x0 + max(0, (w - tw) // 2)
+        ty = y0 + max(0, (h - th) // 2)
+        text_color = (255, 255, 255) if (fill[0] < 100 and fill[1] < 100) else (0, 0, 0)
+        draw.text((tx, ty), s, fill=text_color, font=font_)
+
+    # Column indices: headers = Sr No, PLANT, Total Man Hrs (3) + n_dates + 8 cols → n_dates = len(rows[0]) - 11
+    n_dates = max(0, (len(rows[0]) - 11)) if rows else 0
+    abs_col = 3 + n_dates + 4   # Absenteeism % column (0-based)
+    present_col = 3 + n_dates
+    absent_col = 3 + n_dates + 1
+
+    for ri, row in enumerate(rows):
+        for ci in range(len(row)):
+            val = row[ci]
+            # In total row, Absenteeism % cell is the formula – show computed number in image
+            if ri == len(rows) - 1 and ri > 0 and ci == abs_col and isinstance(val, str) and val.strip().startswith('='):
+                try:
+                    pres = _value_to_float(row[present_col])
+                    absv = _value_to_float(row[absent_col])
+                    total = (pres or 0) + (absv or 0)
+                    val = round(100.0 * (absv or 0) / total, 2) if total else 0
+                except (TypeError, ZeroDivisionError):
+                    val = 0
+            fill = (255, 255, 255)
+            if ri == 0:
+                fill = (54, 96, 146)
+            elif ci in _COLOR_SCALE_COLS and ci < len(row):
+                num = _value_to_float(val)
+                if num is not None and col_mins[ci] is not None:
+                    fill = _color_scale_rgb(num, col_mins[ci], col_maxs[ci] or col_mins[ci])
+            if ri == 0:
+                draw_cell(ri, ci, val, fill=fill, font_=font_bold)
+            else:
+                draw_cell(ri, ci, val, fill=fill)
+
+    buf = BytesIO()
+    img.save(buf, format='PNG')
+    buf.seek(0)
+    return buf
 
 
 def get_plant_report_send_time():
@@ -91,10 +241,11 @@ def build_plant_report_previous_day_excel_only():
     data_start_row = start_row + 1  # first data row below header
     range_ij = f'{col_I}{data_start_row}:{col_J}{last_row}'
     range_lm = f'{col_L}{data_start_row}:{col_M}{last_row}'
+    # Muted colors: soft green -> pale yellow -> soft coral (less vibrant)
     color_scale = ColorScaleRule(
-        start_type='min', start_color='00FF00',
-        mid_type='percentile', mid_value=50, mid_color='FFFF00',
-        end_type='max', end_color='FF0000',
+        start_type='min', start_color='C8E6C9',   # soft green
+        mid_type='percentile', mid_value=50, mid_color='FFF9C4',  # pale yellow
+        end_type='max', end_color='FFCCBC',      # soft coral
     )
     ws.conditional_formatting.add(range_ij, color_scale)
     ws.conditional_formatting.add(range_lm, color_scale)
@@ -128,8 +279,14 @@ def send_plant_report_email():
 
     from_date = (timezone.localdate() - timezone.timedelta(days=1)).strftime('%d-%m-%Y')
     subject = f'Plant Report (Previous day) - {from_date}'
-    body = f'Please find the Plant Report for {from_date} attached.\n\nThis is an automated email.'
-    from_email = config.force_sender or config.auth_username
+    sender_address = config.force_sender or config.auth_username
+    from_email = f'Tubematic (Carrigar) <{sender_address}>' if sender_address else 'Tubematic (Carrigar) <noreply@tubematic.com>'
+
+    # Build PNG image for mobile-friendly view
+    img_bytes = None
+    img_buf = build_plant_report_previous_day_image()
+    if img_buf:
+        img_bytes = img_buf.read()
 
     connection = get_connection(
         backend='django.core.mail.backends.smtp.EmailBackend',
@@ -140,15 +297,40 @@ def send_plant_report_email():
         use_tls=True,
         fail_silently=False,
     )
-    filename = f'Plant_Report_{from_date.replace("-", "_")}.xlsx'
-    msg = EmailMessage(
-        subject=subject,
-        body=body,
-        from_email=from_email,
-        to=recipients,
-        connection=connection,
+    filename_xlsx = f'Plant_Report_{from_date.replace("-", "_")}.xlsx'
+    text_body = (
+        f'Dear Team,\n\nPlease find the Plant Report (Previous day) for {from_date}.\n\n'
+        '• A quick-view image is included in this email (suitable for mobile).\n'
+        '• The full Excel file is attached for download and reference.\n\n'
+        'Regards,\nTubematic (Carrigar)'
     )
-    msg.attach(filename, excel_bytes, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    if img_bytes:
+        html_body = (
+            '<div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; color: #333;">'
+            '<div style="padding: 16px 0 8px 0; border-bottom: 1px solid #e0e0e0;">'
+            '<p style="margin: 0; font-size: 15px;">Dear Team,</p>'
+            '</div>'
+            f'<p style="margin: 16px 0; font-size: 14px; line-height: 1.5;">Please find the <strong>Plant Report (Previous day)</strong> for <strong>{from_date}</strong>.</p>'
+            '<p style="margin: 12px 0; font-size: 14px; line-height: 1.5;">The report is shown below for quick view on any device. The full Excel file is attached for download.</p>'
+            '<div style="margin: 20px 0; padding: 12px 0; border: 1px solid #e8e8e8; border-radius: 6px; overflow-x: auto;">'
+            '<img src="cid:plant_report" alt="Plant Report" style="max-width:100%; height:auto; display:block;" />'
+            '</div>'
+            '<div style="padding: 16px 0 0 0; border-top: 1px solid #e0e0e0; margin-top: 20px; font-size: 13px; color: #666;">'
+            '<p style="margin: 0 0 4px 0;">Regards,</p>'
+            '<p style="margin: 0; font-weight: 600;">Tubematic (Carrigar)</p>'
+            '</div>'
+            '</div>'
+        )
+        msg = EmailMultiAlternatives(subject, text_body, from_email, recipients, connection=connection)
+        msg.attach_alternative(html_body, 'text/html')
+        msg.mixed_subtype = 'related'
+        msg_img = MIMEImage(img_bytes)
+        msg_img.add_header('Content-ID', '<plant_report>')
+        msg_img.add_header('Content-Disposition', 'inline', filename='Plant_Report.png')
+        msg.attach(msg_img)
+    else:
+        msg = EmailMultiAlternatives(subject, text_body, from_email, recipients, connection=connection)
+    msg.attach(filename_xlsx, excel_bytes, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     try:
         msg.send()
         set_plant_report_last_sent_date(timezone.localdate())

@@ -11,3 +11,4 @@ django-filter>=23.5
 reportlab>=4.0
 google-api-python-client>=2.100
 google-auth>=2.22
+Pillow>=10.0

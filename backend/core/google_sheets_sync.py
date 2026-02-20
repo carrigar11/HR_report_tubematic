@@ -13,7 +13,7 @@ from django.conf import settings as django_settings
 from django.db.models import Sum
 from django.utils import timezone
 
-from .models import Employee, Attendance, Salary, SalaryAdvance, Penalty, SystemSetting
+from .models import Employee, Attendance, Salary, SalaryAdvance, Penalty, SystemSetting, ShiftOvertimeBonus
 from .export_excel import (
     _get_date_filter_queryset,
     _get_advance_by_emp,
@@ -376,9 +376,46 @@ def _build_sheet2_data():
     return rows
 
 
+def _day_bonus_per_dept(single_date):
+    """OT bonus (hrs) and (rs) for that day only, by department. Uses ShiftOvertimeBonus."""
+    from collections import defaultdict
+    emp_codes = list(Employee.objects.values_list('emp_code', flat=True))
+    if not emp_codes:
+        return {}
+    qs = ShiftOvertimeBonus.objects.filter(
+        date=single_date, emp_code__in=emp_codes
+    ).values('emp_code').annotate(total_hrs=Sum('bonus_hours'))
+    emp_bonus_hrs = {r['emp_code']: float(r['total_hrs'] or 0) for r in qs}
+    emp_to_dept = {
+        e.emp_code: (e.dept_name or '')
+        for e in Employee.objects.filter(emp_code__in=emp_codes).only('emp_code', 'dept_name')
+    }
+    salary_type_by_emp = {
+        e['emp_code']: (e.get('salary_type') or 'Monthly').strip() or 'Monthly'
+        for e in Employee.objects.filter(emp_code__in=emp_codes).values('emp_code', 'salary_type')
+    }
+    base_by_emp = {
+        e['emp_code']: float(e.get('base_salary') or 0)
+        for e in Employee.objects.filter(emp_code__in=emp_codes).values('emp_code', 'base_salary')
+    }
+    dept_hrs = defaultdict(float)
+    dept_amt = defaultdict(float)
+    for ec in emp_codes:
+        hrs = emp_bonus_hrs.get(ec, 0)
+        if hrs <= 0:
+            continue
+        dept = emp_to_dept.get(ec, '')
+        st = salary_type_by_emp.get(ec, 'Monthly')
+        base = base_by_emp.get(ec, 0)
+        rate = base if st == 'Hourly' else (base / 208.0 if base else 0.0)
+        dept_hrs[dept] += hrs
+        dept_amt[dept] += round(hrs * rate, 2)
+    return {dept: (round(dept_hrs[dept], 2), round(dept_amt[dept], 2)) for dept in dept_hrs}
+
+
 # ---------- Sheet 3: Plant Report (Previous day) ----------
 def _build_sheet3_data():
-    """Plant Report for previous day: Average Salary and Average Salary/hr are for that day only; new column after Total Man Hrs = report date + salary that day per dept."""
+    """Plant Report for previous day: Average Salary and Average Salary/hr are for that day only; OT bonus (hrs)/(rs) are that day only."""
     today = timezone.localdate()
     yesterday = today - timedelta(days=1)
     month_start = yesterday.replace(day=1)
@@ -395,19 +432,18 @@ def _build_sheet3_data():
     )
     _add_bonus_to_payroll_rows(payroll_month, yesterday.month, yesterday.year)
     emp_to_month_total = {r['emp_code']: r['total'] for r in payroll_month}
-    emp_to_bonus_hours = {r['emp_code']: r.get('bonus_hours', 0) for r in payroll_month}
-    emp_to_bonus_amount = {r['emp_code']: r.get('bonus_amount', 0) for r in payroll_month}
     for row in payroll_rows:
-        ec = row['emp_code']
-        row['total'] = emp_to_month_total.get(ec, 0)
-        row['bonus_hours'] = emp_to_bonus_hours.get(ec, 0)
-        row['bonus_amount'] = emp_to_bonus_amount.get(ec, 0)
+        row['total'] = emp_to_month_total.get(row['emp_code'], 0)
+    # OT bonus (hrs) and (rs) = that day only (yesterday)
+    day_bonus_per_dept = _day_bonus_per_dept(yesterday)
     month_total_per_dept = {}
     for row in payroll_rows:
         dept = row.get('department') or ''
         month_total_per_dept[dept] = month_total_per_dept.get(dept, 0) + row['total']
     plant_rows = build_plant_report_rows(
-        payroll_rows, sorted_dates, att_yesterday, month_total_per_dept=month_total_per_dept
+        payroll_rows, sorted_dates, att_yesterday,
+        month_total_per_dept=month_total_per_dept,
+        month_bonus_per_dept=day_bonus_per_dept,
     )
 
     # Override Average Salary and Average Salary/hr to be for previous day only (that day's salary / present, that day's salary / man hrs)
@@ -428,9 +464,8 @@ def _build_sheet3_data():
     n_dates = len(sorted_dates)
     for row in plant_rows:
         day_salary = (row['_day_totals'][0] if row.get('_day_totals') else 0)
-        bonus_amt = row.get('total_bonus_amount', 0) or 0
-        # Total Salary column = that day's salary + bonus (final total per row)
-        total_salary_cell = round(day_salary + float(bonus_amt), 2)
+        # Total Salary column = start of month till report date (month-to-date)
+        total_salary_cell = round(float(row.get('total_salary', 0) or 0), 2)
         r = [
             row['sr'], row['plant'], row['total_man_hrs'],
             *row['_day_totals'],
@@ -443,6 +478,7 @@ def _build_sheet3_data():
             (r['_day_totals'][0] if r.get('_day_totals') else 0) for r in plant_rows
         )
         tot_bonus_amt = sum(float(r.get('total_bonus_amount', 0) or 0) for r in plant_rows)
+        tot_salary_mtd = sum(float(r.get('total_salary', 0) or 0) for r in plant_rows)
         tot_present = sum(r['total_present'] for r in plant_rows)
         tot_man_hrs = sum(r['total_man_hrs'] for r in plant_rows)
         tot_row = ['TOTAL SALARY', '', round(tot_man_hrs, 2)]
@@ -450,8 +486,7 @@ def _build_sheet3_data():
             tot_row.append(round(sum(
                 (r['_day_totals'][i] if i < len(r.get('_day_totals', [])) else 0) for r in plant_rows
             ), 2))
-        # Total Salary (final) = that day's salary total + bonus total
-        # K column in total row (Absenteeism %): formula =IFERROR(H19/(G19+H19)*100,0)
+        # Total Salary = month-to-date (start of month till report date)
         total_row_num = 3 + len(plant_rows)
         k_formula = f'=IFERROR(H{total_row_num}/(G{total_row_num}+H{total_row_num})*100,0)'
         tot_row.extend([
@@ -460,7 +495,7 @@ def _build_sheet3_data():
             round(day_salary_total / max(1, tot_present), 2),
             round(day_salary_total / max(1e-9, tot_man_hrs), 2),
             k_formula,  # K19: formula (Absenteeism % column)
-            round(day_salary_total + tot_bonus_amt, 2),  # L19: Total Salary numeric
+            round(tot_salary_mtd, 2),  # Total Salary = month-to-date grand total
             round(sum(r.get('total_bonus_hours', 0) for r in plant_rows), 2),
             round(tot_bonus_amt, 2),
         ])
