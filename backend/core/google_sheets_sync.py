@@ -416,47 +416,53 @@ def _build_sheet3_data():
         row['avg_salary'] = round(day_salary / row['total_present'], 2) if row['total_present'] else 0
         row['avg_salary_hr'] = round(day_salary / row['total_man_hrs'], 2) if row['total_man_hrs'] else 0
 
-    # New column after Total Man Hrs: report date + salary given that day to that department
-    report_date_header = f"Salary ({yesterday.strftime('%d-%m-%Y')})"
-    headers = ['Sr No', 'PLANT', 'Total Man Hrs', report_date_header]
+    # One column for that day's salary (no duplicate E/F); headers: Sr No, PLANT, Total Man Hrs, date, ...
+    headers = ['Sr No', 'PLANT', 'Total Man Hrs']
     for d in sorted_dates:
         headers.append(d.strftime('%d-%m-%y'))
     headers.extend([
         'Total Worker Present', 'Total Worker Absent', 'Average Salary', 'Average Salary/hr',
-        'Absenteeism %', 'Total Salary', 'Total Bonus (hrs)', 'Total Bonus (Rs)',
+        'Absenteeism %', 'Total Salary', 'OT bonus (hrs)', 'OT bonus (rs)',
     ])
     rows = [headers]
     n_dates = len(sorted_dates)
     for row in plant_rows:
         day_salary = (row['_day_totals'][0] if row.get('_day_totals') else 0)
+        bonus_amt = row.get('total_bonus_amount', 0) or 0
+        # Total Salary column = that day's salary + bonus (final total per row)
+        total_salary_cell = round(day_salary + float(bonus_amt), 2)
         r = [
             row['sr'], row['plant'], row['total_man_hrs'],
-            round(day_salary, 2),
             *row['_day_totals'],
             row['total_present'], row['total_absent'], row['avg_salary'], row['avg_salary_hr'],
-            row['absenteeism'], row['total_salary'], row.get('total_bonus_hours', 0), row.get('total_bonus_amount', 0),
+            row['absenteeism'], total_salary_cell, row.get('total_bonus_hours', 0), row.get('total_bonus_amount', 0),
         ]
         rows.append(r)
     if plant_rows:
         day_salary_total = sum(
             (r['_day_totals'][0] if r.get('_day_totals') else 0) for r in plant_rows
         )
+        tot_bonus_amt = sum(float(r.get('total_bonus_amount', 0) or 0) for r in plant_rows)
         tot_present = sum(r['total_present'] for r in plant_rows)
         tot_man_hrs = sum(r['total_man_hrs'] for r in plant_rows)
-        tot_row = ['TOTAL SALARY', '', round(tot_man_hrs, 2), round(day_salary_total, 2)]
+        tot_row = ['TOTAL SALARY', '', round(tot_man_hrs, 2)]
         for i in range(n_dates):
             tot_row.append(round(sum(
                 (r['_day_totals'][i] if i < len(r.get('_day_totals', [])) else 0) for r in plant_rows
             ), 2))
+        # Total Salary (final) = that day's salary total + bonus total
+        # K column in total row (Absenteeism %): formula =IFERROR(H19/(G19+H19)*100,0)
+        total_row_num = 3 + len(plant_rows)
+        k_formula = f'=IFERROR(H{total_row_num}/(G{total_row_num}+H{total_row_num})*100,0)'
         tot_row.extend([
             tot_present,
             sum(r['total_absent'] for r in plant_rows),
             round(day_salary_total / max(1, tot_present), 2),
             round(day_salary_total / max(1e-9, tot_man_hrs), 2),
-            '',
-            round(sum(r['total_salary'] for r in plant_rows), 2),
+            k_formula,  # K19: formula (Absenteeism % column)
+            round(day_salary_total + tot_bonus_amt, 2),  # L19: Total Salary numeric
             round(sum(r.get('total_bonus_hours', 0) for r in plant_rows), 2),
-            round(sum(r.get('total_bonus_amount', 0) for r in plant_rows), 2),
+            round(tot_bonus_amt, 2),
         ])
         rows.append(tot_row)
     return rows
@@ -601,7 +607,7 @@ def sync_all(force_full=False):
             if not data:
                 continue
             data = _values_to_sheet_format(data)
-            start = 'B3' if sheet_name in ('All dates by month', 'Current year', 'Plant Report (Previous day)') else 'A1'
+            start = 'B2' if sheet_name in ('All dates by month', 'Current year', 'Plant Report (Previous day)') else 'A1'
             range_name = _sheet_range(sheet_name, start)
             body = {'values': data}
             try:
