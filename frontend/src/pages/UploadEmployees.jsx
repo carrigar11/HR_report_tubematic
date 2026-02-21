@@ -41,6 +41,9 @@ export default function UploadEmployees() {
           {result && (
             <div className="uploadResult">
               Created: {result.created}, Updated: {result.updated}, Errors: {result.errors}
+              {result.created_admins?.length > 0 && (
+                <div className="uploadResultAdmins">New department admin(s) created: {result.created_admins.join(', ')} (default password as super admin)</div>
+              )}
             </div>
           )}
           <button type="submit" className="btn btn-primary" disabled={loading}>

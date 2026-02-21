@@ -9,7 +9,7 @@ from datetime import datetime, date, time, timedelta
 from decimal import Decimal
 from django.utils import timezone
 
-from .models import Employee, Attendance
+from .models import Employee, Attendance, Admin
 from .utils import (
     normalize_column_name,
     map_columns_to_schema,
@@ -187,12 +187,72 @@ def _safe_str(val, max_len=255):
     return s if s else ''
 
 
+# Default password for new department admins (same as seed admin@gmail.com)
+DEFAULT_DEPT_ADMIN_PASSWORD = '123456789'
+
+# Department admin access: full except Manage Admins and Settings (same as create_dept_admins)
+DEPT_ADMIN_ACCESS = {
+    'dashboard': True,
+    'attendance': True,
+    'salary': True,
+    'leaderboard': True,
+    'export': True,
+    'adjustment': True,
+    'upload': True,
+    'employees': True,
+    'bonus': True,
+    'penalty': True,
+    'absentee_alert': True,
+    'holidays': True,
+    'settings': False,
+    'manage_admins': False,
+}
+
+
+def _slugify_dept(s):
+    """Safe email local part from department name."""
+    s = (s or '').strip().lower()
+    s = re.sub(r'[^a-z0-9]+', '_', s)
+    s = s.strip('_') or 'dept'
+    return s[:50]
+
+
+def ensure_admins_for_departments(dept_names, password=None):
+    """
+    For each department name that does not yet have an admin, create one.
+    Email: admin_{slug}@dept.hr, same access as create_dept_admins.
+    Returns list of created admin emails.
+    """
+    password = password or DEFAULT_DEPT_ADMIN_PASSWORD
+    created_emails = []
+    for dept in sorted(set(d for d in dept_names if (d or '').strip())):
+        dept = (dept or '').strip()
+        if not dept:
+            continue
+        slug = _slugify_dept(dept)
+        email = f'admin_{slug}@dept.hr'
+        if Admin.objects.filter(email__iexact=email).exists():
+            continue
+        Admin.objects.create(
+            name=f'Admin - {dept}',
+            email=email,
+            password=password,
+            phone='',
+            department=dept,
+            role=Admin.ROLE_DEPT,
+            access=DEPT_ADMIN_ACCESS,
+        )
+        created_emails.append(email)
+    return created_emails
+
+
 def upload_employees_excel(file, preview=False) -> dict:
     """
     If emp_code does not exist -> create.
     If exists -> update only non-sensitive fields.
     Never create duplicate emp_code.
     If preview=True, returns changes without applying them.
+    When new department names appear in the upload, creates admin logins for them (manage-admins).
     """
     df = pd.read_excel(file)
     col_map = map_columns_to_schema(df.columns.tolist(), EMPLOYEE_COLUMN_ALIASES)
@@ -204,7 +264,8 @@ def upload_employees_excel(file, preview=False) -> dict:
     created = updated = errors = 0
     to_create = []
     to_update = []
-    
+    upload_dept_names = set()  # department names seen in this upload
+
     # Get existing employees for comparison
     emp_codes = []
     rows_data = []
@@ -213,12 +274,12 @@ def upload_employees_excel(file, preview=False) -> dict:
         if emp_code:
             emp_codes.append(emp_code)
         rows_data.append(row)
-    
+
     existing_employees = {}
     if emp_codes:
         for emp in Employee.objects.filter(emp_code__in=emp_codes).values('emp_code', 'name', 'dept_name', 'designation', 'status'):
             existing_employees[emp['emp_code']] = emp
-    
+
     for row in rows_data:
         emp_code = _safe_str(row.get(col_map['code'], ''), 50)
         if not emp_code:
@@ -232,6 +293,8 @@ def upload_employees_excel(file, preview=False) -> dict:
         email = _safe_str(_cell('email'), 254)
         gender = _safe_str(_cell('gender'), 20)
         dept = _safe_str(_cell('department name'), 100)
+        if (dept or '').strip():
+            upload_dept_names.add(dept.strip())
         designation = _safe_str(_cell('designation name'), 100)
         status = _safe_str(_cell('status'), 20) or 'Active'
         emp_type = _safe_str(_cell('employment type'), 20) or 'Full-time'
@@ -301,11 +364,20 @@ def upload_employees_excel(file, preview=False) -> dict:
     # Actually apply changes
     for emp_data in to_create:
         Employee.objects.create(**emp_data)
-    
+
     for update_data in to_update:
         Employee.objects.filter(emp_code=update_data['emp_code']).update(**update_data['new'])
 
-    return {'success': True, 'created': created, 'updated': updated, 'errors': errors}
+    # New departments from this upload: create admin for each that does not exist (manage-admins)
+    created_admins = ensure_admins_for_departments(upload_dept_names)
+
+    return {
+        'success': True,
+        'created': created,
+        'updated': updated,
+        'errors': errors,
+        'created_admins': created_admins,
+    }
 
 
 def upload_attendance_excel(file, preview=False) -> dict:
