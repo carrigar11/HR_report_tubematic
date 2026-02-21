@@ -323,6 +323,24 @@ def _build_sheet2_data():
             amt = row.get('_day_totals', [])[i] if i < len(row.get('_day_totals', [])) else 0
             dept_month_salary[dept][d.month] += amt
 
+    # Bonus (rs) per department per month (from Salary.bonus hours × rate) for total row
+    emp_codes_with_bonus = set(Salary.objects.filter(year=year).values_list('emp_code', flat=True))
+    all_emp_codes = set(emp_to_dept.keys()) | emp_codes_with_bonus
+    salary_type_by_emp = {
+        e['emp_code']: (e.get('salary_type') or 'Monthly').strip() or 'Monthly'
+        for e in Employee.objects.filter(emp_code__in=all_emp_codes).values('emp_code', 'salary_type')
+    }
+    dept_month_bonus_amt = defaultdict(lambda: defaultdict(float))
+    for m in range(1, 13):
+        for s in Salary.objects.filter(year=year, month=m).filter(bonus__gt=0).values('emp_code', 'bonus', 'base_salary'):
+            ec = s['emp_code']
+            dept = emp_to_dept.get(ec, '')
+            bonus_hrs = float(s.get('bonus') or 0)
+            base = float(s.get('base_salary') or 0)
+            st = salary_type_by_emp.get(ec, 'Monthly')
+            rate = base if st == 'Hourly' else (base / 208.0 if base else 0.0)
+            dept_month_bonus_amt[dept][m] += round(bonus_hrs * rate, 2)
+
     depts = sorted(set(emp_to_dept.values()))
     dept_list = [d for d in depts if d]
     if '' in depts:
@@ -356,9 +374,14 @@ def _build_sheet2_data():
         ])
 
     if len(rows) > 1:
-        total_row = ['TOTAL SALARY', ''] + [
-            round(sum(r[2 + i] for r in rows[1:] if len(r) > 2 + i), 2) for i in range(12)
-        ]
+        # Total row: each month column = salary total for that month + bonus (rs) total for that month
+        month_totals = []
+        for i in range(12):
+            m = i + 1
+            salary_tot = sum(r[2 + i] for r in rows[1:] if len(r) > 2 + i)
+            bonus_tot = sum(dept_month_bonus_amt.get(d, {}).get(m, 0) for d in dept_list)
+            month_totals.append(round(salary_tot + bonus_tot, 2))
+        total_row = ['TOTAL SALARY', ''] + month_totals
         n_plants = len(rows[1:])
         tot_payout = sum((r[16] if len(r) > 16 else 0) for r in rows[1:])  # Total Salary + Bonus column
         tot_man = sum(
@@ -491,7 +514,7 @@ def _build_sheet3_data():
             ), 2))
         # Total Salary = month-to-date (start of month till report date)
         total_row_num = 3 + len(plant_rows)
-        k_formula = f'=IFERROR(H{total_row_num}/(G{total_row_num}+H{total_row_num})*100,0)'
+        k_formula = f'=IFERROR(F{total_row_num}/(G{total_row_num}+F{total_row_num})*100,0)'
         # Total OT bonus (hrs) = sum of each department's bonus hours (never use row index/sr)
         tot_bonus_hrs = sum(float(r.get('total_bonus_hours', 0) or 0) for r in plant_rows)
         tot_row.extend([
@@ -637,12 +660,8 @@ def _get_sheet_id_by_title(service, spreadsheet_id, title):
 
 def _apply_plant_report_sheet_format(service, spreadsheet_id, sheet_id, num_rows, num_cols):
     """
-    Apply color schema to Plant Report (Previous day) sheet:
-    - Header row (row 2): light orange
-    - Total row (last row): light red
-    - All other data cells: light blue
-    (I:J and L:M color scale / gradient is not applied here — do it in the sheet if needed.)
-    Data is written from B2, so row index 1 = header, 2..num_rows-1 = data, num_rows = total row.
+    Apply color schema (same as other sheet): header orange, total red, in-between blue.
+    Used for Plant Report (Previous day) and Current year. Data from B2: row 1 = header, last = total.
     """
     if not num_rows or not num_cols or sheet_id is None:
         return
@@ -753,8 +772,8 @@ def sync_all(force_full=False):
                     body=body,
                 ).execute()
                 logger.info('Updated sheet "%s" with %s rows (after retry)', sheet_name, len(data))
-            # Plant Report (Previous day): apply color schema and color scale on I:J, L:M
-            if sheet_name == 'Plant Report (Previous day)' and len(data) > 0 and len(data[0]) > 0:
+            # Plant Report (Previous day) and Current year: header orange, total red, data blue
+            if sheet_name in ('Plant Report (Previous day)', 'Current year') and len(data) > 0 and len(data[0]) > 0:
                 sheet_id = _get_sheet_id_by_title(service, spreadsheet_id, sheet_name)
                 _apply_plant_report_sheet_format(
                     service, spreadsheet_id, sheet_id,
