@@ -17,6 +17,7 @@ import {
   IconChevronDown,
   IconGift,
   IconClock,
+  IconLogout,
 } from './components/Icons'
 import './Layout.css'
 
@@ -175,9 +176,9 @@ export default function Layout() {
                         <div className="profileName">{admin.name || 'Admin'}</div>
                         <div className="profileEmail">{admin.email || 'admin@hr.com'}</div>
                         {admin.role === 'super_admin' ? (
-                          <div className="muted" style={{ fontSize: '0.8rem', marginTop: 2 }}>Super Admin</div>
+                          <span className="profileRole">Super Admin</span>
                         ) : admin.department ? (
-                          <div className="muted" style={{ fontSize: '0.8rem', marginTop: 2 }}>Dept: {admin.department}</div>
+                          <span className="profileRole">Dept: {admin.department}</span>
                         ) : null}
                       </div>
                     </div>
@@ -185,7 +186,8 @@ export default function Layout() {
                       <IconSettings />
                       Settings
                     </NavLink>
-                    <button type="button" className="profileDropdownItem" onClick={() => { setProfileOpen(false); logout(); }}>
+                    <button type="button" className="profileDropdownItem profileDropdownItemSignOut" onClick={() => { setProfileOpen(false); logout(); }}>
+                      <IconLogout />
                       Sign out
                     </button>
                   </div>

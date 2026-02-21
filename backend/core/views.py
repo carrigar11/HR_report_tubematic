@@ -955,7 +955,8 @@ class DashboardView(APIView):
                     DashboardView._last_reward_run_date = today
                 except Exception:
                     pass
-        total_employees = Employee.objects.filter(status__in=Employee.EMPLOYED_STATUSES).filter(emp_filter).count()
+        total_employees = Employee.objects.filter(emp_filter).count()  # all (including Inactive)
+        active_employees = Employee.objects.filter(status__in=Employee.EMPLOYED_STATUSES).filter(emp_filter).count()  # not Inactive
         att_qs = Attendance.objects.filter(date=today)
         if allowed_emp_codes is not None:
             att_qs = att_qs.filter(emp_filter)
@@ -964,7 +965,7 @@ class DashboardView(APIView):
             punch_in__isnull=False
         ).exclude(status='Present').update(status='Present')
         today_present = att_qs.filter(Q(punch_in__isnull=False) | Q(status='Present')).count()
-        today_absent = max(total_employees - today_present, 0)
+        today_absent = max(active_employees - today_present, 0)  # absent among active (expected to work)
         week_start = today - timedelta(days=6)
         ot_leaders_qs = Attendance.objects.filter(date__gte=week_start, date__lte=today)
         if allowed_emp_codes is not None:
@@ -995,6 +996,7 @@ class DashboardView(APIView):
                 r['department'] = emp_lookup.get(r['emp_code'], {}).get('department', '')
         return Response({
             'total_employees': total_employees,
+            'active_employees': active_employees,
             'today_present': today_present,
             'today_absent': today_absent,
             'overtime_leaders': ot_leaders,
@@ -1648,6 +1650,9 @@ class PenaltyListView(APIView):
         qs = Penalty.objects.all().order_by('-date', 'emp_code')
         if allowed_emp_codes is not None:
             qs = qs.filter(emp_code__in=allowed_emp_codes) if allowed_emp_codes else qs.none()
+        emp_code_filter = request.query_params.get('emp_code', '').strip()
+        if emp_code_filter:
+            qs = qs.filter(emp_code=emp_code_filter)
         search = request.query_params.get('search', '').strip()
         if search:
             # Inbuilt: match emp_code OR name (one search box)

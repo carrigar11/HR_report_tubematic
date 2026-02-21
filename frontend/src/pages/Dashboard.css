@@ -37,12 +37,22 @@
 
 .kpiGrid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 1rem;
   margin-bottom: 1.5rem;
 }
 
-@media (max-width: 900px) {
+.kpiGrid .kpiCard {
+  min-width: 0;
+}
+
+@media (max-width: 1100px) {
+  .kpiGrid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 700px) {
   .kpiGrid {
     grid-template-columns: repeat(2, 1fr);
   }

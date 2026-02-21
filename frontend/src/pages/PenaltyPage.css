@@ -2,6 +2,11 @@
   max-width: 1200px;
 }
 
+.penaltyPage .card {
+  border-radius: 10px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+}
+
 .penaltyHeader {
   display: flex;
   flex-wrap: wrap;
@@ -96,5 +101,237 @@
   white-space: nowrap;
 }
 
-.penaltyTable .btn-small { padding: 0.25rem 0.5rem; font-size: 0.8rem; }
+.penaltyTable .btn-small {
+  padding: 0.35rem 0.6rem;
+  font-size: 0.8rem;
+  border-radius: 6px;
+  font-weight: 500;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+}
+.penaltyTable .btn-small:active {
+  transform: scale(0.98);
+}
+.penaltyTable .btn-secondary.btn-small {
+  background: var(--surface2, rgba(255, 255, 255, 0.06));
+  border-color: var(--border);
+  color: var(--text);
+}
+.penaltyTable .btn-secondary.btn-small:hover {
+  background: var(--border, rgba(255, 255, 255, 0.1));
+  border-color: var(--accent, rgba(34, 197, 94, 0.4));
+  color: var(--accent);
+}
 .penaltyTable .btn-danger { background: #b91c1c; color: #fff; border-color: #b91c1c; }
+.penaltyTable .btn-danger:hover { background: #991b1b; border-color: #991b1b; }
+
+.penaltyActions {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.penaltyActions .btn-small {
+  font-weight: 500;
+}
+
+/* ----- View modal ----- */
+.penaltyViewOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1.25rem;
+  animation: penaltyViewFadeIn 0.2s ease-out;
+}
+@keyframes penaltyViewFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.penaltyViewModal {
+  max-width: 640px;
+  width: 100%;
+  max-height: 88vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  animation: penaltyViewSlideIn 0.25s ease-out;
+}
+@keyframes penaltyViewSlideIn {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.penaltyViewHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 1rem;
+  margin-bottom: 0;
+  border-bottom: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  flex-shrink: 0;
+}
+
+.penaltyViewTitleBlock {
+  min-width: 0;
+}
+
+.penaltyViewTitle {
+  margin: 0 0 0.25rem 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text, #e4e4e7);
+}
+
+.penaltyViewSubtitle {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--textMuted, #71717a);
+  font-weight: 400;
+}
+
+.penaltyViewClose {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  line-height: 1;
+  padding: 0;
+  background: var(--surface2, rgba(255, 255, 255, 0.06));
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--textMuted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.penaltyViewClose:hover {
+  background: var(--border, rgba(255, 255, 255, 0.1));
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.penaltyViewLoading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 2.5rem;
+}
+.penaltyViewSpinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent, #22c55e);
+  border-radius: 50%;
+  animation: penaltyViewSpin 0.7s linear infinite;
+}
+@keyframes penaltyViewSpin {
+  to { transform: rotate(360deg); }
+}
+
+.penaltyViewSummary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.penaltyViewStat {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.5rem 0.875rem;
+  font-size: 0.875rem;
+  color: var(--textMuted);
+  background: var(--surface2, rgba(255, 255, 255, 0.05));
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  border-radius: 8px;
+}
+.penaltyViewStat strong {
+  color: var(--text);
+  font-weight: 600;
+  margin-right: 0.25rem;
+}
+
+.penaltyViewStatTotal {
+  color: var(--accent, #22c55e);
+  border-color: rgba(34, 197, 94, 0.25);
+  background: rgba(34, 197, 94, 0.08);
+}
+.penaltyViewStatTotal strong {
+  color: var(--accent);
+}
+
+.penaltyViewTableWrap {
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+  border-radius: 8px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+}
+
+.penaltyViewTable {
+  margin: 0;
+}
+.penaltyViewTable thead th {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--textMuted);
+  padding: 0.65rem 0.75rem;
+  background: var(--surface2, rgba(255, 255, 255, 0.04));
+  border-bottom: 1px solid var(--border);
+}
+.penaltyViewTable tbody td {
+  padding: 0.65rem 0.75rem;
+  font-size: 0.9rem;
+  vertical-align: middle;
+}
+.penaltyViewTable tbody tr:hover {
+  background: var(--surface2, rgba(255, 255, 255, 0.03));
+}
+.penaltyViewTable .penaltyViewInput {
+  width: 100%;
+  min-width: 72px;
+  max-width: 100px;
+  padding: 0.4rem 0.5rem;
+  font-size: 0.875rem;
+  border-radius: 6px;
+}
+.penaltyViewTable .btn-small {
+  margin-right: 0.35rem;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.8rem;
+  border-radius: 6px;
+}
+
+.penaltyViewEmpty {
+  text-align: center;
+  padding: 2rem 1rem !important;
+  color: var(--textMuted);
+  font-size: 0.9rem;
+}
+.penaltyViewEmptyIcon {
+  display: block;
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
+  opacity: 0.7;
+}

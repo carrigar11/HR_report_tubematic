@@ -26,6 +26,18 @@ export default function PenaltyPage() {
   const [message, setMessage] = useState({ text: '', type: '' })
   const [employeeOptions, setEmployeeOptions] = useState([])
   const [showManual, setShowManual] = useState(false)
+  const [viewModal, setViewModal] = useState({
+    open: false,
+    emp_code: '',
+    name: '',
+    month: '',
+    year: '',
+    records: [],
+    loading: false,
+    editingId: null,
+    editAmount: '',
+    editDesc: '',
+  })
 
   const loadList = () => {
     setLoading(true)
@@ -76,6 +88,85 @@ export default function PenaltyPage() {
   const handleDelete = (id) => {
     if (!window.confirm('Remove this penalty record?')) return
     penaltyApi.delete(id).then(() => loadList()).catch(() => setMessage({ text: 'Delete failed', type: 'error' }))
+  }
+
+  const openView = (row) => {
+    const month = row.month || new Date(row.date).getMonth() + 1
+    const year = row.year || new Date(row.date).getFullYear()
+    setViewModal((m) => ({
+      ...m,
+      open: true,
+      emp_code: row.emp_code,
+      name: row.name || row.emp_code,
+      month: String(month),
+      year: String(year),
+      records: [],
+      loading: true,
+      editingId: null,
+    }))
+    const params = { emp_code: row.emp_code, month: String(month), year: String(year) }
+    penaltyApi.list(params)
+      .then((r) => {
+        const records = Array.isArray(r.data) ? r.data : []
+        setViewModal((m) => ({ ...m, records, loading: false }))
+      })
+      .catch(() => setViewModal((m) => ({ ...m, records: [], loading: false })))
+  }
+
+  const closeView = () => setViewModal((m) => ({ ...m, open: false, editingId: null }))
+
+  const loadViewModalRecords = () => {
+    if (!viewModal.emp_code || !viewModal.month || !viewModal.year) return
+    setViewModal((m) => ({ ...m, loading: true }))
+    penaltyApi.list({ emp_code: viewModal.emp_code, month: viewModal.month, year: viewModal.year })
+      .then((r) => {
+        const records = Array.isArray(r.data) ? r.data : []
+        setViewModal((m) => ({ ...m, records, loading: false, editingId: null }))
+      })
+      .catch(() => setViewModal((m) => ({ ...m, loading: false })))
+  }
+
+  const handleDeleteInModal = (id) => {
+    if (!window.confirm('Remove this penalty record?')) return
+    penaltyApi.delete(id)
+      .then(() => {
+        loadViewModalRecords()
+        loadList()
+      })
+      .catch(() => setMessage({ text: 'Delete failed', type: 'error' }))
+  }
+
+  const startEditInModal = (record) => {
+    setViewModal((m) => ({
+      ...m,
+      editingId: record.id,
+      editAmount: String(record.deduction_amount ?? ''),
+      editDesc: String(record.description ?? ''),
+    }))
+  }
+
+  const cancelEditInModal = () => {
+    setViewModal((m) => ({ ...m, editingId: null }))
+  }
+
+  const saveEditInModal = () => {
+    const id = viewModal.editingId
+    if (!id) return
+    const amount = parseFloat(viewModal.editAmount)
+    if (!Number.isFinite(amount) || amount < 0) {
+      setMessage({ text: 'Enter a valid amount (Rs)', type: 'error' })
+      return
+    }
+    penaltyApi.update(id, {
+      deduction_amount: amount,
+      description: (viewModal.editDesc || '').trim() || undefined,
+    })
+      .then(() => {
+        loadViewModalRecords()
+        loadList()
+        setViewModal((m) => ({ ...m, editingId: null }))
+      })
+      .catch((err) => setMessage({ text: err.response?.data?.error || 'Update failed', type: 'error' }))
   }
 
   const totalDeduction = list.reduce((s, r) => s + (parseFloat(r.deduction_amount) || 0), 0)
@@ -200,7 +291,10 @@ export default function PenaltyPage() {
                     <td>{Number(row.deduction_amount).toFixed(2)}</td>
                     <td>{row.rate_used != null ? `${row.rate_used} Rs/min` : '—'}</td>
                     <td className="penaltyDesc">{row.description || '—'}</td>
-                    <td><button type="button" className="btn btn-small btn-danger" onClick={() => handleDelete(row.id)}>Remove</button></td>
+                    <td className="penaltyActions">
+                      <button type="button" className="btn btn-small btn-secondary" onClick={() => openView(row)}>View</button>
+                      <button type="button" className="btn btn-small btn-danger" onClick={() => handleDelete(row.id)}>Remove</button>
+                    </td>
                   </tr>
                 ))
               )}
@@ -208,6 +302,102 @@ export default function PenaltyPage() {
           </table>
         )}
       </div>
+
+      {viewModal.open && (
+        <div className="penaltyViewOverlay" onClick={closeView}>
+          <div className="penaltyViewModal card" onClick={(e) => e.stopPropagation()}>
+            <div className="penaltyViewHeader">
+              <div className="penaltyViewTitleBlock">
+                <h3 className="penaltyViewTitle">Penalty breakdown</h3>
+                <p className="penaltyViewSubtitle">{viewModal.name} · {viewModal.emp_code} · {monthNames[parseInt(viewModal.month, 10)]} {viewModal.year}</p>
+              </div>
+              <button type="button" className="penaltyViewClose" onClick={closeView} aria-label="Close">×</button>
+            </div>
+            {viewModal.loading ? (
+              <div className="penaltyViewLoading">
+                <span className="penaltyViewSpinner" />
+                <p className="muted">Loading breakdown…</p>
+              </div>
+            ) : (
+              <>
+                <div className="penaltyViewSummary">
+                  <span className="penaltyViewStat">
+                    <strong>{viewModal.records.length}</strong> day{viewModal.records.length !== 1 ? 's' : ''} with penalty
+                  </span>
+                  <span className="penaltyViewStat penaltyViewStatTotal">
+                    Total <strong>Rs {viewModal.records.reduce((s, r) => s + (parseFloat(r.deduction_amount) || 0), 0).toFixed(2)}</strong>
+                  </span>
+                </div>
+                <div className="penaltyViewTableWrap">
+                  <table className="dataTable penaltyTable penaltyViewTable">
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Min late</th>
+                        <th>Amount (Rs)</th>
+                        <th>Type</th>
+                        <th>Description</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {viewModal.records.length === 0 ? (
+                        <tr><td colSpan={6} className="penaltyViewEmpty"><span className="penaltyViewEmptyIcon">📋</span> No penalty records for this month.</td></tr>
+                      ) : (
+                        viewModal.records.map((rec) => (
+                          <tr key={rec.id}>
+                            <td>{rec.date}</td>
+                            <td>{rec.minutes_late != null && rec.minutes_late !== '' ? rec.minutes_late : '—'}</td>
+                            {viewModal.editingId === rec.id ? (
+                              <>
+                                <td>
+                                  <input
+                                    type="number"
+                                    className="input penaltyViewInput"
+                                    value={viewModal.editAmount}
+                                    onChange={(e) => setViewModal((m) => ({ ...m, editAmount: e.target.value }))}
+                                    min="0"
+                                    step="0.01"
+                                  />
+                                </td>
+                                <td colSpan={2}>
+                                  <input
+                                    type="text"
+                                    className="input penaltyViewInput"
+                                    value={viewModal.editDesc}
+                                    onChange={(e) => setViewModal((m) => ({ ...m, editDesc: e.target.value }))}
+                                    placeholder="Description"
+                                  />
+                                </td>
+                                <td>
+                                  <button type="button" className="btn btn-small btn-primary" onClick={saveEditInModal}>Save</button>
+                                  <button type="button" className="btn btn-small btn-secondary" onClick={cancelEditInModal}>Cancel</button>
+                                </td>
+                              </>
+                            ) : (
+                              <>
+                                <td>{Number(rec.deduction_amount).toFixed(2)}</td>
+                                <td>
+                                  {rec.is_manual ? <span className="badge badge-warn">Manual</span> : <span className="badge badge-success">Late</span>}
+                                </td>
+                                <td className="penaltyDesc">{rec.description || '—'}</td>
+                                <td>
+                                  <button type="button" className="btn btn-small btn-secondary" onClick={() => startEditInModal(rec)}>Change</button>
+                                  <button type="button" className="btn btn-small btn-danger" onClick={() => handleDeleteInModal(rec.id)}>Remove</button>
+                                </td>
+                              </>
+                            )}
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

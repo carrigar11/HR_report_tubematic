@@ -33,9 +33,9 @@ export default function Dashboard() {
   }
   if (!data) return null
 
-  const { total_employees, today_present, today_absent, overtime_leaders, red_flag_employees, streak_rewards } = data
+  const { total_employees, active_employees, today_present, today_absent, overtime_leaders, red_flag_employees, streak_rewards } = data
 
-  const presentPct = total_employees > 0 ? Math.round((today_present / total_employees) * 100) : 0
+  const presentPct = (active_employees ?? total_employees) > 0 ? Math.round((today_present / (active_employees ?? total_employees)) * 100) : 0
   const redCount = red_flag_employees?.length ?? 0
 
   return (
@@ -56,7 +56,15 @@ export default function Dashboard() {
           <div className="kpiContent">
             <div className="kpiLabel">Total Employees</div>
             <div className="kpiValue">{total_employees}</div>
-            <div className="kpiHint">Active in system</div>
+            <div className="kpiHint">All (including Inactive)</div>
+          </div>
+        </div>
+        <div className="kpiCard card">
+          <div className="kpiIcon kpiIconDefault">A</div>
+          <div className="kpiContent">
+            <div className="kpiLabel">Active Employees</div>
+            <div className="kpiValue">{active_employees ?? total_employees}</div>
+            <div className="kpiHint">Not Inactive (Active / Week off / Holiday)</div>
           </div>
         </div>
         <div className="kpiCard card">
@@ -64,7 +72,7 @@ export default function Dashboard() {
           <div className="kpiContent">
             <div className="kpiLabel">Today Present</div>
             <div className="kpiValue green">{today_present}</div>
-            <div className="kpiHint">{presentPct}% of total</div>
+            <div className="kpiHint">{presentPct}% of active</div>
           </div>
         </div>
         <div className="kpiCard card">

@@ -67,13 +67,13 @@ def build_plant_report_previous_day_image():
     if not rows:
         return None
 
-    # Layout
+    # Layout: consistent column widths so header names are visible
     cell_h = 26
     header_h = 32
-    col_widths = [36, 100, 72, 56, 52, 52, 72, 72, 72, 72, 72, 72, 72]  # extend if more cols
+    col_widths = [40, 110, 88, 80, 80, 80, 88, 88, 88, 88, 88, 88, 88]  # wider for header names
     ncols = max(len(r) for r in rows) if rows else 0
     while len(col_widths) < ncols:
-        col_widths.append(72)
+        col_widths.append(88)
     col_widths = col_widths[:ncols]
     total_w = sum(col_widths) + (ncols + 1) * 1
     total_h = header_h + (len(rows) - 1) * cell_h + (len(rows) + 1) * 1
@@ -87,14 +87,18 @@ def build_plant_report_previous_day_image():
         os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts', 'arial.ttf'),
         '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
     ]
-    font = font_bold = None
+    font = font_bold = font_header = None
     for path in _font_paths:
         try:
             font = ImageFont.truetype(path, 11)
             font_bold = font
+            font_header = ImageFont.truetype(path, 9)  # smaller so column names fit
             try:
                 font_bold = ImageFont.truetype(
                     path.replace('arial.ttf', 'arialbd.ttf').replace('DejaVuSans.ttf', 'DejaVuSans-Bold.ttf'), 11
+                )
+                font_header = ImageFont.truetype(
+                    path.replace('arial.ttf', 'arialbd.ttf').replace('DejaVuSans.ttf', 'DejaVuSans-Bold.ttf'), 9
                 )
             except (OSError, IOError):
                 pass
@@ -102,7 +106,7 @@ def build_plant_report_previous_day_image():
         except (OSError, IOError):
             continue
     if font is None:
-        font = font_bold = ImageFont.load_default()
+        font = font_bold = font_header = ImageFont.load_default()
 
     # Compute min/max per column for color scale (data rows only, numeric)
     col_mins = [None] * ncols
@@ -119,13 +123,14 @@ def build_plant_report_previous_day_image():
                     if col_maxs[ci] is None or v > col_maxs[ci]:
                         col_maxs[ci] = v
 
-    def draw_cell(r, c, text, fill=(255, 255, 255), font_=font, bold=False):
+    def draw_cell(r, c, text, fill=(255, 255, 255), font_=font, bold=False, max_chars=14):
         x0 = 1 + sum(col_widths[:c]) + c
         y0 = 1 if r == 0 else (1 + header_h + 1 + (r - 1) * (cell_h + 1))
-        w = col_widths[c] if c < len(col_widths) else 72
+        w = col_widths[c] if c < len(col_widths) else 88
         h = header_h if r == 0 else cell_h
         draw.rectangle([x0, y0, x0 + w, y0 + h], fill=fill, outline=(180, 180, 180))
-        s = str(text)[:14] + ('…' if len(str(text)) > 14 else '')
+        tstr = str(text)
+        s = tstr[:max_chars] + ('…' if len(tstr) > max_chars else '')
         # center text in cell (simple)
         bbox = draw.textbbox((0, 0), s, font=font_)
         tw = bbox[2] - bbox[0]
@@ -161,7 +166,7 @@ def build_plant_report_previous_day_image():
                 if num is not None and col_mins[ci] is not None:
                     fill = _color_scale_rgb(num, col_mins[ci], col_maxs[ci] or col_mins[ci])
             if ri == 0:
-                draw_cell(ri, ci, val, fill=fill, font_=font_bold)
+                draw_cell(ri, ci, val, fill=fill, font_=font_header or font_bold, max_chars=22)
             else:
                 draw_cell(ri, ci, val, fill=fill)
 

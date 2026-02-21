@@ -31,6 +31,11 @@ def _google_sheet_sync_loop():
             maybe_send_plant_report_daily()
         except Exception as e:
             logger.warning('Plant Report daily email check error: %s', e, exc_info=True)
+        try:
+            from core.inactive_mark import mark_inactive_no_punch_6_days
+            mark_inactive_no_punch_6_days()
+        except Exception as e:
+            logger.warning('Auto mark-inactive (no punch 6 days) error: %s', e, exc_info=True)
         time.sleep(60)
 
 
