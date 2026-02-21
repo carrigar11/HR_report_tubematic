@@ -466,11 +466,14 @@ def _build_sheet3_data():
         day_salary = (row['_day_totals'][0] if row.get('_day_totals') else 0)
         # Total Salary column = start of month till report date (month-to-date)
         total_salary_cell = round(float(row.get('total_salary', 0) or 0), 2)
+        # OT bonus (hrs)/(rs) must be numeric from bonus data, not row index (sr)
+        bonus_hrs = round(float(row.get('total_bonus_hours', 0) or 0), 2)
+        bonus_amt = round(float(row.get('total_bonus_amount', 0) or 0), 2)
         r = [
             row['sr'], row['plant'], row['total_man_hrs'],
             *row['_day_totals'],
             row['total_present'], row['total_absent'], row['avg_salary'], row['avg_salary_hr'],
-            row['absenteeism'], total_salary_cell, row.get('total_bonus_hours', 0), row.get('total_bonus_amount', 0),
+            row['absenteeism'], total_salary_cell, bonus_hrs, bonus_amt,
         ]
         rows.append(r)
     if plant_rows:
@@ -489,14 +492,16 @@ def _build_sheet3_data():
         # Total Salary = month-to-date (start of month till report date)
         total_row_num = 3 + len(plant_rows)
         k_formula = f'=IFERROR(H{total_row_num}/(G{total_row_num}+H{total_row_num})*100,0)'
+        # Total OT bonus (hrs) = sum of each department's bonus hours (never use row index/sr)
+        tot_bonus_hrs = sum(float(r.get('total_bonus_hours', 0) or 0) for r in plant_rows)
         tot_row.extend([
             tot_present,
             sum(r['total_absent'] for r in plant_rows),
             round(day_salary_total / max(1, tot_present), 2),
             round(day_salary_total / max(1e-9, tot_man_hrs), 2),
-            k_formula,  # K19: formula (Absenteeism % column)
+            k_formula,  # Absenteeism % column
             round(tot_salary_mtd, 2),  # Total Salary = month-to-date grand total
-            round(sum(r.get('total_bonus_hours', 0) for r in plant_rows), 2),
+            round(tot_bonus_hrs, 2),  # Sum of all depts' OT bonus (hrs)
             round(tot_bonus_amt, 2),
         ])
         rows.append(tot_row)

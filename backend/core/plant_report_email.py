@@ -210,6 +210,18 @@ def set_plant_report_last_sent_date(sent_date):
     )
 
 
+def get_plant_report_maam_amount():
+    """Return ma'am amount (final total salary as per ma'am) for difference calc, or None if not set."""
+    try:
+        obj = SystemSetting.objects.get(key='plant_report_maam_amount')
+        v = (obj.value or '').strip()
+        if not v:
+            return None
+        return float(v)
+    except (SystemSetting.DoesNotExist, ValueError):
+        return None
+
+
 def build_plant_report_previous_day_excel_only():
     """
     Build an Excel file with only the Plant Report (Previous day) sheet.
@@ -282,6 +294,31 @@ def send_plant_report_email():
     sender_address = config.force_sender or config.auth_username
     from_email = f'Tubematic (Carrigar) <{sender_address}>' if sender_address else 'Tubematic (Carrigar) <noreply@tubematic.com>'
 
+    # Our amount = Total Salary + OT bonus (rs) from Plant Report total row (previous day). Difference = ma'am amount - our amount.
+    diff_block_text = ''
+    diff_block_html = ''
+    try:
+        rows = _build_sheet3_data()
+        if rows and len(rows) >= 2:
+            total_row = rows[-1]
+            n_dates = max(0, len(rows[0]) - 11)
+            total_salary = _value_to_float(total_row[3 + n_dates + 5])
+            ot_bonus_rs = _value_to_float(total_row[3 + n_dates + 7])
+            our_amount = (total_salary or 0) + (ot_bonus_rs or 0)
+            maam = get_plant_report_maam_amount()
+            if maam is not None:
+                diff = round(maam - our_amount, 2)
+                diff_block_text = (
+                    f'\n\nMa\'am amount: {maam:,.2f}  |  Our amount: {our_amount:,.2f}  |  Difference: {diff:,.2f}\n'
+                )
+                diff_block_html = (
+                    '<p style="margin: 16px 0; font-size: 14px; padding: 12px; background: #f0f4f8; border-radius: 6px; border-left: 4px solid #366092;">'
+                    f'<strong>Ma\'am amount:</strong> {maam:,.2f} &nbsp;|&nbsp; <strong>Our amount:</strong> {our_amount:,.2f} &nbsp;|&nbsp; <strong>Difference:</strong> {diff:,.2f}'
+                    '</p>'
+                )
+    except Exception as e:
+        logger.warning('Could not compute difference for Plant Report email: %s', e)
+
     # Build PNG image for mobile-friendly view
     img_bytes = None
     img_buf = build_plant_report_previous_day_image()
@@ -300,8 +337,8 @@ def send_plant_report_email():
     filename_xlsx = f'Plant_Report_{from_date.replace("-", "_")}.xlsx'
     text_body = (
         f'Dear Team,\n\nPlease find the Plant Report (Previous day) for {from_date}.\n\n'
-        '• A quick-view image is included in this email (suitable for mobile).\n'
-        '• The full Excel file is attached for download and reference.\n\n'
+        'The report is shown below for quick view on any device. The full Excel file is attached for download.'
+        f'{diff_block_text}\n\n'
         'Regards,\nTubematic (Carrigar)'
     )
     if img_bytes:
@@ -312,6 +349,7 @@ def send_plant_report_email():
             '</div>'
             f'<p style="margin: 16px 0; font-size: 14px; line-height: 1.5;">Please find the <strong>Plant Report (Previous day)</strong> for <strong>{from_date}</strong>.</p>'
             '<p style="margin: 12px 0; font-size: 14px; line-height: 1.5;">The report is shown below for quick view on any device. The full Excel file is attached for download.</p>'
+            f'{diff_block_html}'
             '<div style="margin: 20px 0; padding: 12px 0; border: 1px solid #e8e8e8; border-radius: 6px; overflow-x: auto;">'
             '<img src="cid:plant_report" alt="Plant Report" style="max-width:100%; height:auto; display:block;" />'
             '</div>'

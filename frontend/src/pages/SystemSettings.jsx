@@ -53,6 +53,7 @@ export default function SystemSettings() {
   const [plantReportSendTime, setPlantReportSendTime] = useState('06:00')
   const [plantReportEnabled, setPlantReportEnabled] = useState(true)
   const [plantReportLastSent, setPlantReportLastSent] = useState(null)
+  const [plantReportMaamAmount, setPlantReportMaamAmount] = useState('')
   const [plantReportNewEmail, setPlantReportNewEmail] = useState('')
   const [plantReportSaving, setPlantReportSaving] = useState(false)
   const [plantReportSendNowLoading, setPlantReportSendNowLoading] = useState(false)
@@ -130,6 +131,7 @@ export default function SystemSettings() {
         setPlantReportSendTime(d.send_time || '06:00')
         setPlantReportEnabled(d.enabled !== false)
         setPlantReportLastSent(d.last_sent || null)
+        setPlantReportMaamAmount(d.maam_amount != null && d.maam_amount !== '' ? String(d.maam_amount) : '')
       })
       .catch(() => {})
       .finally(() => setPlantReportLoading(false))
@@ -230,11 +232,13 @@ export default function SystemSettings() {
       const { data } = await plantReportEmail.updateConfig({
         send_time: plantReportSendTime.trim() || '06:00',
         enabled: plantReportEnabled,
+        maam_amount: plantReportMaamAmount.trim() === '' ? '' : plantReportMaamAmount.trim(),
       })
       setPlantReportRecipients(data.recipients || [])
       setPlantReportSendTime(data.send_time || '06:00')
       setPlantReportEnabled(data.enabled !== false)
       setPlantReportLastSent(data.last_sent || null)
+      setPlantReportMaamAmount(data.maam_amount != null && data.maam_amount !== '' ? String(data.maam_amount) : '')
       setPlantReportMessage('Time and options saved.')
     } catch (err) {
       setPlantReportMessage(err.response?.data?.error || err.response?.data?.detail || err.message || 'Failed to save')
@@ -279,7 +283,9 @@ export default function SystemSettings() {
     setPlantReportSendNowLoading(true)
     setPlantReportMessage('')
     try {
-      const { data } = await plantReportEmail.sendNow()
+      // Always send current Ma'am amount so it is saved in DB and used for difference in email
+      const payload = { maam_amount: plantReportMaamAmount.trim() || '' }
+      const { data } = await plantReportEmail.sendNow(payload)
       if (data.last_sent) setPlantReportLastSent(data.last_sent)
       setPlantReportMessage(data.message || (data.success ? 'Email sent.' : 'Send failed.'))
     } catch (err) {
@@ -623,7 +629,21 @@ export default function SystemSettings() {
                   </label>
                 </div>
               </div>
-              <div className="profileFormActions">
+              <div className="profileFormActions" style={{ flexWrap: 'wrap', alignItems: 'flex-end', gap: 12 }}>
+                <div className="profileField" style={{ marginBottom: 0 }}>
+                  <label className="label">Ma'am amount (for difference)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    className="input"
+                    value={plantReportMaamAmount}
+                    onChange={(e) => setPlantReportMaamAmount(e.target.value)}
+                    placeholder="Final total as per Ma'am"
+                    style={{ width: 180 }}
+                    title="Email will include: Ma'am amount − (Total Salary + OT bonus (rs))"
+                  />
+                </div>
                 <button type="submit" className="btn btn-primary" disabled={plantReportSaving}>
                   {plantReportSaving ? 'Saving…' : 'Save time & options'}
                 </button>
@@ -631,6 +651,7 @@ export default function SystemSettings() {
                   {plantReportSendNowLoading ? 'Sending…' : 'Send now'}
                 </button>
               </div>
+              <p className="muted" style={{ marginTop: 6, fontSize: 12 }}>Difference in email = Ma'am amount − (Total Salary + OT bonus (rs)) from Plant Report. Send now uses the amount in the box and includes the difference (no need to Save first).</p>
             </form>
             {plantReportLastSent && (
               <p className="muted">

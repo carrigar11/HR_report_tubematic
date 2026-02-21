@@ -671,17 +671,19 @@ class PlantReportEmailConfigView(APIView):
     def get(self, request):
         if not _plant_report_email_settings_access(request):
             return Response({'error': 'Not allowed'}, status=403)
-        from .plant_report_email import get_plant_report_send_time, is_plant_report_email_enabled, get_plant_report_last_sent_date
+        from .plant_report_email import get_plant_report_send_time, is_plant_report_email_enabled, get_plant_report_last_sent_date, get_plant_report_maam_amount
         recipients = list(PlantReportRecipient.objects.filter(is_active=True).order_by('email').values('id', 'email', 'is_active', 'created_at'))
         h, m = get_plant_report_send_time()
         send_time = f'{h:02d}:{m:02d}'
         enabled = is_plant_report_email_enabled()
         last_sent = get_plant_report_last_sent_date()
+        maam_amount = get_plant_report_maam_amount()
         return Response({
             'recipients': recipients,
             'send_time': send_time,
             'enabled': enabled,
             'last_sent': last_sent.isoformat() if last_sent else None,
+            'maam_amount': maam_amount,
         })
 
     def patch(self, request):
@@ -700,6 +702,19 @@ class PlantReportEmailConfigView(APIView):
             SystemSetting.objects.update_or_create(
                 key='plant_report_enabled',
                 defaults={'value': v, 'description': 'Send daily Plant Report email'},
+            )
+        maam_amount = request.data.get('maam_amount')
+        if maam_amount is not None:
+            if maam_amount in ('', None):
+                s = ''
+            else:
+                try:
+                    s = str(round(float(maam_amount), 2))
+                except (TypeError, ValueError):
+                    s = ''
+            SystemSetting.objects.update_or_create(
+                key='plant_report_maam_amount',
+                defaults={'value': s, 'description': 'Ma\'am amount (final total salary) for difference in Plant Report email'},
             )
         return self.get(request)
 
@@ -742,10 +757,23 @@ class PlantReportRecipientDetailView(APIView):
 
 
 class PlantReportEmailSendNowView(APIView):
-    """POST: send Plant Report email immediately (for testing)."""
+    """POST: send Plant Report email immediately (for testing). Optional body: maam_amount (saved before send so difference is included)."""
     def post(self, request):
         if not _plant_report_email_settings_access(request):
             return Response({'error': 'Not allowed'}, status=403)
+        # Save Ma'am amount to DB when provided (so it persists and difference appears in email)
+        maam_amount = request.data.get('maam_amount')
+        if maam_amount is not None:
+            s = (str(maam_amount).strip() or '').strip()
+            if s:
+                try:
+                    s = str(round(float(s), 2))
+                except (TypeError, ValueError):
+                    s = ''
+            SystemSetting.objects.update_or_create(
+                key='plant_report_maam_amount',
+                defaults={'value': s, 'description': 'Ma\'am amount (final total salary) for difference in Plant Report email'},
+            )
         from .plant_report_email import send_plant_report_email, get_plant_report_last_sent_date
         result = send_plant_report_email()
         if result.get('success'):

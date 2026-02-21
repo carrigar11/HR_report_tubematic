@@ -151,7 +151,7 @@ export const plantReportEmail = {
   listRecipients: () => api.get('/settings/plant-report-email/recipients/'),
   addRecipient: (email) => api.post('/settings/plant-report-email/recipients/', { email }),
   removeRecipient: (id) => api.delete(`/settings/plant-report-email/recipients/${id}/`),
-  sendNow: () => api.post('/settings/plant-report-email/send-now/'),
+  sendNow: (data) => api.post('/settings/plant-report-email/send-now/', data || {}),
 }
 
 export const exportReport = (params) => api.get('/export/', { params, responseType: 'blob' })
