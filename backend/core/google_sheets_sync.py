@@ -620,6 +620,91 @@ def _values_to_sheet_format(rows):
     return out
 
 
+def _get_sheet_id_by_title(service, spreadsheet_id, title):
+    """Return sheetId for the sheet with the given title, or None."""
+    try:
+        meta = service.spreadsheets().get(
+            spreadsheetId=spreadsheet_id,
+            fields='sheets(properties(sheetId,title))',
+        ).execute()
+        for s in meta.get('sheets', []):
+            if s.get('properties', {}).get('title') == title:
+                return s['properties']['sheetId']
+    except Exception as e:
+        logger.warning('Could not get sheet id for %s: %s', title, e)
+    return None
+
+
+def _apply_plant_report_sheet_format(service, spreadsheet_id, sheet_id, num_rows, num_cols):
+    """
+    Apply color schema to Plant Report (Previous day) sheet:
+    - Header row (row 2): light orange
+    - Total row (last row): light red
+    - All other data cells: light blue
+    (I:J and L:M color scale / gradient is not applied here — do it in the sheet if needed.)
+    Data is written from B2, so row index 1 = header, 2..num_rows-1 = data, num_rows = total row.
+    """
+    if not num_rows or not num_cols or sheet_id is None:
+        return
+    # Colors RGB 0-1: orange, red, blue — one more shade light
+    header_orange = {'red': 1.0, 'green': 0.82, 'blue': 0.6}      # Light orange
+    total_red = {'red': 1.0, 'green': 0.82, 'blue': 0.82}        # Light red
+    data_blue = {'red': 0.82, 'green': 0.92, 'blue': 1.0}        # Light blue
+    # Column range: data starts at B = index 1, so endColumnIndex = 1 + num_cols
+    end_col = 1 + num_cols
+
+    requests = [
+        # Header row (0-based row 1): light orange
+        {
+            'repeatCell': {
+                'range': {
+                    'sheetId': sheet_id,
+                    'startRowIndex': 1,
+                    'endRowIndex': 2,
+                    'startColumnIndex': 1,
+                    'endColumnIndex': end_col,
+                },
+                'cell': {'userEnteredFormat': {'backgroundColor': header_orange}},
+                'fields': 'userEnteredFormat.backgroundColor',
+            }
+        },
+        # Total row (0-based row num_rows): light red
+        {
+            'repeatCell': {
+                'range': {
+                    'sheetId': sheet_id,
+                    'startRowIndex': num_rows,
+                    'endRowIndex': num_rows + 1,
+                    'startColumnIndex': 1,
+                    'endColumnIndex': end_col,
+                },
+                'cell': {'userEnteredFormat': {'backgroundColor': total_red}},
+                'fields': 'userEnteredFormat.backgroundColor',
+            }
+        },
+        # Data rows (0-based 2 to num_rows-1): light blue
+        {
+            'repeatCell': {
+                'range': {
+                    'sheetId': sheet_id,
+                    'startRowIndex': 2,
+                    'endRowIndex': num_rows,
+                    'startColumnIndex': 1,
+                    'endColumnIndex': end_col,
+                },
+                'cell': {'userEnteredFormat': {'backgroundColor': data_blue}},
+                'fields': 'userEnteredFormat.backgroundColor',
+            }
+        },
+    ]
+
+    try:
+        service.spreadsheets().batchUpdate(spreadsheetId=spreadsheet_id, body={'requests': requests}).execute()
+        logger.info('Applied Plant Report (Previous day) color schema (orange/red/blue)')
+    except Exception as e:
+        logger.warning('Could not apply Plant Report formatting: %s', e)
+
+
 def sync_all(force_full=False):
     """
     Push all 5 sheets to the configured Google Sheet. If not force_full, Sheet 1 and 2 may be updated
@@ -668,6 +753,14 @@ def sync_all(force_full=False):
                     body=body,
                 ).execute()
                 logger.info('Updated sheet "%s" with %s rows (after retry)', sheet_name, len(data))
+            # Plant Report (Previous day): apply color schema and color scale on I:J, L:M
+            if sheet_name == 'Plant Report (Previous day)' and len(data) > 0 and len(data[0]) > 0:
+                sheet_id = _get_sheet_id_by_title(service, spreadsheet_id, sheet_name)
+                _apply_plant_report_sheet_format(
+                    service, spreadsheet_id, sheet_id,
+                    num_rows=len(data),
+                    num_cols=len(data[0]),
+                )
 
         for sheet_name, data in sheet5_list:
             if not data:
