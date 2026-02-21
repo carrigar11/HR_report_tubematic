@@ -13,6 +13,7 @@ router.register(r'settings', views.SystemSettingViewSet, basename='setting')
 
 urlpatterns = [
     path('auth/login/', views.AdminLoginView.as_view()),
+    path('auth/refresh/', views.AdminRefreshTokenView.as_view()),
     path('departments/', views.DepartmentsListView.as_view()),
     path('admins/', views.AdminListView.as_view()),
     path('admins/<int:pk>/', views.AdminProfileView.as_view()),

@@ -1,4 +1,6 @@
 from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.views import APIView
@@ -31,19 +33,27 @@ from .reward_engine import run_reward_engine
 from .export_excel import generate_payroll_excel, generate_payroll_excel_previous_day
 from .audit_logging import log_activity, log_activity_manual
 from .google_sheets_sync import get_sheet_id, sync_all
+from .jwt_auth import encode_access, encode_refresh, decode_token
 
 
 # ---------- Auth & request admin ----------
 def get_request_admin(request):
     """
-    Get current admin from X-Admin-Id header. Returns (admin, allowed_emp_codes).
-    allowed_emp_codes = None means no filter (super admin or no header); list of emp_codes for dept admin.
+    Get current admin from JWT (request.jwt_admin_id) or X-Admin-Id header.
+    Returns (admin, allowed_emp_codes). JWT takes precedence when present.
     """
-    admin_id = request.headers.get('X-Admin-Id', '').strip()
+    admin_id = getattr(request, 'jwt_admin_id', None)
+    if admin_id is None:
+        admin_id = request.headers.get('X-Admin-Id', '').strip()
+        if admin_id:
+            try:
+                admin_id = int(admin_id)
+            except ValueError:
+                admin_id = None
     if not admin_id:
         return None, None
     try:
-        admin = Admin.objects.get(pk=int(admin_id))
+        admin = Admin.objects.get(pk=admin_id)
     except (ValueError, Admin.DoesNotExist):
         return None, None
     if admin.is_super_admin:
@@ -56,7 +66,9 @@ def get_request_admin(request):
     return admin, emp_codes
 
 
+@method_decorator(csrf_exempt, name='dispatch')
 class AdminLoginView(APIView):
+    """JWT login: returns access + refresh tokens and admin profile."""
     def post(self, request):
         ser = AdminLoginSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
@@ -73,11 +85,39 @@ class AdminLoginView(APIView):
             data['access'] = {k: True for k in DEFAULT_ACCESS}
         else:
             data['access'] = {**DEFAULT_ACCESS, **(admin.access or {})}
+        access = encode_access(admin.pk)
+        refresh = encode_refresh(admin.pk)
         return Response({
             'success': True,
             'admin': data,
+            'access': access,
+            'refresh': refresh,
             'message': 'Login successful',
         })
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class AdminRefreshTokenView(APIView):
+    """POST { \"refresh\": \"<refresh_token>\" } -> { \"access\": \"<new_access_token>\" }. No auth required."""
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request):
+        refresh_token = (request.data.get('refresh') or request.data.get('refresh_token') or '').strip()
+        if not refresh_token:
+            return Response({'error': 'refresh token required'}, status=400)
+        payload = decode_token(refresh_token)
+        if not payload or payload.get('type') != 'refresh':
+            return Response({'error': 'Invalid or expired refresh token'}, status=401)
+        admin_id = payload.get('admin_id')
+        if admin_id is None:
+            return Response({'error': 'Invalid refresh token'}, status=401)
+        try:
+            Admin.objects.get(pk=admin_id)
+        except Admin.DoesNotExist:
+            return Response({'error': 'Admin no longer exists'}, status=401)
+        access = encode_access(admin_id)
+        return Response({'access': access})
 
 
 # ---------- Admin profile (for settings page) ----------

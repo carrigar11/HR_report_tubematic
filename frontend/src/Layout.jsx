@@ -112,6 +112,8 @@ export default function Layout() {
 
   const logout = () => {
     localStorage.removeItem('hr_admin')
+    localStorage.removeItem('hr_access_token')
+    localStorage.removeItem('hr_refresh_token')
     navigate('/login')
   }
 

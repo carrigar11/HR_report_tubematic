@@ -41,6 +41,7 @@ MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
+    'core.middleware.JWTAdminMiddleware',  # JWT: set request.jwt_admin_id from Authorization Bearer
     'core.middleware.TodayPunchInSyncMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -115,3 +116,8 @@ CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 
 # Fallback: if Redis not available, run tasks synchronously in management command
 REWARD_ENGINE_USE_CELERY = os.environ.get('REWARD_ENGINE_USE_CELERY', 'false').lower() == 'true'
+
+# JWT authentication (admin login / API auth)
+JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY') or SECRET_KEY
+JWT_ACCESS_TTL = int(os.environ.get('JWT_ACCESS_TTL', 15 * 60))   # 15 minutes
+JWT_REFRESH_TTL = int(os.environ.get('JWT_REFRESH_TTL', 7 * 24 * 3600))  # 7 days

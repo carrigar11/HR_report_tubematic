@@ -18,6 +18,8 @@ export default function Login() {
       const { data } = await auth.login(email, password)
       if (data.success && data.admin) {
         localStorage.setItem('hr_admin', JSON.stringify(data.admin))
+        if (data.access) localStorage.setItem('hr_access_token', data.access)
+        if (data.refresh) localStorage.setItem('hr_refresh_token', data.refresh)
         navigate('/')
       } else {
         setError(data.message || 'Login failed')

@@ -5,18 +5,76 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
-// Send X-Admin-Id so backend can filter by department for dept admins
+// JWT: send Bearer token; fallback X-Admin-Id for backward compat
 api.interceptors.request.use((config) => {
   try {
+    const access = localStorage.getItem('hr_access_token')
+    if (access) config.headers.Authorization = `Bearer ${access}`
     const stored = localStorage.getItem('hr_admin')
     if (stored) {
       const admin = JSON.parse(stored)
       if (admin && admin.id != null) config.headers['X-Admin-Id'] = String(admin.id)
     }
-
   } catch (_) {}
   return config
 })
+
+// On 401: try refresh token, retry once; else clear auth and redirect to login
+let refreshing = false
+let failedQueue = []
+
+const processQueue = (err, token = null) => {
+  failedQueue.forEach((prom) => (token ? prom.resolve(token) : prom.reject(err)))
+  failedQueue = []
+}
+
+const clearAuth = () => {
+  localStorage.removeItem('hr_admin')
+  localStorage.removeItem('hr_access_token')
+  localStorage.removeItem('hr_refresh_token')
+  if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+    window.location.href = '/login'
+  }
+}
+
+api.interceptors.response.use(
+  (res) => res,
+  async (err) => {
+    const original = err.config
+    if (err.response?.status !== 401 || original._retry) {
+      return Promise.reject(err)
+    }
+    const refresh = localStorage.getItem('hr_refresh_token')
+    if (!refresh) {
+      clearAuth()
+      return Promise.reject(err)
+    }
+    if (refreshing) {
+      return new Promise((resolve, reject) => {
+        failedQueue.push({ resolve, reject })
+      }).then((token) => {
+        original.headers.Authorization = `Bearer ${token}`
+        return api(original)
+      })
+    }
+    original._retry = true
+    refreshing = true
+    try {
+      const { data } = await axios.post('/api/auth/refresh/', { refresh }, { headers: { 'Content-Type': 'application/json' } })
+      const newAccess = data.access
+      if (newAccess) localStorage.setItem('hr_access_token', newAccess)
+      processQueue(null, newAccess)
+      original.headers.Authorization = `Bearer ${newAccess}`
+      return api(original)
+    } catch (e) {
+      processQueue(e, null)
+      clearAuth()
+      return Promise.reject(err)
+    } finally {
+      refreshing = false
+    }
+  }
+)
 
 export const auth = {
   login: (email, password) => api.post('/auth/login/', { email, password }),

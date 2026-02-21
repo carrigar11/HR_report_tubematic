@@ -33,8 +33,15 @@ def log_activity(request, action, module, target_type='', target_id='', details=
     admin_name = ''
     admin_email = ''
     if request:
-        aid = request.headers.get('X-Admin-Id', '').strip()
-        if aid:
+        aid = getattr(request, 'jwt_admin_id', None)  # JWT takes precedence
+        if aid is None:
+            aid = request.headers.get('X-Admin-Id', '').strip()
+            if aid:
+                try:
+                    aid = int(aid)
+                except (ValueError, TypeError):
+                    aid = None
+        if aid is not None:
             try:
                 from .models import Admin
                 admin = Admin.objects.filter(pk=int(aid)).first()

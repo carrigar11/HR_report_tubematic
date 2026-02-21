@@ -1,5 +1,6 @@
 Django>=4.2,<5
 djangorestframework>=3.14
+PyJWT>=2.8
 django-cors-headers>=4.3
 psycopg2-binary>=2.9
 pandas>=2.0
