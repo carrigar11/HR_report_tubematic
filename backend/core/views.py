@@ -599,6 +599,35 @@ class SystemSettingViewSet(viewsets.ModelViewSet):
     lookup_field = 'key'
     lookup_url_kwarg = 'key'
 
+    def _check_full_access(self):
+        if not _full_settings_access(self.request):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('Full access required for System settings.')
+
+    def list(self, request, *args, **kwargs):
+        self._check_full_access()
+        return super().list(request, *args, **kwargs)
+
+    def retrieve(self, request, *args, **kwargs):
+        self._check_full_access()
+        return super().retrieve(request, *args, **kwargs)
+
+    def create(self, request, *args, **kwargs):
+        self._check_full_access()
+        return super().create(request, *args, **kwargs)
+
+    def update(self, request, *args, **kwargs):
+        self._check_full_access()
+        return super().update(request, *args, **kwargs)
+
+    def partial_update(self, request, *args, **kwargs):
+        self._check_full_access()
+        return super().partial_update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        self._check_full_access()
+        return super().destroy(request, *args, **kwargs)
+
     def perform_create(self, serializer):
         serializer.save()
         obj = serializer.instance
@@ -614,12 +643,23 @@ class SystemSettingViewSet(viewsets.ModelViewSet):
         instance.delete()
 
 
-# ---------- Email SMTP config (for Settings page) ----------
+# ---------- Full access: super_admin OR (settings AND manage_admins) — for System settings & Google Sheet only ----------
+def _full_settings_access(request):
+    """True if admin has full access: can see/update System settings and Google Sheet live sync."""
+    current_admin, _ = get_request_admin(request)
+    if not current_admin:
+        return False
+    if getattr(current_admin, 'is_super_admin', False):
+        return True
+    acc = current_admin.access or {}
+    return bool(acc.get('settings') and acc.get('manage_admins'))
+
+
+# ---------- Email SMTP config (for Settings page). Full access only. ----------
 class EmailSmtpConfigView(APIView):
-    """GET: return first active SMTP config (or first row). PATCH: update by id (body: id required)."""
+    """GET: return first active SMTP config (or first row). PATCH: update by id (body: id required). Full access only."""
     def get(self, request):
-        current_admin, _ = get_request_admin(request)
-        if not current_admin or not (getattr(current_admin, 'is_super_admin', False) or (current_admin.access or {}).get('settings')):
+        if not _full_settings_access(request):
             return Response({'error': 'Not allowed'}, status=403)
         config = EmailSmtpConfig.objects.filter(is_active=True).first()
         if not config:
@@ -629,8 +669,7 @@ class EmailSmtpConfigView(APIView):
         return Response(EmailSmtpConfigSerializer(config).data)
 
     def patch(self, request):
-        current_admin, _ = get_request_admin(request)
-        if not current_admin or not (getattr(current_admin, 'is_super_admin', False) or (current_admin.access or {}).get('settings')):
+        if not _full_settings_access(request):
             return Response({'error': 'Not allowed'}, status=403)
         pk = request.data.get('id')
         if not pk:
@@ -651,10 +690,9 @@ class EmailSmtpConfigView(APIView):
 
 # ---------- Google Sheet settings & manual sync ----------
 class GoogleSheetConfigView(APIView):
-    """GET: return google_sheet_id and last_sync. PATCH: update google_sheet_id (body: { google_sheet_id })."""
+    """GET: return google_sheet_id and last_sync. PATCH: update google_sheet_id (body: { google_sheet_id }). Full access only."""
     def get(self, request):
-        current_admin, _ = get_request_admin(request)
-        if not current_admin or not (getattr(current_admin, 'is_super_admin', False) or (current_admin.access or {}).get('settings')):
+        if not _full_settings_access(request):
             return Response({'error': 'Not allowed'}, status=403)
         sheet_id = get_sheet_id()
         last_sync = None
@@ -666,8 +704,7 @@ class GoogleSheetConfigView(APIView):
         return Response({'google_sheet_id': sheet_id or '', 'last_sync': last_sync})
 
     def patch(self, request):
-        current_admin, _ = get_request_admin(request)
-        if not current_admin or not (getattr(current_admin, 'is_super_admin', False) or (current_admin.access or {}).get('settings')):
+        if not _full_settings_access(request):
             return Response({'error': 'Not allowed'}, status=403)
         new_id = (request.data.get('google_sheet_id') or '').strip()
         obj, _ = SystemSetting.objects.get_or_create(
@@ -687,10 +724,9 @@ class GoogleSheetConfigView(APIView):
 
 
 class GoogleSheetSyncView(APIView):
-    """POST: trigger manual sync to Google Sheet. Returns { success, message, last_sync }."""
+    """POST: trigger manual sync to Google Sheet. Returns { success, message, last_sync }. Full access only."""
     def post(self, request):
-        current_admin, _ = get_request_admin(request)
-        if not current_admin or not (getattr(current_admin, 'is_super_admin', False) or (current_admin.access or {}).get('settings')):
+        if not _full_settings_access(request):
             return Response({'error': 'Not allowed'}, status=403)
         result = sync_all(force_full=True)
         log_activity(request, 'export', 'settings', 'google_sheet_sync', '', details=result)

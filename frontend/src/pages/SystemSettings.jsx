@@ -86,14 +86,24 @@ export default function SystemSettings() {
       .finally(() => setAdminLoading(false))
   }, [adminId])
 
+  const hasFullAccess = admin && (admin.role === 'super_admin' || (admin.access?.manage_admins && admin.access?.settings))
+
   useEffect(() => {
+    if (!hasFullAccess) {
+      setLoading(false)
+      return
+    }
     settings.list()
       .then((r) => setList(r.data.results ?? r.data ?? []))
       .catch(() => setList([]))
       .finally(() => setLoading(false))
-  }, [])
+  }, [hasFullAccess])
 
   useEffect(() => {
+    if (!hasFullAccess) {
+      setSmtpLoading(false)
+      return
+    }
     smtpConfig.get()
       .then((r) => {
         const d = r.data
@@ -111,9 +121,13 @@ export default function SystemSettings() {
       })
       .catch(() => setSmtp(null))
       .finally(() => setSmtpLoading(false))
-  }, [])
+  }, [hasFullAccess])
 
   useEffect(() => {
+    if (!hasFullAccess) {
+      setGoogleSheetLoading(false)
+      return
+    }
     googleSheet.getConfig()
       .then((r) => {
         setGoogleSheetId(r.data.google_sheet_id || '')
@@ -121,7 +135,7 @@ export default function SystemSettings() {
       })
       .catch(() => {})
       .finally(() => setGoogleSheetLoading(false))
-  }, [])
+  }, [hasFullAccess])
 
   useEffect(() => {
     plantReportEmail.getConfig()
@@ -420,7 +434,8 @@ export default function SystemSettings() {
         {adminMessage && <p className={`profileMessage ${adminMessage.includes('Failed') ? 'error' : 'success'}`}>{adminMessage}</p>}
       </section>
 
-      {/* System settings */}
+      {/* System settings — full access only (super_admin or manage_admins + settings) */}
+      {hasFullAccess && (
       <section className="settingsSection card settingsSectionSystem">
         <div className="settingsSectionTitleRow">
           <span className="settingsSectionIcon settingsSectionIconSystem"><IconSettings /></span>
@@ -474,8 +489,10 @@ export default function SystemSettings() {
           </div>
         )}
       </section>
+      )}
 
-      {/* Email SMTP config */}
+      {/* Email SMTP (send mail) — full access only */}
+      {hasFullAccess && (
       <section className="settingsSection card settingsSectionSmtp">
         <div className="settingsSectionTitleRow">
           <span className="settingsSectionIcon settingsSectionIconSmtp"><IconMail /></span>
@@ -535,8 +552,10 @@ export default function SystemSettings() {
           </form>
         )}
       </section>
+      )}
 
-      {/* Google Sheet live sync */}
+      {/* Google Sheet live sync — full access only */}
+      {hasFullAccess && (
       <section className="settingsSection card settingsSectionGoogleSheet">
         <div className="settingsSectionTitleRow">
           <span className="settingsSectionIcon settingsSectionIconSmtp"><IconExport /></span>
@@ -574,6 +593,7 @@ export default function SystemSettings() {
           </form>
         )}
       </section>
+      )}
 
       {/* Plant Report (Previous day) daily email */}
       <section className="settingsSection card settingsSectionGoogleSheet">
