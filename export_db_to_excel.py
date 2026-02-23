@@ -54,7 +54,10 @@ DB_HOST = os.environ.get("DB_HOST", "localhost")
 DB_PORT = os.environ.get("DB_PORT", "5432")
 
 # Tables to export: (table_name, ORDER BY clause). Sheet name = table name (sanitized).
+# All core app tables so the export contains all data in the database.
 TABLE_EXPORT_ORDER = [
+    ("companies", "id"),
+    ("admins", "id"),
     ("employees", "dept_name, emp_code"),
     ("attendance", "date DESC, emp_code"),
     ("salaries", "year DESC, month DESC, emp_code"),
@@ -62,11 +65,13 @@ TABLE_EXPORT_ORDER = [
     ("adjustment", "created_at DESC"),
     ("shift_overtime_bonus", "date DESC, emp_code"),
     ("penalty", "date DESC, emp_code"),
+    ("penalty_inquiries", "created_at DESC"),
     ("performance_rewards", "created_at DESC"),
     ("holidays", "date"),
+    ("leave_requests", "requested_at DESC"),
     ("system_settings", "key"),
+    ("plant_report_recipients", "id"),
     ("email_smtp_config", "id"),
-    ("admins", "id"),
     ("audit_log", "created_at DESC"),
 ]
 

@@ -1,8 +1,8 @@
 from rest_framework import serializers
 from .models import (
     Admin, Employee, Attendance, Salary, SalaryAdvance, Adjustment,
-    Penalty, PerformanceReward, Holiday, SystemSetting, PlantReportRecipient,
-    EmailSmtpConfig, AuditLog
+    Penalty, PenaltyInquiry, PerformanceReward, Holiday, LeaveRequest,
+    SystemSetting, PlantReportRecipient, EmailSmtpConfig, AuditLog
 )
 
 
@@ -45,11 +45,22 @@ class AdminSerializer(serializers.ModelSerializer):
 
 
 class AdminProfileSerializer(serializers.ModelSerializer):
-    """For settings page: name, email, password (all read for display; only name is writable via update)."""
+    """For settings page: name, email, password, role, access (so frontend can show/hide settings sections)."""
+    role = serializers.SerializerMethodField()
+    access = serializers.SerializerMethodField()
+
     class Meta:
         model = Admin
-        fields = ['id', 'name', 'email', 'password', 'phone']
-        read_only_fields = ['email', 'password', 'phone']
+        fields = ['id', 'name', 'email', 'password', 'phone', 'role', 'access']
+        read_only_fields = ['email', 'password', 'phone', 'role', 'access']
+
+    def get_role(self, obj):
+        return 'super_admin' if (obj.pk == 1 or getattr(obj, 'role', None) == Admin.ROLE_SUPER) else (obj.role or 'dept_admin')
+
+    def get_access(self, obj):
+        if obj.pk == 1 or getattr(obj, 'role', None) == Admin.ROLE_SUPER:
+            return {k: True for k in DEFAULT_ACCESS}
+        return obj.access if isinstance(obj.access, dict) else {}
 
 
 class AdminUpdateSerializer(serializers.Serializer):
@@ -103,14 +114,43 @@ class AdminCreateSerializer(serializers.Serializer):
 
 
 class EmployeeSerializer(serializers.ModelSerializer):
+    company_name = serializers.SerializerMethodField()
+    password = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=255)
+
     class Meta:
         model = Employee
         fields = [
             'id', 'emp_code', 'name', 'mobile', 'email', 'gender',
             'dept_name', 'designation', 'status', 'employment_type', 'salary_type',
-            'base_salary', 'shift', 'shift_from', 'shift_to', 'created_at', 'updated_at'
+            'base_salary', 'shift', 'shift_from', 'shift_to', 'company', 'company_name',
+            'casual_allowance_per_year', 'sick_allowance_per_year', 'earned_allowance_per_year',
+            'password', 'created_at', 'updated_at'
         ]
         read_only_fields = ['created_at', 'updated_at']
+
+    def get_company_name(self, obj):
+        return obj.company.name if obj.company_id else None
+
+    def create(self, validated_data):
+        password = validated_data.pop('password', None) or ''
+        obj = Employee.objects.create(**validated_data)
+        if password.strip():
+            obj.password = password.strip()
+            obj.save(update_fields=['password'])
+        return obj
+
+    def update(self, instance, validated_data):
+        password = validated_data.pop('password', None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        if password is not None:
+            if password.strip():
+                instance.password = password.strip()
+            else:
+                instance.password = None
+            instance.save(update_fields=['password'])
+        return instance
 
 
 class AttendanceSerializer(serializers.ModelSerializer):
@@ -168,13 +208,20 @@ class SalaryAdvanceSerializer(serializers.ModelSerializer):
 
 
 class AdjustmentSerializer(serializers.ModelSerializer):
+    employee_name = serializers.SerializerMethodField()
+
     class Meta:
         model = Adjustment
         fields = [
-            'id', 'emp_code', 'adj_date', 'adj_punch_in', 'adj_punch_out',
+            'id', 'emp_code', 'employee_name', 'adj_date', 'adj_punch_in', 'adj_punch_out',
             'adj_overtime', 'reason', 'created_by_admin', 'created_at'
         ]
         read_only_fields = ['created_at']
+
+    def get_employee_name(self, obj):
+        from .models import Employee
+        emp = Employee.objects.filter(emp_code=obj.emp_code).values_list('name', flat=True).first()
+        return emp or ''
 
 
 class PenaltySerializer(serializers.ModelSerializer):
@@ -259,6 +306,26 @@ class AuditLogSerializer(serializers.ModelSerializer):
         model = AuditLog
         fields = ['id', 'admin_id', 'admin_name', 'admin_email', 'action', 'module', 'target_type', 'target_id', 'details', 'ip_address', 'user_agent', 'created_at']
         read_only_fields = fields
+
+
+class LeaveRequestSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LeaveRequest
+        fields = [
+            'id', 'emp_code', 'leave_type', 'from_date', 'to_date', 'reason', 'status',
+            'dept_name', 'requested_at', 'reviewed_at', 'admin_notes', 'reviewed_by'
+        ]
+        read_only_fields = ['emp_code', 'dept_name', 'requested_at', 'reviewed_at', 'reviewed_by']
+
+
+class PenaltyInquirySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PenaltyInquiry
+        fields = [
+            'id', 'penalty', 'emp_code', 'message', 'status', 'admin_notes',
+            'reviewed_at', 'created_at', 'reviewed_by'
+        ]
+        read_only_fields = ['emp_code', 'created_at', 'reviewed_at', 'reviewed_by']
 
 
 class AttendanceAdjustPayloadSerializer(serializers.Serializer):

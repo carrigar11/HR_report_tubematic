@@ -16,7 +16,7 @@ const ACCESS_OPTIONS = [
   { key: 'adjustment', label: 'Adjustments' },
   { key: 'export', label: 'Export' },
   { key: 'upload', label: 'Upload' },
-  { key: 'holidays', label: 'Holidays' },
+  { key: 'holidays', label: 'Holidays and leave' },
   { key: 'settings', label: 'Settings' },
   { key: 'manage_admins', label: 'Manage Admins' },
 ]

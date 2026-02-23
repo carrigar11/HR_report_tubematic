@@ -50,6 +50,95 @@
   min-width: 120px;
 }
 
+/* Employee type-to-search dropdown */
+.advanceEmpSelectWrap {
+  position: relative;
+  min-width: 220px;
+}
+
+.advanceEmpSelectWrap .input {
+  width: 100%;
+  padding-right: 2rem;
+}
+
+.advanceEmpClear {
+  position: absolute;
+  top: 50%;
+  right: 0.5rem;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  font-size: 1.2rem;
+  line-height: 1;
+  color: var(--textMuted);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+
+.advanceEmpClear:hover {
+  color: var(--text);
+  background: var(--surface2);
+}
+
+.advanceEmpDropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 4px;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  z-index: 100;
+}
+
+.advanceEmpDropdownEmpty {
+  padding: 0.75rem 1rem;
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.advanceEmpDropdownItem {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+  text-align: left;
+  color: var(--text);
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.advanceEmpDropdownItem:hover {
+  background: var(--surface2);
+}
+
+.advanceEmpDropdownCode {
+  font-weight: 600;
+  font-family: var(--fontMono, monospace);
+  color: var(--accent);
+  min-width: 4rem;
+}
+
+.advanceEmpDropdownName {
+  color: var(--text);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .advanceFormField.label {
   display: block;
 }

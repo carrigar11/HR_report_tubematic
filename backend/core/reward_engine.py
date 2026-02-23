@@ -20,6 +20,9 @@ def _get_setting(key, default):
 
 
 def _is_holiday(d):
+    """Treat Sundays as auto holiday; also any date in Holiday table."""
+    if d.weekday() == 6:  # Sunday
+        return True
     return Holiday.objects.filter(date=d).exists()
 
 

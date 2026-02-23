@@ -31,6 +31,16 @@ def encode_refresh(admin_id):
     return _encode({'admin_id': int(admin_id), 'type': 'refresh'}, JWT_REFRESH_TTL)
 
 
+def encode_access_employee(emp_code):
+    """Return a JWT access token string for the given employee (emp_code)."""
+    return _encode({'emp_code': str(emp_code), 'type': 'employee_access'}, JWT_ACCESS_TTL)
+
+
+def encode_refresh_employee(emp_code):
+    """Return a JWT refresh token string for the given employee."""
+    return _encode({'emp_code': str(emp_code), 'type': 'employee_refresh'}, JWT_REFRESH_TTL)
+
+
 def decode_token(token):
     """
     Decode and validate token. Returns payload dict or None if invalid/expired.

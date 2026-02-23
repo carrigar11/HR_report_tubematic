@@ -53,7 +53,42 @@ export default function EmployeeProfile() {
   const rewards = data.rewards || []
   const adjustments = data.adjustments || []
   const salaries = data.salaries || []
+  const dailyStatus = data.daily_status || []
+  const daysThisMonth = data.days_this_month ?? 0
+  const hoursThisMonth = data.hours_this_month ?? 0
   const initials = emp?.name?.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase() || '?'
+
+  const now = new Date()
+  const currentMonth = now.getMonth() + 1
+  const currentYear = now.getFullYear()
+  const daysInCurrentMonth = new Date(currentYear, currentMonth, 0).getDate()
+  const daysInMonth = dailyStatus.length || daysInCurrentMonth
+  const firstDayOfWeek = new Date(currentYear, currentMonth - 1, 1).getDay()
+  const calendarRows = []
+  let row = Array(firstDayOfWeek).fill(null)
+  for (let day = 1; day <= daysInMonth; day++) {
+    const item = dailyStatus.find((d) => d.day === day) || { day, status: null }
+    row.push(item)
+    if (row.length === 7) {
+      calendarRows.push(row)
+      row = []
+    }
+  }
+  if (row.length) {
+    while (row.length < 7) row.push(null)
+    calendarRows.push(row)
+  }
+  const statusToClass = (status, day) => {
+    const isSunday = day != null && new Date(currentYear, currentMonth - 1, day).getDay() === 0
+    if (isSunday) return 'sunday'
+    if (!status) return 'none'
+    if (status === 'Present') return 'present'
+    if (status === 'Absent') return 'absent'
+    if (status === 'Half-Day') return 'halfday'
+    if (status === 'FD' || status === 'Early-Left' || status === 'Early Left') return 'earlyleft'
+    return 'none'
+  }
+  const monthName = new Date(2000, currentMonth - 1).toLocaleString('default', { month: 'long' })
 
   const DetailItem = ({ label, value, empty, className = '' }) => (
     <div className="profileDetailItem">
@@ -76,68 +111,110 @@ export default function EmployeeProfile() {
 
   return (
     <div className="pageContent profilePage">
-      {/* Header */}
-      <div className="profileHeader">
-        <div className="profileAvatar">{initials}</div>
-        <div className="profileHeaderInfo">
-          <h2>{emp?.name}</h2>
-          <span className="profileCode">{emp?.emp_code}</span>
-          <span className="profileStatusWrap">
-            <span className={`profileStatus ${emp?.status === 'Active' ? 'profileStatusActive' : emp?.status === 'Inactive' ? 'profileStatusInactive' : 'profileStatusOther'}`}>
-              {emp?.status}
-            </span>
-            <select
-              className="profileStatusSelect"
-              value={emp?.status || ''}
-              disabled={statusUpdating}
-              onChange={(e) => {
-                const newStatus = e.target.value
-                if (!emp?.id || newStatus === emp?.status) return
-                setStatusUpdating(true)
-                employees.update(emp.id, { status: newStatus })
-                  .then(() => {
-                    setData((d) => d ? { ...d, employee: { ...d.employee, status: newStatus } } : d)
-                  })
-                  .catch(() => {})
-                  .finally(() => setStatusUpdating(false))
-              }}
-              title="Update employee status"
-            >
-              {STATUS_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
-          </span>
-        </div>
-      </div>
+      {/* Top grid: Name + Shift (left) | Calendar (right) */}
+      <div className="profileTopGrid">
+        <div className="profileNameSection card">
+          <div className="profileHeader">
+            <div className="profileAvatar">{initials}</div>
+            <div className="profileHeaderInfo">
+              <h2>{emp?.name}</h2>
+              <span className="profileCode">{emp?.emp_code}</span>
+              <span className="profileStatusWrap">
+                <span className={`profileStatus ${emp?.status === 'Active' ? 'profileStatusActive' : emp?.status === 'Inactive' ? 'profileStatusInactive' : 'profileStatusOther'}`}>
+                  {emp?.status}
+                </span>
+                <select
+                  className="profileStatusSelect"
+                  value={emp?.status || ''}
+                  disabled={statusUpdating}
+                  onChange={(e) => {
+                    const newStatus = e.target.value
+                    if (!emp?.id || newStatus === emp?.status) return
+                    setStatusUpdating(true)
+                    employees.update(emp.id, { status: newStatus })
+                      .then(() => {
+                        setData((d) => d ? { ...d, employee: { ...d.employee, status: newStatus } } : d)
+                      })
+                      .catch(() => {})
+                      .finally(() => setStatusUpdating(false))
+                    }}
+                  title="Update employee status"
+                >
+                  {STATUS_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+              </span>
+            </div>
+          </div>
 
-      {/* Shift & Work Banner */}
-      <div className="profileShiftBanner">
-        <div className="shiftBannerItem">
-          <span className="shiftBannerIcon">&#128336;</span>
-          <div className="shiftBannerText">
-            <span className="shiftBannerLabel">Assigned Shift</span>
-            <span className="shiftBannerValue">{emp?.shift || 'Not assigned'}</span>
+          {/* Shift info directly under name */}
+          <div className="profileShiftBanner">
+            <div className="shiftBannerItem">
+              <span className="shiftBannerIcon">&#128336;</span>
+              <div className="shiftBannerText">
+                <span className="shiftBannerLabel">Assigned Shift</span>
+                <span className="shiftBannerValue">{emp?.shift || 'Not assigned'}</span>
+              </div>
+            </div>
+            <div className="shiftBannerDivider" />
+            <div className="shiftBannerItem">
+              <span className="shiftBannerIcon">&#128197;</span>
+              <div className="shiftBannerText">
+                <span className="shiftBannerLabel">Shift Timing</span>
+                <span className="shiftBannerValue">
+                  {emp?.shift_from && emp?.shift_to
+                    ? `${String(emp.shift_from).slice(0, 5)} – ${String(emp.shift_to).slice(0, 5)}`
+                    : '—'}
+                </span>
+              </div>
+            </div>
+            <div className="shiftBannerDivider" />
+            <div className="shiftBannerItem">
+              <span className="shiftBannerIcon">&#9201;</span>
+              <div className="shiftBannerText">
+                <span className="shiftBannerLabel">Expected Hours</span>
+                <span className="shiftBannerValue shiftBannerHighlight">{expectedHours ? `${expectedHours}h / day` : '—'}</span>
+              </div>
+            </div>
           </div>
         </div>
-        <div className="shiftBannerDivider" />
-        <div className="shiftBannerItem">
-          <span className="shiftBannerIcon">&#128197;</span>
-          <div className="shiftBannerText">
-            <span className="shiftBannerLabel">Shift Timing</span>
-            <span className="shiftBannerValue">
-              {emp?.shift_from && emp?.shift_to
-                ? `${String(emp.shift_from).slice(0, 5)} – ${String(emp.shift_to).slice(0, 5)}`
-                : '—'}
-            </span>
+
+        <div className="profileCalendarCard card">
+          <h3 className="profileCalendarTitle">This month — {monthName} {currentYear}</h3>
+          <div className="profileCalendar">
+            <div className="profileCalendarWeekdays">
+              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
+                <span key={d} className="profileCalendarWeekday">{d}</span>
+              ))}
+            </div>
+            {calendarRows.map((week, wi) => (
+              <div key={wi} className="profileCalendarRow">
+                {week.map((cell, ci) => (
+                  <div key={ci} className={`profileCalendarCell ${cell ? statusToClass(cell.status, cell.day) : 'empty'}`} title={cell ? `${cell.day}: ${cell.status || 'No record'}` : ''}>
+                    {cell ? cell.day : ''}
+                  </div>
+                ))}
+              </div>
+            ))}
           </div>
-        </div>
-        <div className="shiftBannerDivider" />
-        <div className="shiftBannerItem">
-          <span className="shiftBannerIcon">&#9201;</span>
-          <div className="shiftBannerText">
-            <span className="shiftBannerLabel">Expected Hours</span>
-            <span className="shiftBannerValue shiftBannerHighlight">{expectedHours ? `${expectedHours}h / day` : '—'}</span>
+          <div className="profileCalendarLegend">
+            <span className="profileLegendItem present">Present</span>
+            <span className="profileLegendItem absent">Absent</span>
+            <span className="profileLegendItem halfday">Half day</span>
+            <span className="profileLegendItem earlyleft">Early left</span>
+            <span className="profileLegendItem sunday">Sunday</span>
+            <span className="profileLegendItem none">No record</span>
+          </div>
+          <div className="profileCalendarStats">
+            <div className="profileStatItem">
+              <span className="profileStatValue">{daysThisMonth}</span>
+              <span className="profileStatLabel">Days came</span>
+            </div>
+            <div className="profileStatItem">
+              <span className="profileStatValue">{hoursThisMonth}h</span>
+              <span className="profileStatLabel">Hours this month</span>
+            </div>
           </div>
         </div>
       </div>

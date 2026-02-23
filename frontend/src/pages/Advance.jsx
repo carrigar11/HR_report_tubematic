@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { advance as advanceApi, employees, salary } from '../api'
 import './Table.css'
@@ -8,6 +8,7 @@ const now = new Date()
 const currentMonth = now.getMonth() + 1
 const currentYear = now.getFullYear()
 const monthNames = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const MAX_SUGGESTIONS = 20
 
 export default function Advance() {
   const [month, setMonth] = useState(currentMonth)
@@ -15,6 +16,9 @@ export default function Advance() {
   const [list, setList] = useState([])
   const [loading, setLoading] = useState(false)
   const [empCode, setEmpCode] = useState('')
+  const [empSearch, setEmpSearch] = useState('')
+  const [showEmpDropdown, setShowEmpDropdown] = useState(false)
+  const empDropdownRef = useRef(null)
   const [amount, setAmount] = useState('')
   const [note, setNote] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -53,6 +57,35 @@ export default function Advance() {
       .catch(() => setEmployeeOptions([]))
   }, [])
 
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (empDropdownRef.current && !empDropdownRef.current.contains(e.target)) setShowEmpDropdown(false)
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  const empSuggestions = empSearch.trim()
+    ? employeeOptions.filter((emp) => {
+        const q = empSearch.trim().toLowerCase()
+        const code = (emp.emp_code || '').toString().toLowerCase()
+        const name = (emp.name || '').toString().toLowerCase()
+        return code.includes(q) || name.includes(q)
+      }).slice(0, MAX_SUGGESTIONS)
+    : []
+
+  const selectEmployee = (emp) => {
+    setEmpCode(emp.emp_code)
+    setEmpSearch(`${emp.emp_code} – ${emp.name || ''}`)
+    setShowEmpDropdown(false)
+  }
+
+  const clearEmployee = () => {
+    setEmpCode('')
+    setEmpSearch('')
+    setShowEmpDropdown(false)
+  }
+
   const handleSubmit = (e) => {
     e.preventDefault()
     setError('')
@@ -79,6 +112,7 @@ export default function Advance() {
       .then(() => {
         setSuccess('Advance recorded.')
         setEmpCode('')
+        setEmpSearch('')
         setAmount('')
         setNote('')
         advanceApi.list(month, year).then((r) => setList(Array.isArray(r.data) ? r.data : []))
@@ -129,14 +163,43 @@ export default function Advance() {
           <h3 className="advanceSectionTitle">Add advance for {periodLabel}</h3>
           <form onSubmit={handleSubmit} className="advanceForm">
             <div className="advanceFormRow">
-              <div className="advanceFormField">
+              <div className="advanceFormField advanceEmpSelectWrap" ref={empDropdownRef}>
                 <label className="label">Employee</label>
-                <select className="input" value={empCode} onChange={(e) => setEmpCode(e.target.value)} required>
-                  <option value="">Select employee</option>
-                  {employeeOptions.map((emp) => (
-                    <option key={emp.emp_code} value={emp.emp_code}>{emp.emp_code} – {emp.name}</option>
-                  ))}
-                </select>
+                <input
+                  type="text"
+                  className="input"
+                  value={empSearch}
+                  onChange={(e) => {
+                    setEmpSearch(e.target.value)
+                    setShowEmpDropdown(true)
+                    if (!e.target.value.trim()) setEmpCode('')
+                  }}
+                  onFocus={() => setShowEmpDropdown(true)}
+                  placeholder="Type code or name to search…"
+                  autoComplete="off"
+                />
+                {empCode && (
+                  <button type="button" className="advanceEmpClear" onClick={clearEmployee} title="Clear">×</button>
+                )}
+                {showEmpDropdown && (
+                  <div className="advanceEmpDropdown">
+                    {empSuggestions.length === 0 ? (
+                      <p className="advanceEmpDropdownEmpty muted">{empSearch.trim() ? 'No match' : 'Type to search'}</p>
+                    ) : (
+                      empSuggestions.map((emp) => (
+                        <button
+                          key={emp.emp_code}
+                          type="button"
+                          className="advanceEmpDropdownItem"
+                          onClick={() => selectEmployee(emp)}
+                        >
+                          <span className="advanceEmpDropdownCode">{emp.emp_code}</span>
+                          <span className="advanceEmpDropdownName">{emp.name || '—'}</span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
               </div>
               <div className="advanceFormField">
                 <label className="label">Amount</label>

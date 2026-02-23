@@ -1,0 +1,97 @@
+/* My Details — full-width layout, no right gap */
+.empDetailsPage {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.25rem;
+}
+
+@media (min-width: 700px) {
+  .empDetailsPage {
+    grid-template-columns: 1fr 1fr;
+    gap: 1.25rem;
+  }
+  .empDetailsPage .empDetailsSection.spanFull {
+    grid-column: 1 / -1;
+  }
+}
+
+.empDetailsSection {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.35rem 1.5rem;
+  min-width: 0;
+}
+
+.empDetailsSectionTitle {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--textMuted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 1rem 0;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.empDetailsGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem 1.25rem;
+}
+
+.empDetailsField {
+  min-width: 0;
+}
+
+.empDetailsField .empDetailsLabel {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--textMuted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 0.2rem;
+}
+
+.empDetailsField .empDetailsValue {
+  font-size: 0.9rem;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.empDetailsField .empDetailsValue.empty {
+  color: var(--textMuted);
+  font-weight: 400;
+}
+
+.empDetailsBadge {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.empDetailsBadge.active {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--accent);
+}
+
+.empDetailsBadge.inactive {
+  background: rgba(239, 68, 68, 0.12);
+  color: #f87171;
+}
+
+.empDetailsBadge.other {
+  background: var(--surface2);
+  color: var(--textMuted);
+}
+
+.empDetailsLoading,
+.empDetailsError {
+  padding: 2rem;
+  text-align: center;
+  color: var(--textMuted);
+}

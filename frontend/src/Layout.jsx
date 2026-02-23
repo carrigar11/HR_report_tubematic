@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import {
   IconDashboard,
@@ -18,7 +18,9 @@ import {
   IconGift,
   IconClock,
   IconLogout,
+  IconBell,
 } from './components/Icons'
+import { leaveRequests, penaltyInquiries } from './api'
 import './Layout.css'
 
 const nav = [
@@ -33,7 +35,7 @@ const nav = [
   { to: '/penalty', label: 'Penalty', icon: IconAlert, access: 'penalty' },
   { to: '/absentee-alert', label: 'Absentee Alert', icon: IconAlert, access: 'absentee_alert' },
   { to: '/adjustments', label: 'Adjustments', icon: IconEdit, access: 'adjustment' },
-  { to: '/holidays', label: 'Holidays', icon: IconHoliday, access: 'holidays' },
+  { to: '/holidays', label: 'Holidays and leave', icon: IconHoliday, access: 'holidays' },
   { to: '/export', label: 'Export', icon: IconExport, access: 'export' },
   { to: '/manage-admins', label: 'Manage Admins', icon: IconUser, access: 'manage_admins' },
   { to: '/activity-log', label: 'Activity Log', icon: IconClock, access: 'manage_admins' },
@@ -51,7 +53,7 @@ const pathToTitle = {
   '/penalty': 'Penalty',
   '/absentee-alert': 'Absentee Alert',
   '/adjustments': 'Adjustments',
-  '/holidays': 'Holidays',
+  '/holidays': 'Holidays and leave',
   '/settings': 'Settings',
   '/export': 'Export',
   '/manage-admins': 'Manage Admins',
@@ -70,6 +72,10 @@ function getPageTitle(pathname) {
 export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
+  const [notificationOpen, setNotificationOpen] = useState(false)
+  const [pendingLeave, setPendingLeave] = useState(0)
+  const [openInquiries, setOpenInquiries] = useState(0)
+  const [notificationLoading, setNotificationLoading] = useState(false)
   const hoverTimer = useRef(null)
   const pinned = useRef(false)  // true when opened via click
 
@@ -109,6 +115,35 @@ export default function Layout() {
     if (stored) admin = { ...admin, ...JSON.parse(stored) }
   } catch (_) {}
   const canAccess = (key) => admin.role === 'super_admin' || admin.access?.[key] === true
+
+  const fetchNotificationCounts = useCallback((silent = false) => {
+    if (!silent) setNotificationLoading(true)
+    const promises = []
+    if (canAccess('holidays')) {
+      promises.push(leaveRequests.list({ status: 'pending' }).then((r) => (Array.isArray(r.data) ? r.data.length : 0)).catch(() => 0))
+    } else {
+      promises.push(Promise.resolve(0))
+    }
+    if (canAccess('penalty')) {
+      promises.push(penaltyInquiries.list({ status: 'open' }).then((r) => (Array.isArray(r.data) ? r.data.length : 0)).catch(() => 0))
+    } else {
+      promises.push(Promise.resolve(0))
+    }
+    Promise.all(promises).then(([leave, inquiry]) => {
+      setPendingLeave(leave)
+      setOpenInquiries(inquiry)
+    }).finally(() => setNotificationLoading(false))
+  }, [])
+
+  useEffect(() => {
+    fetchNotificationCounts(false)
+  }, [location.pathname])
+
+  useEffect(() => {
+    const POLL_MS = 45000
+    const t = setInterval(() => fetchNotificationCounts(true), POLL_MS)
+    return () => clearInterval(t)
+  }, [fetchNotificationCounts])
 
   const logout = () => {
     localStorage.removeItem('hr_admin')
@@ -157,6 +192,49 @@ export default function Layout() {
         <header className="topbar">
           <h1 className="topbarTitle">{pageTitle}</h1>
           <div className="topbarRight">
+            {/* Mini notifications: pending leave + penalty inquiries */}
+            <div className="headerNotifyWrap">
+              <button
+                type="button"
+                className="headerNotifyBtn"
+                onClick={() => setNotificationOpen((v) => !v)}
+                aria-expanded={notificationOpen}
+                title="Notifications"
+              >
+                <IconBell />
+                {(pendingLeave + openInquiries) > 0 && (
+                  <span className="headerNotifyBadge">{pendingLeave + openInquiries > 99 ? '99+' : pendingLeave + openInquiries}</span>
+                )}
+              </button>
+              {notificationOpen && (
+                <>
+                  <div className="profileBackdrop" onClick={() => setNotificationOpen(false)} aria-hidden />
+                  <div className="headerNotifyDropdown card">
+                    <div className="headerNotifyTitle">Notifications</div>
+                    {notificationLoading ? (
+                      <p className="headerNotifyItem muted">Loading…</p>
+                    ) : (canAccess('holidays') || canAccess('penalty')) ? (
+                      <>
+                        {canAccess('holidays') && (
+                          <NavLink to="/holidays" className="headerNotifyItem" onClick={() => setNotificationOpen(false)}>
+                            <span className="headerNotifyLabel">Pending leave requests</span>
+                            <span className="headerNotifyCount">{pendingLeave}</span>
+                          </NavLink>
+                        )}
+                        {canAccess('penalty') && (
+                          <NavLink to="/penalty" className="headerNotifyItem" onClick={() => setNotificationOpen(false)}>
+                            <span className="headerNotifyLabel">Penalty inquiries (from employees)</span>
+                            <span className="headerNotifyCount">{openInquiries}</span>
+                          </NavLink>
+                        )}
+                      </>
+                    ) : (
+                      <p className="headerNotifyItem muted">No notifications</p>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
             <div className="userProfileWrap">
               <button
                 type="button"

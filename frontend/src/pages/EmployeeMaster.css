@@ -120,7 +120,7 @@
   background: var(--surface);
   border-radius: 12px;
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
-  max-width: 560px;
+  max-width: 720px;
   width: 100%;
   max-height: 90vh;
   overflow: auto;
@@ -130,13 +130,13 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 1rem 1.25rem;
+  padding: 1rem 1.5rem;
   border-bottom: 1px solid var(--border);
 }
 
 .empModalTitle {
   margin: 0;
-  font-size: 1.1rem;
+  font-size: 1.15rem;
   font-weight: 600;
   color: var(--text);
 }
@@ -158,36 +158,67 @@
 }
 
 .empModalForm {
-  padding: 1.25rem;
+  padding: 1.5rem;
+}
+
+.empModalSection {
+  margin-bottom: 1.5rem;
+}
+
+.empModalSection:last-of-type {
+  margin-bottom: 0;
+}
+
+.empModalSectionTitle {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--textMuted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 0.75rem 0;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--border);
 }
 
 .empModalGrid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.9rem 1rem;
-  margin-bottom: 1rem;
+  gap: 1rem 1.25rem;
 }
 
 .empModalGrid .profileField {
   min-width: 0;
 }
 
-.empModalGrid .profileField:first-child,
-.empModalGrid .profileField:nth-child(2) {
-  grid-column: span 1;
+.empModalGrid .profileField .label {
+  margin-bottom: 0.35rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.empModalGrid .profileField .input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.empModalGrid .profileField .muted {
+  display: block;
+  margin-top: 0.35rem;
 }
 
 .empModalError {
   color: #dc2626;
   font-size: 0.85rem;
-  margin-bottom: 0.75rem;
+  margin: 1rem 0 0.75rem 0;
 }
 
 .empModalActions {
   display: flex;
   justify-content: flex-end;
   gap: 0.5rem;
-  padding-top: 0.5rem;
+  padding-top: 1.25rem;
+  margin-top: 1rem;
   border-top: 1px solid var(--border);
 }
 

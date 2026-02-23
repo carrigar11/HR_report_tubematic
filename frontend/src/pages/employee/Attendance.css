@@ -1,0 +1,142 @@
+.empAttPage {
+  width: 100%;
+}
+
+.empAttTop {
+  margin-bottom: 1.25rem;
+}
+
+.empAttFilters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem;
+}
+
+.empAttFilterGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.empAttFilterGroup .label {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--textMuted);
+}
+
+.empAttFilterGroup .input,
+.empAttFilterGroup select {
+  min-width: 120px;
+}
+
+.empAttActions {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.empAttHeading {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text);
+  margin: 1rem 0 0 0;
+}
+
+.empAttSummary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem 2rem;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+.empAttSummaryItem {
+  font-size: 0.9rem;
+  color: var(--textMuted);
+}
+
+.empAttSummaryItem strong {
+  color: var(--text);
+  margin-right: 0.25rem;
+}
+
+.empAttTableCard {
+  padding: 0;
+  overflow: hidden;
+}
+
+.empAttTableWrap {
+  overflow-x: auto;
+}
+
+.empAttTable {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.empAttTable th {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--textMuted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface2);
+}
+
+.empAttTable td {
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+.empAttTable tbody tr:hover {
+  background: var(--surface2);
+}
+
+.empAttDate {
+  white-space: nowrap;
+}
+
+.empAttNum {
+  font-variant-numeric: tabular-nums;
+}
+
+.empAttStatusBadge {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.empAttStatusBadge.present {
+  background: rgba(34, 197, 94, 0.2);
+  color: var(--accent);
+}
+
+.empAttStatusBadge.absent {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+}
+
+.empAttStatusBadge.halfday {
+  background: rgba(234, 179, 8, 0.2);
+  color: var(--warn);
+}
+
+.empAttStatusBadge.other {
+  background: var(--surface2);
+  color: var(--textMuted);
+}
+
+.empAttLoading,
+.empAttEmpty {
+  padding: 2rem;
+  text-align: center;
+  margin: 0;
+}

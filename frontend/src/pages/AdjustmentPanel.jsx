@@ -594,119 +594,122 @@ export default function AdjustmentPanel() {
           )}
         </div>
         {activeTab === 'attendance' && currentRecordLoading && <p className="muted adjustmentLoadStatus">Loading record…</p>}
-        {selectedEmployee && (
-          <>
-            <div className="adjustmentEmployeeBlock">
-              <div className="adjustmentStatusRow">
-                <label className="label">Employee status</label>
+      </div>
+
+      {/* Employee details — separate card so boxes don’t connect */}
+      {selectedEmployee && (
+        <div className="card adjustmentEmployeeCard">
+          <h3 className="adjustmentCardTitle">Employee details</h3>
+          <div className="adjustmentEmployeeBlock">
+            <div className="adjustmentStatusRow">
+              <label className="label">Employee status</label>
+              <select
+                className="input adjustmentStatusSelect"
+                value={selectedEmployee.status || 'Active'}
+                disabled={statusUpdateLoading}
+                onChange={(e) => {
+                  const newStatus = e.target.value
+                  if (newStatus === selectedEmployee.status) return
+                  setStatusUpdateLoading(true)
+                  employees.update(selectedEmployee.id, { status: newStatus })
+                    .then(() => setSelectedEmployee((prev) => prev ? { ...prev, status: newStatus } : null))
+                    .catch(() => {})
+                    .finally(() => setStatusUpdateLoading(false))
+                  }}
+              >
+                {STATUS_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="adjustmentSalaryRow">
+              <div className="adjustmentSalaryGroup">
+                <label className="label">Department</label>
+                <input
+                  type="text"
+                  className="input"
+                  value={deptDesignationEdit.dept_name}
+                  disabled={deptDesignationSaving}
+                  onChange={(e) => setDeptDesignationEdit((d) => ({ ...d, dept_name: e.target.value }))}
+                  onBlur={saveDeptDesignation}
+                  placeholder="Department"
+                  list="adjustmentDeptList"
+                />
+                <datalist id="adjustmentDeptList">
+                  {(filterOptions.departments || []).map((d) => <option key={d} value={d} />)}
+                </datalist>
+              </div>
+              <div className="adjustmentSalaryGroup">
+                <label className="label">Designation</label>
+                <input
+                  type="text"
+                  className="input"
+                  value={deptDesignationEdit.designation}
+                  disabled={deptDesignationSaving}
+                  onChange={(e) => setDeptDesignationEdit((d) => ({ ...d, designation: e.target.value }))}
+                  onBlur={saveDeptDesignation}
+                  placeholder="Designation"
+                  list="adjustmentDesigList"
+                />
+                <datalist id="adjustmentDesigList">
+                  {(filterOptions.designations || []).map((d) => <option key={d} value={d} />)}
+                </datalist>
+              </div>
+            </div>
+            <div className="adjustmentSalaryRow">
+              <div className="adjustmentSalaryGroup">
+                <label className="label">Shift</label>
+                <span className="adjustmentSalaryReadOnly">{selectedEmployee.shift || '—'}</span>
+              </div>
+              <div className="adjustmentSalaryGroup">
+                <label className="label">Base salary (₹)</label>
+                <input
+                  type="number"
+                  className="input"
+                  min="0"
+                  step="0.01"
+                  placeholder="0"
+                  value={salaryEdit.base_salary}
+                  disabled={salarySaving}
+                  onChange={(e) => setSalaryEdit((s) => ({ ...s, base_salary: e.target.value }))}
+                  onBlur={saveSalary}
+                />
+              </div>
+              <div className="adjustmentSalaryGroup">
+                <label className="label">Salary type</label>
                 <select
-                  className="input adjustmentStatusSelect"
-                  value={selectedEmployee.status || 'Active'}
-                  disabled={statusUpdateLoading}
+                  className="input"
+                  value={salaryEdit.salary_type}
+                  disabled={salarySaving}
                   onChange={(e) => {
-                    const newStatus = e.target.value
-                    if (newStatus === selectedEmployee.status) return
-                    setStatusUpdateLoading(true)
-                    employees.update(selectedEmployee.id, { status: newStatus })
-                      .then(() => setSelectedEmployee((prev) => prev ? { ...prev, status: newStatus } : null))
-                      .catch(() => {})
-                      .finally(() => setStatusUpdateLoading(false))
+                    const v = e.target.value
+                    setSalaryEdit((s) => ({ ...s, salary_type: v }))
+                    if (selectedEmployee?.id) {
+                      setSalarySaving(true)
+                      employees.update(selectedEmployee.id, { salary_type: v })
+                        .then(() => setSelectedEmployee((prev) => prev ? { ...prev, salary_type: v } : null))
+                        .catch(() => {})
+                        .finally(() => setSalarySaving(false))
+                    }
                   }}
                 >
-                  {STATUS_OPTIONS.map((o) => (
+                  {SALARY_TYPE_OPTIONS.map((o) => (
                     <option key={o.value} value={o.value}>{o.label}</option>
                   ))}
                 </select>
               </div>
-              <div className="adjustmentSalaryRow">
-                <div className="adjustmentSalaryGroup">
-                  <label className="label">Department</label>
-                  <input
-                    type="text"
-                    className="input"
-                    value={deptDesignationEdit.dept_name}
-                    disabled={deptDesignationSaving}
-                    onChange={(e) => setDeptDesignationEdit((d) => ({ ...d, dept_name: e.target.value }))}
-                    onBlur={saveDeptDesignation}
-                    placeholder="Department"
-                    list="adjustmentDeptList"
-                  />
-                  <datalist id="adjustmentDeptList">
-                    {(filterOptions.departments || []).map((d) => <option key={d} value={d} />)}
-                  </datalist>
-                </div>
-                <div className="adjustmentSalaryGroup">
-                  <label className="label">Designation</label>
-                  <input
-                    type="text"
-                    className="input"
-                    value={deptDesignationEdit.designation}
-                    disabled={deptDesignationSaving}
-                    onChange={(e) => setDeptDesignationEdit((d) => ({ ...d, designation: e.target.value }))}
-                    onBlur={saveDeptDesignation}
-                    placeholder="Designation"
-                    list="adjustmentDesigList"
-                  />
-                  <datalist id="adjustmentDesigList">
-                    {(filterOptions.designations || []).map((d) => <option key={d} value={d} />)}
-                  </datalist>
-                </div>
-              </div>
-              <div className="adjustmentSalaryRow">
-                <div className="adjustmentSalaryGroup">
-                  <label className="label">Shift</label>
-                  <span className="adjustmentSalaryReadOnly">{selectedEmployee.shift || '—'}</span>
-                </div>
-                <div className="adjustmentSalaryGroup">
-                  <label className="label">Base salary (₹)</label>
-                  <input
-                    type="number"
-                    className="input"
-                    min="0"
-                    step="0.01"
-                    placeholder="0"
-                    value={salaryEdit.base_salary}
-                    disabled={salarySaving}
-                    onChange={(e) => setSalaryEdit((s) => ({ ...s, base_salary: e.target.value }))}
-                    onBlur={saveSalary}
-                  />
-                </div>
-                <div className="adjustmentSalaryGroup">
-                  <label className="label">Salary type</label>
-                  <select
-                    className="input"
-                    value={salaryEdit.salary_type}
-                    disabled={salarySaving}
-                    onChange={(e) => {
-                      const v = e.target.value
-                      setSalaryEdit((s) => ({ ...s, salary_type: v }))
-                      if (selectedEmployee?.id) {
-                        setSalarySaving(true)
-                        employees.update(selectedEmployee.id, { salary_type: v })
-                          .then(() => setSelectedEmployee((prev) => prev ? { ...prev, salary_type: v } : null))
-                          .catch(() => {})
-                          .finally(() => setSalarySaving(false))
-                      }
-                    }}
-                  >
-                    {SALARY_TYPE_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>{o.label}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="adjustmentSalaryGroup">
-                  <label className="label">Per hour salary</label>
-                  <span className="adjustmentPerHourValue">
-                    {perHourFromBase(salaryEdit.base_salary, salaryEdit.salary_type) != null
-                      ? `₹${Number(perHourFromBase(salaryEdit.base_salary, salaryEdit.salary_type)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                      : '—'}
-                  </span>
-                </div>
+              <div className="adjustmentSalaryGroup">
+                <label className="label">Per hour salary</label>
+                <span className="adjustmentPerHourValue">
+                  {perHourFromBase(salaryEdit.base_salary, salaryEdit.salary_type) != null
+                    ? `₹${Number(perHourFromBase(salaryEdit.base_salary, salaryEdit.salary_type)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                    : '—'}
+                </span>
               </div>
             </div>
-          </>
-        )}
-      </div>
+          </div>
+        </div>
+      )}
 
       {activeTab === 'attendance' && (
         <>
@@ -897,6 +900,7 @@ export default function AdjustmentPanel() {
             />
           </div>
           <button type="button" className="btn btn-secondary" onClick={applyListFilters}>Apply filters</button>
+          <button type="button" className="btn btn-secondary" onClick={() => loadList()} disabled={listLoading} title="Reload adjustment log">Refresh</button>
         </div>
         {listLoading ? (
           <p className="muted">Loading…</p>
@@ -906,6 +910,7 @@ export default function AdjustmentPanel() {
               <thead>
                 <tr>
                   <th>Emp Code</th>
+                  <th>Name</th>
                   <th>Date</th>
                   <th>Prev Punch In</th>
                   <th>Prev Punch Out</th>
@@ -919,9 +924,10 @@ export default function AdjustmentPanel() {
                 {(Array.isArray(list) ? list : []).map((row) => (
                   <tr key={row.id}>
                     <td><Link to={`/employees/${row.emp_code}/profile`}>{row.emp_code}</Link></td>
+                    <td>{row.employee_name || '—'}</td>
                     <td>{row.adj_date}</td>
-                    <td>{row.adj_punch_in || '—'}</td>
-                    <td>{row.adj_punch_out || '—'}</td>
+                    <td>{row.adj_punch_in ? String(row.adj_punch_in).slice(0, 5) : '—'}</td>
+                    <td>{row.adj_punch_out ? String(row.adj_punch_out).slice(0, 5) : '—'}</td>
                     <td>{row.adj_overtime != null ? Number(row.adj_overtime).toFixed(2) : '—'}</td>
                     <td>{row.reason || '—'}</td>
                     <td>{row.created_by_admin || '—'}</td>

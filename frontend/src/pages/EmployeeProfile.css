@@ -3,13 +3,61 @@
   padding-bottom: 2rem;
 }
 
+/* Top grid: name left, calendar right */
+.profileTopGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.25rem;
+  margin-bottom: 1.25rem;
+  align-items: start;
+}
+
+@media (min-width: 768px) {
+  .profileTopGrid {
+    grid-template-columns: 1fr 1.25fr;
+    gap: 1.5rem;
+  }
+}
+
+/* Left column: name + shift in one card */
+.profileNameSection {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius);
+  box-shadow: var(--cardShadow);
+}
+
+.profileNameSection .profileHeader {
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  margin: 0;
+  padding: 1.5rem 1.75rem 1.25rem;
+  background: transparent;
+}
+
+.profileNameSection .profileShiftBanner {
+  margin: 0;
+  border-radius: 0;
+  border: none;
+  border-top: 1px solid var(--border);
+  padding: 1rem 1.75rem 1.25rem;
+  background: linear-gradient(180deg, rgba(34, 197, 94, 0.06) 0%, rgba(34, 197, 94, 0.02) 100%);
+}
+
 /* Profile header */
 .profileHeader {
   display: flex;
   align-items: center;
   gap: 1.5rem;
   padding: 1.5rem 1.75rem;
-  margin-bottom: 1rem;
   background: var(--surface);
   border: 1px solid var(--border);
   border-left: 4px solid var(--accent);
@@ -18,39 +66,41 @@
 }
 
 .profileAvatar {
-  width: 64px;
-  height: 64px;
+  width: 56px;
+  height: 56px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--accent) 0%, var(--accentDim) 100%);
+  background: linear-gradient(145deg, var(--accent) 0%, var(--accentDim) 100%);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.5rem;
+  font-size: 1.25rem;
   font-weight: 700;
   color: var(--bg);
   flex-shrink: 0;
-  box-shadow: 0 2px 8px rgba(34, 197, 94, 0.25);
+  box-shadow: 0 2px 12px rgba(34, 197, 94, 0.3);
 }
 
 .profileHeaderInfo h2 {
-  margin: 0 0 0.25rem;
-  font-size: 1.35rem;
+  margin: 0 0 0.2rem;
+  font-size: 1.25rem;
   font-weight: 600;
   color: var(--text);
+  letter-spacing: -0.01em;
 }
 
 .profileHeaderInfo .profileCode {
-  font-size: 0.9rem;
+  display: block;
+  font-size: 0.85rem;
   color: var(--textMuted);
   font-family: var(--fontMono, monospace);
+  margin-bottom: 0.2rem;
 }
 
 .profileHeaderInfo .profileStatus {
   display: inline-block;
-  margin-left: 0.5rem;
-  padding: 0.2rem 0.6rem;
+  padding: 0.2rem 0.5rem;
   border-radius: 6px;
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.03em;
@@ -74,13 +124,12 @@
 .profileStatusWrap {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  margin-left: 0.5rem;
+  gap: 0.4rem;
 }
 
 .profileStatusSelect {
-  font-size: 0.8rem;
-  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  padding: 0.2rem 0.45rem;
   border-radius: 6px;
   border: 1px solid var(--border);
   background: var(--bg);
@@ -105,52 +154,201 @@
   border-radius: var(--radius);
 }
 
+.profileNameSection .profileShiftBanner .shiftBannerItem {
+  min-width: 0;
+}
+
 .shiftBannerItem {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.65rem;
   flex: 1;
-  padding: 0.25rem 0;
+  padding: 0.2rem 0;
+  min-width: 0;
 }
 
 .shiftBannerIcon {
-  font-size: 1.6rem;
+  font-size: 1.35rem;
   line-height: 1;
   flex-shrink: 0;
-  filter: grayscale(0.2);
+  opacity: 0.9;
 }
 
 .shiftBannerText {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
+  gap: 0.1rem;
+  min-width: 0;
 }
 
 .shiftBannerLabel {
-  font-size: 0.68rem;
+  font-size: 0.65rem;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   color: var(--textMuted);
 }
 
 .shiftBannerValue {
-  font-size: 0.95rem;
+  font-size: 0.88rem;
   font-weight: 500;
   color: var(--text);
 }
 
 .shiftBannerHighlight {
   color: var(--accent);
-  font-weight: 700;
-  font-size: 1.05rem;
+  font-weight: 600;
+  font-size: 0.9rem;
 }
 
 .shiftBannerDivider {
   width: 1px;
-  background: rgba(34, 197, 94, 0.2);
-  margin: 0 1.25rem;
+  background: var(--border);
+  margin: 0 1rem;
   align-self: stretch;
+  flex-shrink: 0;
+}
+
+/* ========== Calendar card (right of name) — compact to match left box height ========== */
+.profileCalendarCard {
+  padding: 1rem 1.15rem;
+  min-width: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--cardShadow);
+  display: flex;
+  flex-direction: column;
+}
+
+.profileCalendarTitle {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--textMuted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 0.5rem 0;
+}
+
+.profileCalendar {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.profileCalendarWeekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  margin-bottom: 2px;
+}
+
+.profileCalendarWeekday {
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: var(--textMuted);
+  text-align: center;
+}
+
+.profileCalendarRow {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.profileCalendarCell {
+  aspect-ratio: 1;
+  max-width: 28px;
+  max-height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  font-weight: 600;
+  border-radius: 4px;
+  color: #1a1a1a;
+}
+
+.profileCalendarCell.present {
+  background: #22c55e;
+  color: #fff;
+}
+
+.profileCalendarCell.absent {
+  background: #ef4444;
+  color: #fff;
+}
+
+.profileCalendarCell.halfday {
+  background: #eab308;
+  color: #1a1a1a;
+}
+
+.profileCalendarCell.earlyleft {
+  background: #f97316;
+  color: #fff;
+}
+
+.profileCalendarCell.sunday {
+  background: #e2e8f0;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.profileCalendarCell.none,
+.profileCalendarCell.empty {
+  background: var(--surface2);
+  color: var(--textMuted);
+}
+
+.profileCalendarLegend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  margin-top: 0.5rem;
+  font-size: 0.6rem;
+  color: var(--textMuted);
+}
+
+.profileLegendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.profileLegendItem.present { color: #22c55e; }
+.profileLegendItem.absent { color: #ef4444; }
+.profileLegendItem.halfday { color: #eab308; }
+.profileLegendItem.earlyleft { color: #f97316; }
+.profileLegendItem.sunday { color: #64748b; }
+
+.profileCalendarStats {
+  display: flex;
+  gap: 1rem;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.profileStatItem {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.profileStatValue {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.profileStatLabel {
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: var(--textMuted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 /* ========== Details Card ========== */
@@ -228,7 +426,11 @@
   .profileShiftBanner {
     flex-direction: column;
     gap: 0.75rem;
-    padding: 1rem;
+    padding: 1rem 1.25rem;
+  }
+
+  .profileNameSection .profileShiftBanner {
+    padding: 1rem 1.5rem;
   }
 
   .shiftBannerDivider {
@@ -239,6 +441,10 @@
 }
 
 @media (max-width: 640px) {
+  .profileNameSection .profileHeader {
+    padding: 1.25rem 1.25rem 1rem;
+  }
+
   .profileHeader {
     flex-direction: column;
     text-align: center;

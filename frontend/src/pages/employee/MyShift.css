@@ -1,0 +1,58 @@
+.myShiftPage {
+  padding: 0;
+  width: 100%;
+}
+
+.myShiftLoading {
+  padding: 2rem;
+  text-align: center;
+  color: var(--textMuted);
+}
+
+.myShiftError {
+  color: #dc2626;
+  margin: 0 0 0.5rem;
+}
+
+.myShiftErrorHint {
+  color: var(--textMuted);
+  font-size: 0.9rem;
+  margin: 0 0 1rem;
+}
+
+.myShiftTitle {
+  margin: 0 0 1rem;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.myShiftCard {
+  max-width: 400px;
+}
+
+.myShiftRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.myShiftRow:last-child {
+  border-bottom: none;
+}
+
+.myShiftLabel {
+  font-size: 0.9rem;
+  color: var(--textMuted);
+}
+
+.myShiftValue {
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.myShiftNote {
+  margin-top: 1rem;
+  font-size: 0.9rem;
+}

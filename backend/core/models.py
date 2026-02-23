@@ -6,6 +6,21 @@ from django.db import models
 from decimal import Decimal
 
 
+class Company(models.Model):
+    """Company/organization. Employees and admins can be scoped to a company."""
+    name = models.CharField(max_length=255)
+    code = models.CharField(max_length=50, unique=True, db_index=True, help_text='Short code e.g. HQ, BR1')
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'companies'
+        ordering = ['name']
+
+    def __str__(self):
+        return f"{self.code} - {self.name}"
+
+
 class Admin(models.Model):
     """Login system for HR admins. id=1 is super admin; others can be department admins."""
     ROLE_SUPER = 'super_admin'
@@ -23,6 +38,8 @@ class Admin(models.Model):
     # JSON: which modules this admin can use. e.g. {"dashboard": true, "attendance": true, "salary": true, "leaderboard": true, "export": true, "adjustment": true, "manage_admins": false}
     # Super admin (id=1) ignores this and has full access. Others use this; super can edit.
     access = models.JSONField(default=dict, blank=True)
+    # Optional: restrict admin to one company. When set, admin sees only that company's employees.
+    company = models.ForeignKey(Company, null=True, blank=True, on_delete=models.SET_NULL, related_name='admins')
 
     class Meta:
         db_table = 'admins'
@@ -76,6 +93,14 @@ class Employee(models.Model):
     shift_to = models.TimeField(null=True, blank=True, help_text='Shift end time')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    # Optional login password for employee portal (plain text for now, like admin). Null = cannot login.
+    password = models.CharField(max_length=255, blank=True, null=True)
+    # Which company this employee belongs to. Used with Admin.company for scoping.
+    company = models.ForeignKey(Company, null=True, blank=True, on_delete=models.SET_NULL, related_name='employees')
+    # Leave allowances per year (optional). When null, system defaults from SystemSetting are used.
+    casual_allowance_per_year = models.PositiveSmallIntegerField(null=True, blank=True, help_text='Casual leave days per year; blank = use system default')
+    sick_allowance_per_year = models.PositiveSmallIntegerField(null=True, blank=True, help_text='Sick leave days per year; blank = use system default')
+    earned_allowance_per_year = models.PositiveSmallIntegerField(null=True, blank=True, help_text='Earned leave days per year; blank = use system default')
 
     class Meta:
         db_table = 'employees'
@@ -206,7 +231,7 @@ class ShiftOvertimeBonus(models.Model):
 
 
 class Penalty(models.Model):
-    """Late-coming penalty (Hourly employees only). 2.5 Rs/min until 300 Rs/month, then 5 Rs/min. Reset 1st of month. Manual penalties allowed."""
+    """Late-coming penalty (Hourly and Monthly employees). 2.5 Rs/min until 300 Rs/month, then 5 Rs/min. Reset 1st of month. Manual penalties allowed."""
     emp_code = models.CharField(max_length=50, db_index=True)
     date = models.DateField(db_index=True)
     month = models.PositiveSmallIntegerField()
@@ -266,6 +291,74 @@ class Holiday(models.Model):
 
     def __str__(self):
         return f"{self.date} {self.name}"
+
+
+class LeaveRequest(models.Model):
+    """Employee leave/holiday request. Admin/HR can approve or decline."""
+    STATUS_PENDING = 'pending'
+    STATUS_APPROVED = 'approved'
+    STATUS_DECLINED = 'declined'
+    STATUS_CHOICES = [(STATUS_PENDING, 'Pending'), (STATUS_APPROVED, 'Approved'), (STATUS_DECLINED, 'Declined')]
+    LEAVE_TYPE_CASUAL = 'casual'
+    LEAVE_TYPE_SICK = 'sick'
+    LEAVE_TYPE_EARNED = 'earned'
+    LEAVE_TYPE_OTHER = 'other'
+    LEAVE_TYPE_CHOICES = [
+        (LEAVE_TYPE_CASUAL, 'Casual'),
+        (LEAVE_TYPE_SICK, 'Sick'),
+        (LEAVE_TYPE_EARNED, 'Earned'),
+        (LEAVE_TYPE_OTHER, 'Other'),
+    ]
+
+    emp_code = models.CharField(max_length=50, db_index=True)
+    leave_type = models.CharField(max_length=20, choices=LEAVE_TYPE_CHOICES, default=LEAVE_TYPE_CASUAL, blank=True)
+    from_date = models.DateField()
+    to_date = models.DateField()
+    reason = models.TextField(blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING, db_index=True)
+    dept_name = models.CharField(max_length=100, blank=True, db_index=True)
+    requested_at = models.DateTimeField(auto_now_add=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    admin_notes = models.TextField(blank=True)
+    reviewed_by = models.ForeignKey(Admin, null=True, blank=True, on_delete=models.SET_NULL, related_name='reviewed_leave_requests')
+
+    class Meta:
+        db_table = 'leave_requests'
+        ordering = ['-requested_at']
+
+    def __str__(self):
+        return f"{self.emp_code} {self.from_date}–{self.to_date} {self.status}"
+
+
+class PenaltyInquiry(models.Model):
+    """Employee dispute on a penalty. Admin can approve, reject, or adjust amount."""
+    STATUS_OPEN = 'open'
+    STATUS_APPROVED = 'approved'
+    STATUS_REJECTED = 'rejected'
+    STATUS_AMOUNT_ADJUSTED = 'amount_adjusted'
+    STATUS_CHOICES = [
+        (STATUS_OPEN, 'Open'),
+        (STATUS_APPROVED, 'Approved'),
+        (STATUS_REJECTED, 'Rejected'),
+        (STATUS_AMOUNT_ADJUSTED, 'Amount adjusted'),
+    ]
+
+    penalty = models.ForeignKey(Penalty, on_delete=models.CASCADE, related_name='inquiries')
+    emp_code = models.CharField(max_length=50, db_index=True)
+    message = models.TextField(blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_OPEN, db_index=True)
+    admin_notes = models.TextField(blank=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    reviewed_by = models.ForeignKey(Admin, null=True, blank=True, on_delete=models.SET_NULL, related_name='reviewed_penalty_inquiries')
+
+    class Meta:
+        db_table = 'penalty_inquiries'
+        ordering = ['-created_at']
+        verbose_name_plural = 'Penalty inquiries'
+
+    def __str__(self):
+        return f"Inquiry {self.id} {self.penalty_id} {self.status}"
 
 
 class SystemSetting(models.Model):

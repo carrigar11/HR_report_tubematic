@@ -10,6 +10,11 @@ Done:
 1. [item 1]
 2. [item 2]
 3. ...
+
+Employee (making & related):
+- [New joins / created employees, if any]
+- [Employee updates: profile, status, shift, designation, dept, etc.]
+- [Uploads: employee master, shift assignment, or other employee-related uploads]
 ```
 
 ---

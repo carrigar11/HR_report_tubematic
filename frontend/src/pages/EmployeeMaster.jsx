@@ -18,6 +18,7 @@ const defaultNewEmployee = () => ({
   name: '',
   mobile: '',
   email: '',
+  password: '',
   gender: '',
   dept_name: '',
   designation: '',
@@ -28,6 +29,9 @@ const defaultNewEmployee = () => ({
   shift: '',
   shift_from: '',
   shift_to: '',
+  casual_allowance_per_year: '',
+  sick_allowance_per_year: '',
+  earned_allowance_per_year: '',
 })
 
 export default function EmployeeMaster() {
@@ -161,6 +165,14 @@ export default function EmployeeMaster() {
       }
       if ((addForm.shift_from || '').trim()) payload.shift_from = addForm.shift_from.trim()
       if ((addForm.shift_to || '').trim()) payload.shift_to = addForm.shift_to.trim()
+      const casualVal = addForm.casual_allowance_per_year
+      const sickVal = addForm.sick_allowance_per_year
+      const earnedVal = addForm.earned_allowance_per_year
+      if (casualVal !== '' && casualVal != null) { const n = parseInt(casualVal, 10); if (!isNaN(n) && n >= 0) payload.casual_allowance_per_year = n }
+      if (sickVal !== '' && sickVal != null) { const n = parseInt(sickVal, 10); if (!isNaN(n) && n >= 0) payload.sick_allowance_per_year = n }
+      if (earnedVal !== '' && earnedVal != null) { const n = parseInt(earnedVal, 10); if (!isNaN(n) && n >= 0) payload.earned_allowance_per_year = n }
+      const pwd = (addForm.password || '').trim()
+      if (pwd) payload.password = pwd
       await employees.create(payload)
       setAddModalOpen(false)
       setAddForm(defaultNewEmployee())
@@ -366,88 +378,126 @@ export default function EmployeeMaster() {
               <button type="button" className="empModalClose" onClick={() => !addSaving && setAddModalOpen(false)} aria-label="Close">&times;</button>
             </div>
             <form onSubmit={handleAddSubmit} className="empModalForm">
-              <div className="empModalGrid">
-                <div className="profileField">
-                  <label className="label">Emp Code <span className="required">*</span></label>
-                  <input type="text" className="input" value={addForm.emp_code} onChange={(e) => setAddForm((f) => ({ ...f, emp_code: e.target.value }))} placeholder="Auto-generated (e.g. 380)" required title="Auto-generated number; you can change it if needed" />
-                  <span className="muted" style={{ fontSize: '0.85rem', marginTop: 2 }}>Auto-generated number (380, 381…). Edit if you need a different one.</span>
+              <div className="empModalSection">
+                <h4 className="empModalSectionTitle">Basic info</h4>
+                <div className="empModalGrid">
+                  <div className="profileField">
+                    <label className="label">Emp Code <span className="required">*</span></label>
+                    <input type="text" className="input" value={addForm.emp_code} onChange={(e) => setAddForm((f) => ({ ...f, emp_code: e.target.value }))} placeholder="Auto-generated (e.g. 380)" required title="Auto-generated number; you can change it if needed" />
+                    <span className="muted" style={{ fontSize: '0.85rem' }}>Auto-generated number (380, 381…). Edit if needed.</span>
+                  </div>
+                  <div className="profileField">
+                    <label className="label">Name <span className="required">*</span></label>
+                    <input type="text" className="input" value={addForm.name} onChange={(e) => setAddForm((f) => ({ ...f, name: e.target.value }))} placeholder="Full name" required />
+                  </div>
+                  <div className="profileField">
+                    <label className="label">Mobile</label>
+                    <input type="text" className="input" value={addForm.mobile} onChange={(e) => setAddForm((f) => ({ ...f, mobile: e.target.value }))} placeholder="Phone" />
+                  </div>
+                  <div className="profileField">
+                    <label className="label">Email</label>
+                    <input type="email" className="input" value={addForm.email} onChange={(e) => setAddForm((f) => ({ ...f, email: e.target.value }))} placeholder="email@example.com" />
+                  </div>
+                  <div className="profileField" style={{ gridColumn: '1 / -1' }}>
+                    <label className="label">Password (employee portal)</label>
+                    <input type="password" className="input" value={addForm.password} onChange={(e) => setAddForm((f) => ({ ...f, password: e.target.value }))} placeholder="Leave blank to disable login" autoComplete="new-password" />
+                    <span className="muted" style={{ fontSize: '0.85rem' }}>Optional. Used for employee portal login.</span>
+                  </div>
                 </div>
-                <div className="profileField">
-                  <label className="label">Name <span className="required">*</span></label>
-                  <input type="text" className="input" value={addForm.name} onChange={(e) => setAddForm((f) => ({ ...f, name: e.target.value }))} placeholder="Full name" required />
+              </div>
+              <div className="empModalSection">
+                <h4 className="empModalSectionTitle">Work details</h4>
+                <div className="empModalGrid">
+                  <div className="profileField" style={{ gridColumn: '1 / -1' }}>
+                    <label className="label">Department</label>
+                    <input type="text" className="input" value={addForm.dept_name} onChange={(e) => setAddForm((f) => ({ ...f, dept_name: e.target.value }))} placeholder="Department" list="empDeptList" />
+                    <datalist id="empDeptList">
+                      {filterOptions.departments.map((d) => <option key={d} value={d} />)}
+                    </datalist>
+                    <span className="muted" style={{ fontSize: '0.85rem' }}>Type a new name to create a new department.</span>
+                  </div>
+                  <div className="profileField">
+                    <label className="label">Designation</label>
+                    <input type="text" className="input" value={addForm.designation} onChange={(e) => setAddForm((f) => ({ ...f, designation: e.target.value }))} placeholder="Designation" list="empDesigList" />
+                    <datalist id="empDesigList">
+                      {filterOptions.designations.map((d) => <option key={d} value={d} />)}
+                    </datalist>
+                  </div>
+                  <div className="profileField">
+                    <label className="label">Gender</label>
+                    <select className="input" value={addForm.gender} onChange={(e) => setAddForm((f) => ({ ...f, gender: e.target.value }))}>
+                      <option value="">—</option>
+                      {(filterOptions.genders || []).map((g) => <option key={g} value={g}>{g}</option>)}
+                    </select>
+                  </div>
+                  <div className="profileField">
+                    <label className="label">Status</label>
+                    <select className="input" value={addForm.status} onChange={(e) => setAddForm((f) => ({ ...f, status: e.target.value }))}>
+                      <option value="Active">Active</option>
+                      <option value="Inactive">Inactive</option>
+                      <option value="Week off">Week off</option>
+                      <option value="Holiday">Holiday</option>
+                    </select>
+                  </div>
+                  <div className="profileField">
+                    <label className="label">Employment type</label>
+                    <select className="input" value={addForm.employment_type} onChange={(e) => setAddForm((f) => ({ ...f, employment_type: e.target.value }))}>
+                      <option value="Full-time">Full-time</option>
+                      <option value="Hourly">Hourly</option>
+                    </select>
+                  </div>
                 </div>
-                <div className="profileField">
-                  <label className="label">Mobile</label>
-                  <input type="text" className="input" value={addForm.mobile} onChange={(e) => setAddForm((f) => ({ ...f, mobile: e.target.value }))} placeholder="Phone" />
+              </div>
+              <div className="empModalSection">
+                <h4 className="empModalSectionTitle">Salary & shift</h4>
+                <div className="empModalGrid">
+                  <div className="profileField">
+                    <label className="label">Salary type</label>
+                    <select className="input" value={addForm.salary_type} onChange={(e) => setAddForm((f) => ({ ...f, salary_type: e.target.value }))}>
+                      <option value="Monthly">Monthly</option>
+                      <option value="Hourly">Hourly</option>
+                      <option value="Fixed">Fixed</option>
+                    </select>
+                  </div>
+                  <div className="profileField">
+                    <label className="label">Base salary</label>
+                    <input type="number" className="input" step="0.01" min="0" value={addForm.base_salary} onChange={(e) => setAddForm((f) => ({ ...f, base_salary: e.target.value }))} placeholder="0" />
+                  </div>
+                  <div className="profileField">
+                    <label className="label">Shift name</label>
+                    <input type="text" className="input" value={addForm.shift} onChange={(e) => setAddForm((f) => ({ ...f, shift: e.target.value }))} placeholder="e.g. General Shift" list="empShiftList" />
+                    <datalist id="empShiftList">
+                      {filterOptions.shifts.map((s) => <option key={s} value={s} />)}
+                    </datalist>
+                  </div>
+                  <div className="profileField">
+                    <label className="label">Shift from</label>
+                    <input type="time" className="input" value={addForm.shift_from} onChange={(e) => setAddForm((f) => ({ ...f, shift_from: e.target.value }))} />
+                  </div>
+                  <div className="profileField">
+                    <label className="label">Shift to</label>
+                    <input type="time" className="input" value={addForm.shift_to} onChange={(e) => setAddForm((f) => ({ ...f, shift_to: e.target.value }))} />
+                  </div>
                 </div>
-                <div className="profileField">
-                  <label className="label">Email</label>
-                  <input type="email" className="input" value={addForm.email} onChange={(e) => setAddForm((f) => ({ ...f, email: e.target.value }))} placeholder="email@example.com" />
-                </div>
-                <div className="profileField">
-                  <label className="label">Department</label>
-                  <input type="text" className="input" value={addForm.dept_name} onChange={(e) => setAddForm((f) => ({ ...f, dept_name: e.target.value }))} placeholder="Department" list="empDeptList" />
-                  <datalist id="empDeptList">
-                    {filterOptions.departments.map((d) => <option key={d} value={d} />)}
-                  </datalist>
-                  <span className="muted" style={{ fontSize: '0.85rem', marginTop: 2 }}>Type a new name to create a new department (no separate setup needed).</span>
-                </div>
-                <div className="profileField">
-                  <label className="label">Designation</label>
-                  <input type="text" className="input" value={addForm.designation} onChange={(e) => setAddForm((f) => ({ ...f, designation: e.target.value }))} placeholder="Designation" list="empDesigList" />
-                  <datalist id="empDesigList">
-                    {filterOptions.designations.map((d) => <option key={d} value={d} />)}
-                  </datalist>
-                </div>
-                <div className="profileField">
-                  <label className="label">Gender</label>
-                  <select className="input" value={addForm.gender} onChange={(e) => setAddForm((f) => ({ ...f, gender: e.target.value }))}>
-                    <option value="">—</option>
-                    {(filterOptions.genders || []).map((g) => <option key={g} value={g}>{g}</option>)}
-                  </select>
-                </div>
-                <div className="profileField">
-                  <label className="label">Status</label>
-                  <select className="input" value={addForm.status} onChange={(e) => setAddForm((f) => ({ ...f, status: e.target.value }))}>
-                    <option value="Active">Active</option>
-                    <option value="Inactive">Inactive</option>
-                    <option value="Week off">Week off</option>
-                    <option value="Holiday">Holiday</option>
-                  </select>
-                </div>
-                <div className="profileField">
-                  <label className="label">Employment type</label>
-                  <select className="input" value={addForm.employment_type} onChange={(e) => setAddForm((f) => ({ ...f, employment_type: e.target.value }))}>
-                    <option value="Full-time">Full-time</option>
-                    <option value="Hourly">Hourly</option>
-                  </select>
-                </div>
-                <div className="profileField">
-                  <label className="label">Salary type</label>
-                  <select className="input" value={addForm.salary_type} onChange={(e) => setAddForm((f) => ({ ...f, salary_type: e.target.value }))}>
-                    <option value="Monthly">Monthly</option>
-                    <option value="Hourly">Hourly</option>
-                    <option value="Fixed">Fixed</option>
-                  </select>
-                </div>
-                <div className="profileField">
-                  <label className="label">Base salary</label>
-                  <input type="number" className="input" step="0.01" min="0" value={addForm.base_salary} onChange={(e) => setAddForm((f) => ({ ...f, base_salary: e.target.value }))} placeholder="0" />
-                </div>
-                <div className="profileField">
-                  <label className="label">Shift name</label>
-                  <input type="text" className="input" value={addForm.shift} onChange={(e) => setAddForm((f) => ({ ...f, shift: e.target.value }))} placeholder="e.g. General Shift" list="empShiftList" />
-                  <datalist id="empShiftList">
-                    {filterOptions.shifts.map((s) => <option key={s} value={s} />)}
-                  </datalist>
-                </div>
-                <div className="profileField">
-                  <label className="label">Shift from (time)</label>
-                  <input type="time" className="input" value={addForm.shift_from} onChange={(e) => setAddForm((f) => ({ ...f, shift_from: e.target.value }))} />
-                </div>
-                <div className="profileField">
-                  <label className="label">Shift to (time)</label>
-                  <input type="time" className="input" value={addForm.shift_to} onChange={(e) => setAddForm((f) => ({ ...f, shift_to: e.target.value }))} />
+              </div>
+              <div className="empModalSection">
+                <h4 className="empModalSectionTitle">Leave allowances (optional)</h4>
+                <div className="empModalGrid">
+                  <div className="profileField">
+                    <label className="label">Casual leave per year</label>
+                    <input type="number" className="input" min="0" max="99" value={addForm.casual_allowance_per_year} onChange={(e) => setAddForm((f) => ({ ...f, casual_allowance_per_year: e.target.value }))} placeholder="e.g. 12" />
+                    <span className="muted" style={{ fontSize: '0.85rem' }}>Days. Leave blank for system default.</span>
+                  </div>
+                  <div className="profileField">
+                    <label className="label">Sick leave per year</label>
+                    <input type="number" className="input" min="0" max="99" value={addForm.sick_allowance_per_year} onChange={(e) => setAddForm((f) => ({ ...f, sick_allowance_per_year: e.target.value }))} placeholder="e.g. 6" />
+                    <span className="muted" style={{ fontSize: '0.85rem' }}>Days. Leave blank for system default.</span>
+                  </div>
+                  <div className="profileField">
+                    <label className="label">Earned leave per year</label>
+                    <input type="number" className="input" min="0" max="99" value={addForm.earned_allowance_per_year} onChange={(e) => setAddForm((f) => ({ ...f, earned_allowance_per_year: e.target.value }))} placeholder="e.g. 0" />
+                    <span className="muted" style={{ fontSize: '0.85rem' }}>Days. Leave blank for system default.</span>
+                  </div>
                 </div>
               </div>
               {addError && <p className="empModalError">{addError}</p>}

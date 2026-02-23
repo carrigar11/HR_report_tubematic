@@ -2,9 +2,8 @@
 Shift overtime bonus: if total_working_hours in a shift > 12h, award 1 bonus hour per 2 extra hours.
 Stored in ShiftOvertimeBonus (one per emp per date) so we never award twice for the same day.
 Bonus hours are added to Salary.bonus for that month.
-Only calculated for today, yesterday, and day-before-yesterday.
+Runs for any date up to today (so past months like January get bonus when data is uploaded or recalculated).
 """
-from datetime import timedelta
 from decimal import Decimal
 from django.db import transaction
 from django.utils import timezone
@@ -13,15 +12,14 @@ MAX_WORK_HOURS_BEFORE_BONUS = 12
 BONUS_HOURS_PER_EXTRA_2 = 1  # every 2 extra hours -> 1 bonus hour
 
 
-def _allowed_bonus_dates():
-    """Only today, yesterday, and day-before-yesterday are eligible for shift OT bonus."""
-    today = timezone.localdate()
-    return {today, today - timedelta(days=1), today - timedelta(days=2)}
+def _is_allowed_bonus_date(d):
+    """Allow any date that is not in the future (so Jan and other past months are calculated)."""
+    return d <= timezone.localdate()
 
 
 def apply_shift_overtime_bonus_for_date(emp_code, date):
     """
-    Only runs for date in (today, yesterday, day-before-yesterday).
+    Runs for any date <= today (so past months get shift OT when upload/recalc runs).
     If attendance for (emp_code, date) has total_working_hours > 12:
     - extra = total_working_hours - 12
     - bonus_hours = floor(extra / 2)
@@ -29,7 +27,7 @@ def apply_shift_overtime_bonus_for_date(emp_code, date):
     - Add bonus_hours to Salary for that month
     - Create ShiftOvertimeBonus record with description (so we don't award again).
     """
-    if date not in _allowed_bonus_dates():
+    if not _is_allowed_bonus_date(date):
         return
     from .models import Attendance, Salary, ShiftOvertimeBonus
 
@@ -100,9 +98,9 @@ def recalculate_shift_overtime_bonus_for_date(emp_code, date):
     """
     Recompute shift OT bonus from current attendance and sync Salary + ShiftOvertimeBonus.
     Call this after manual adjust so bonus updates when punch in/out changes.
-    Only runs for today, yesterday, day-before-yesterday.
+    Runs for any date <= today so past months (e.g. January) can be recalculated.
     """
-    if date not in _allowed_bonus_dates():
+    if not _is_allowed_bonus_date(date):
         return
     from .models import Attendance, Salary, ShiftOvertimeBonus
 
@@ -138,3 +136,43 @@ def recalculate_shift_overtime_bonus_for_date(emp_code, date):
                 )
         elif existing:
             existing.delete()
+
+
+def backfill_shift_overtime_bonus_for_month(year, month):
+    """
+    For every (emp_code, date) in the month with attendance and no ShiftOvertimeBonus yet,
+    apply shift OT bonus so past months (e.g. January) get calculated when viewing Bonus page.
+    Call from Bonus overview when selected month is in the past.
+    """
+    from datetime import date
+    from calendar import monthrange
+    from .models import Attendance, ShiftOvertimeBonus
+
+    today = timezone.localdate()
+    first = date(year, month, 1)
+    if first > today:
+        return 0
+    _, last_day = monthrange(year, month)
+    last = date(year, month, last_day)
+    last = min(last, today)
+
+    # Distinct (emp_code, date) in month that have attendance and no ShiftOvertimeBonus
+    att_pairs = set(
+        Attendance.objects.filter(
+            date__gte=first, date__lte=last
+        ).values_list('emp_code', 'date')
+    )
+    existing = set(
+        ShiftOvertimeBonus.objects.filter(
+            date__gte=first, date__lte=last
+        ).values_list('emp_code', 'date')
+    )
+    to_apply = [(ec, d) for (ec, d) in att_pairs if (ec, d) not in existing]
+    applied = 0
+    for emp_code, d in to_apply:
+        try:
+            apply_shift_overtime_bonus_for_date(emp_code, d)
+            applied += 1
+        except Exception:
+            pass
+    return applied

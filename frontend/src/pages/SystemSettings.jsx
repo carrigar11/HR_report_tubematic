@@ -86,7 +86,15 @@ export default function SystemSettings() {
       .finally(() => setAdminLoading(false))
   }, [adminId])
 
-  const hasFullAccess = admin && (admin.role === 'super_admin' || (admin.access?.manage_admins && admin.access?.settings))
+  // Full access: super_admin or (manage_admins + settings). Use fetched admin; fallback to localStorage (login response has role/access).
+  const storedAdmin = (() => {
+    try {
+      const s = localStorage.getItem('hr_admin')
+      return s ? JSON.parse(s) : null
+    } catch (_) { return null }
+  })()
+  const effectiveAdmin = admin || storedAdmin
+  const hasFullAccess = effectiveAdmin && (effectiveAdmin.role === 'super_admin' || (effectiveAdmin.access?.manage_admins && effectiveAdmin.access?.settings))
 
   useEffect(() => {
     if (!hasFullAccess) {

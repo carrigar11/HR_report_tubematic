@@ -121,3 +121,6 @@ REWARD_ENGINE_USE_CELERY = os.environ.get('REWARD_ENGINE_USE_CELERY', 'false').l
 JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY') or SECRET_KEY
 JWT_ACCESS_TTL = int(os.environ.get('JWT_ACCESS_TTL', 15 * 60))   # 15 minutes
 JWT_REFRESH_TTL = int(os.environ.get('JWT_REFRESH_TTL', 7 * 24 * 3600))  # 7 days
+
+# Employee portal: set to False to hide employee login and disable employee APIs
+EMPLOYEE_LOGIN_ENABLED = os.environ.get('EMPLOYEE_LOGIN_ENABLED', 'true').lower() == 'true'

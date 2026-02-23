@@ -2,6 +2,7 @@
 .empSalaryDetailPage {
   max-width: 1400px;
   margin: 0 auto;
+  min-width: 0;
 }
 
 .empSalHeader {
@@ -49,9 +50,20 @@
 
 .empSalGrid {
   display: grid;
-  grid-template-columns: 1fr 340px;
+  grid-template-columns: minmax(0, 1fr) 340px;
   gap: 1.25rem;
   align-items: start;
+  min-width: 0;
+}
+
+/* Left column can shrink so right side (Download) stays visible; table scrolls inside */
+.empSalDetailsCard {
+  min-width: 0;
+}
+
+.empSalTableWrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 @media (max-width: 900px) {
@@ -73,9 +85,6 @@
   border-bottom: 1px solid var(--border);
 }
 
-.empSalTableWrap {
-  overflow-x: auto;
-}
 
 .empSalTable {
   width: 100%;

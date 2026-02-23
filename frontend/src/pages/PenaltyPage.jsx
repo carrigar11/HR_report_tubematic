@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { penalty as penaltyApi, employees } from '../api'
+import { penalty as penaltyApi, employees, penaltyInquiries } from '../api'
 import './Table.css'
 import './PenaltyPage.css'
 
@@ -38,6 +38,12 @@ export default function PenaltyPage() {
     editAmount: '',
     editDesc: '',
   })
+  const [inquiryList, setInquiryList] = useState([])
+  const [inquiryLoading, setInquiryLoading] = useState(true)
+  const [inquiryStatusFilter, setInquiryStatusFilter] = useState('')
+  const [inquiryMessage, setInquiryMessage] = useState('')
+  const [inquiryAdjust, setInquiryAdjust] = useState({ id: null, amount: '' })
+  const [activeTab, setActiveTab] = useState('records') // 'records' | 'inquiries'
 
   const loadList = () => {
     setLoading(true)
@@ -54,6 +60,29 @@ export default function PenaltyPage() {
   }
 
   useEffect(() => { loadList() }, [filters.search, filters.month, filters.year, filters.date_from, filters.date_to])
+
+  const loadInquiries = () => {
+    setInquiryLoading(true)
+    penaltyInquiries.list(inquiryStatusFilter ? { status: inquiryStatusFilter } : {})
+      .then((r) => setInquiryList(Array.isArray(r.data) ? r.data : []))
+      .catch(() => setInquiryList([]))
+      .finally(() => setInquiryLoading(false))
+  }
+
+  useEffect(() => { loadInquiries() }, [inquiryStatusFilter])
+
+  const handleInquiryResolve = async (id, status, deductionAmount) => {
+    setInquiryMessage('')
+    try {
+      await penaltyInquiries.patch(id, { status, ...(deductionAmount != null && deductionAmount !== '' ? { deduction_amount: deductionAmount } : {}) })
+      setInquiryAdjust({ id: null, amount: '' })
+      loadInquiries()
+      loadList()
+      setInquiryMessage('Inquiry updated.')
+    } catch (err) {
+      setInquiryMessage(err.response?.data?.error || 'Failed')
+    }
+  }
 
   useEffect(() => {
     employees.list({ page_size: 500 })
@@ -214,6 +243,20 @@ export default function PenaltyPage() {
         </div>
       )}
 
+      <div className="penaltyTabs">
+        <button type="button" className={'penaltyTab ' + (activeTab === 'records' ? 'active' : '')} onClick={() => setActiveTab('records')}>
+          Penalty records
+        </button>
+        <button type="button" className={'penaltyTab ' + (activeTab === 'inquiries' ? 'active' : '')} onClick={() => setActiveTab('inquiries')}>
+          Penalty inquiries
+          {inquiryList.some((r) => r.status === 'open') && (
+            <span className="penaltyTabBadge">{inquiryList.filter((r) => r.status === 'open').length}</span>
+          )}
+        </button>
+      </div>
+
+      {activeTab === 'records' && (
+        <>
       <div className="card penaltyFilterCard">
         <h3 className="penaltyCardTitle">Filters</h3>
         <div className="penaltyFilterRow">
@@ -302,6 +345,79 @@ export default function PenaltyPage() {
           </table>
         )}
       </div>
+        </>
+      )}
+
+      {activeTab === 'inquiries' && (
+        <>
+      <p className="muted" style={{ marginBottom: '1rem' }}>Employee disputes. Approve, reject, or adjust amount.</p>
+      <div className="filters card" style={{ marginBottom: '1rem' }}>
+        <div>
+          <label className="label">Status</label>
+          <select className="input" value={inquiryStatusFilter} onChange={(e) => setInquiryStatusFilter(e.target.value)} style={{ minWidth: 140 }}>
+            <option value="">All</option>
+            <option value="open">Open</option>
+            <option value="approved">Approved</option>
+            <option value="rejected">Rejected</option>
+            <option value="amount_adjusted">Amount adjusted</option>
+          </select>
+        </div>
+      </div>
+      <div className="card tableCard" style={{ marginBottom: '1rem' }}>
+        {inquiryLoading ? (
+          <p className="muted">Loading…</p>
+        ) : (
+          <table className="dataTable penaltyTable">
+            <thead>
+              <tr>
+                <th>Employee</th>
+                <th>Penalty date</th>
+                <th>Amount (Rs)</th>
+                <th>Message</th>
+                <th>Status</th>
+                <th>Created</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {inquiryList.length === 0 ? (
+                <tr><td colSpan={7} className="muted">No inquiries.</td></tr>
+              ) : (
+                inquiryList.map((row) => (
+                  <tr key={row.id}>
+                    <td>{row.emp_code}</td>
+                    <td>{row.penalty_date}</td>
+                    <td>{row.deduction_amount}</td>
+                    <td className="penaltyDesc">{row.message || '—'}</td>
+                    <td><span className="statusBadge">{row.status}</span></td>
+                    <td>{row.created_at ? new Date(row.created_at).toLocaleString() : '—'}</td>
+                    <td>
+                      {row.status === 'open' && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                          <button type="button" className="btn btn-small btn-primary" onClick={() => handleInquiryResolve(row.id, 'approved')}>Approve</button>
+                          <button type="button" className="btn btn-small btn-secondary" onClick={() => handleInquiryResolve(row.id, 'rejected')}>Reject</button>
+                          {inquiryAdjust.id === row.id ? (
+                            <>
+                              <input type="number" className="input" value={inquiryAdjust.amount} onChange={(e) => setInquiryAdjust((a) => ({ ...a, amount: e.target.value }))} placeholder="New amount" style={{ width: 90 }} min="0" step="0.01" />
+                              <button type="button" className="btn btn-small btn-primary" onClick={() => handleInquiryResolve(row.id, 'amount_adjusted', inquiryAdjust.amount)}>Apply</button>
+                              <button type="button" className="btn btn-small btn-secondary" onClick={() => setInquiryAdjust({ id: null, amount: '' })}>Cancel</button>
+                            </>
+                          ) : (
+                            <button type="button" className="btn btn-small btn-secondary" onClick={() => setInquiryAdjust({ id: row.id, amount: row.deduction_amount || '' })}>Adjust amount</button>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        )}
+      </div>
+      {inquiryMessage && <p style={{ marginBottom: '1rem', color: 'var(--accent)' }}>{inquiryMessage}</p>}
+        </>
+      )}
 
       {viewModal.open && (
         <div className="penaltyViewOverlay" onClick={closeView}>

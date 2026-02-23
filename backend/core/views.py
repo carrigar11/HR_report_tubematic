@@ -11,10 +11,11 @@ from django.utils import timezone
 from datetime import date, timedelta
 from decimal import Decimal
 
+from django.conf import settings
 from .models import (
-    Admin, Employee, Attendance, Salary, SalaryAdvance, Adjustment,
-    ShiftOvertimeBonus, Penalty, PerformanceReward, Holiday, SystemSetting,
-    PlantReportRecipient, EmailSmtpConfig, AuditLog
+    Admin, Company, Employee, Attendance, Salary, SalaryAdvance, Adjustment,
+    ShiftOvertimeBonus, Penalty, PenaltyInquiry, PerformanceReward, Holiday,
+    LeaveRequest, SystemSetting, PlantReportRecipient, EmailSmtpConfig, AuditLog
 )
 from .serializers import (
     AdminSerializer, AdminProfileSerializer, AdminUpdateSerializer,
@@ -33,7 +34,7 @@ from .reward_engine import run_reward_engine
 from .export_excel import generate_payroll_excel, generate_payroll_excel_previous_day
 from .audit_logging import log_activity, log_activity_manual
 from .google_sheets_sync import get_sheet_id, sync_all
-from .jwt_auth import encode_access, encode_refresh, decode_token
+from .jwt_auth import encode_access, encode_refresh, encode_access_employee, encode_refresh_employee, decode_token
 
 
 # ---------- Auth & request admin ----------
@@ -58,12 +59,42 @@ def get_request_admin(request):
         return None, None
     if admin.is_super_admin:
         return admin, None
-    if not admin.department:
-        return admin, []
-    emp_codes = list(
-        Employee.objects.filter(dept_name=admin.department).values_list('emp_code', flat=True)
-    )
+    qs = Employee.objects.all()
+    if admin.company_id:
+        qs = qs.filter(company_id=admin.company_id)
+    if admin.department:
+        qs = qs.filter(dept_name=admin.department)
+    emp_codes = list(qs.values_list('emp_code', flat=True))
     return admin, emp_codes
+
+
+def get_request_employee(request):
+    """
+    Get current employee from JWT (request.jwt_employee_emp_code).
+    Returns (emp_code, employee_obj) or (None, None). Only set when EMPLOYEE_LOGIN_ENABLED.
+    """
+    if not getattr(settings, 'EMPLOYEE_LOGIN_ENABLED', True):
+        return None, None
+    emp_code = getattr(request, 'jwt_employee_emp_code', None)
+    if not emp_code:
+        return None, None
+    try:
+        emp = Employee.objects.get(emp_code=emp_code)
+        return emp_code, emp
+    except Employee.DoesNotExist:
+        return None, None
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class ConfigView(APIView):
+    """GET: public config e.g. employee_login_enabled (for login page toggle)."""
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request):
+        return Response({
+            'employee_login_enabled': getattr(settings, 'EMPLOYEE_LOGIN_ENABLED', True),
+        })
 
 
 @method_decorator(csrf_exempt, name='dispatch')
@@ -98,7 +129,7 @@ class AdminLoginView(APIView):
 
 @method_decorator(csrf_exempt, name='dispatch')
 class AdminRefreshTokenView(APIView):
-    """POST { \"refresh\": \"<refresh_token>\" } -> { \"access\": \"<new_access_token>\" }. No auth required."""
+    """POST { \"refresh\": \"<token>\" } -> { \"access\": \"...\" } or employee access. Accepts admin or employee refresh."""
     authentication_classes = []
     permission_classes = []
 
@@ -107,17 +138,693 @@ class AdminRefreshTokenView(APIView):
         if not refresh_token:
             return Response({'error': 'refresh token required'}, status=400)
         payload = decode_token(refresh_token)
-        if not payload or payload.get('type') != 'refresh':
+        if not payload:
             return Response({'error': 'Invalid or expired refresh token'}, status=401)
-        admin_id = payload.get('admin_id')
-        if admin_id is None:
-            return Response({'error': 'Invalid refresh token'}, status=401)
+        if payload.get('type') == 'refresh':
+            admin_id = payload.get('admin_id')
+            if admin_id is None:
+                return Response({'error': 'Invalid refresh token'}, status=401)
+            try:
+                Admin.objects.get(pk=admin_id)
+            except Admin.DoesNotExist:
+                return Response({'error': 'Admin no longer exists'}, status=401)
+            access = encode_access(admin_id)
+            return Response({'access': access})
+        if payload.get('type') == 'employee_refresh' and getattr(settings, 'EMPLOYEE_LOGIN_ENABLED', True):
+            emp_code = payload.get('emp_code')
+            if not emp_code:
+                return Response({'error': 'Invalid refresh token'}, status=401)
+            try:
+                Employee.objects.get(emp_code=emp_code)
+            except Employee.DoesNotExist:
+                return Response({'error': 'Employee no longer exists'}, status=401)
+            access = encode_access_employee(emp_code)
+            return Response({'access': access})
+        return Response({'error': 'Invalid or expired refresh token'}, status=401)
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class EmployeeLoginView(APIView):
+    """POST { email, password } or { mobile, password }. Login by email OR phone number. Only when EMPLOYEE_LOGIN_ENABLED."""
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request):
+        if not getattr(settings, 'EMPLOYEE_LOGIN_ENABLED', True):
+            return Response({'success': False, 'message': 'Employee login is disabled'}, status=403)
+        identifier = (request.data.get('email') or request.data.get('mobile') or '').strip()
+        password = (request.data.get('password') or '').strip()
+        if not identifier or not password:
+            return Response({'success': False, 'message': 'Email or phone and password required'}, status=400)
+        emp = Employee.objects.filter(email__iexact=identifier).first()
+        if not emp:
+            emp = Employee.objects.filter(mobile=identifier).first()
+        if not emp:
+            return Response({'success': False, 'message': 'Invalid credentials'}, status=401)
+        if not emp.password or emp.password != password:
+            return Response({'success': False, 'message': 'Invalid credentials'}, status=401)
+        if emp.status not in Employee.EMPLOYED_STATUSES:
+            return Response({'success': False, 'message': 'Account not active'}, status=403)
+        access = encode_access_employee(emp.emp_code)
+        refresh = encode_refresh_employee(emp.emp_code)
+        company_name = emp.company.name if emp.company_id else None
+        company_code = emp.company.code if emp.company_id else None
+        return Response({
+            'success': True,
+            'employee': {
+                'emp_code': emp.emp_code,
+                'name': emp.name,
+                'dept_name': emp.dept_name or '',
+                'designation': emp.designation or '',
+                'company': company_name,
+                'company_code': company_code,
+            },
+            'access': access,
+            'refresh': refresh,
+            'message': 'Login successful',
+        })
+
+
+# ---------- Employee API (all require employee JWT; EMPLOYEE_LOGIN_ENABLED) ----------
+def _require_employee(request):
+    """Return (emp_code, employee) or (None, None). Response 403 if disabled or not employee."""
+    if not getattr(settings, 'EMPLOYEE_LOGIN_ENABLED', True):
+        return None, None
+    emp_code, emp = get_request_employee(request)
+    return emp_code, emp
+
+
+class EmployeeDashboardView(APIView):
+    """GET: stats for logged-in employee: days this month, total hours (month + all-time), bonus hours + Rs."""
+    def get(self, request):
+        emp_code, emp = _require_employee(request)
+        if not emp:
+            return Response({'error': 'Not allowed'}, status=403)
+        today = timezone.localdate()
+        y, m = today.year, today.month
+        # Days present this month
+        days_this_month = Attendance.objects.filter(emp_code=emp_code, status='Present', date__year=y, date__month=m).count()
+        # Total working hours this month
+        agg = Attendance.objects.filter(emp_code=emp_code, date__year=y, date__month=m).aggregate(
+            tot=Sum('total_working_hours'), ot=Sum('over_time'))
+        hours_this_month = float(agg['tot'] or 0) + float(agg['ot'] or 0)
+        # All-time total working hours (from joining)
+        agg_all = Attendance.objects.filter(emp_code=emp_code).aggregate(tot=Sum('total_working_hours'), ot=Sum('over_time'))
+        total_hours_all = float(agg_all['tot'] or 0) + float(agg_all['ot'] or 0)
+        # Bonus hours this month + all-time (from Salary.bonus)
+        sal_this = Salary.objects.filter(emp_code=emp_code, year=y, month=m).first()
+        bonus_hrs_month = float(sal_this.bonus) if sal_this else 0
+        bonus_hrs_all = float(Salary.objects.filter(emp_code=emp_code).aggregate(s=Sum('bonus'))['s'] or 0)
+        # Bonus in Rs: use base_salary to get hourly rate (monthly/208, hourly=base_salary)
+        base = float(emp.base_salary or 0)
+        if (emp.salary_type or '').strip().lower() == 'hourly':
+            hourly_rate = base
+        else:
+            hourly_rate = base / 208 if base else 0
+        bonus_rs_month = round(bonus_hrs_month * hourly_rate, 2)
+        bonus_rs_all = round(bonus_hrs_all * hourly_rate, 2)
+        # Today's work hours (for hero display) and punch times (for live counter)
+        today_row = Attendance.objects.filter(emp_code=emp_code, date=today).values('punch_in', 'punch_out', 'total_working_hours', 'over_time').first()
+        if today_row:
+            tot = float(today_row.get('total_working_hours') or 0) + float(today_row.get('over_time') or 0)
+            hours_today = tot
+            today_punch_in = today_row.get('punch_in')
+            today_punch_out = today_row.get('punch_out')
+        else:
+            hours_today = 0.0
+            today_punch_in = None
+            today_punch_out = None
+        # Daily hours this month (for chart: date -> hours)
+        first_day = date(y, m, 1)
+        last_day = (first_day.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+        daily_qs = Attendance.objects.filter(
+            emp_code=emp_code, date__year=y, date__month=m
+        ).values('date').annotate(tot=Sum('total_working_hours'), ot=Sum('over_time')).order_by('date')
+        daily_map = {}
+        for row in daily_qs:
+            h = float(row['tot'] or 0) + float(row['ot'] or 0)
+            daily_map[str(row['date'])] = round(h, 2)
+        daily_hours = []
+        for i in range(1, last_day.day + 1):
+            d = date(y, m, i)
+            key = d.isoformat()
+            daily_hours.append({'date': key, 'day': i, 'hours': daily_map.get(key, 0)})
+        # Daily status for calendar: date -> status (Present, Absent, Half-Day, FD, etc.)
+        status_qs = Attendance.objects.filter(
+            emp_code=emp_code, date__year=y, date__month=m
+        ).values_list('date', 'status')
+        status_map = {str(d): s for d, s in status_qs}
+        daily_status = []
+        for i in range(1, last_day.day + 1):
+            d = date(y, m, i)
+            key = d.isoformat()
+            daily_status.append({'date': key, 'day': i, 'status': status_map.get(key)})
+        # Serialize punch times for live "today's work time" on dashboard (HH:mm or HH:mm:ss)
+        def _time_to_str(t):
+            if t is None:
+                return None
+            s = str(t)
+            return s[:5] if len(s) >= 5 else s  # "HH:mm"
+        return Response({
+            'days_this_month': days_this_month,
+            'hours_this_month': round(hours_this_month, 2),
+            'total_hours_all': round(total_hours_all, 2),
+            'bonus_hours_this_month': round(bonus_hrs_month, 2),
+            'bonus_hours_all': round(bonus_hrs_all, 2),
+            'bonus_rs_this_month': bonus_rs_month,
+            'bonus_rs_all': bonus_rs_all,
+            'hours_today': round(hours_today, 2),
+            'today_punch_in': _time_to_str(today_punch_in),
+            'today_punch_out': _time_to_str(today_punch_out),
+            'daily_hours': daily_hours,
+            'daily_status': daily_status,
+        })
+
+
+class EmployeeAttendanceListView(APIView):
+    """GET: list attendance for logged-in employee. Params: month, year."""
+    def get(self, request):
+        emp_code, emp = _require_employee(request)
+        if not emp:
+            return Response({'error': 'Not allowed'}, status=403)
+        month = request.query_params.get('month', '').strip()
+        year = request.query_params.get('year', '').strip()
+        if not year:
+            year = timezone.localdate().year
+        if not month:
+            month = timezone.localdate().month
         try:
-            Admin.objects.get(pk=admin_id)
-        except Admin.DoesNotExist:
-            return Response({'error': 'Admin no longer exists'}, status=401)
-        access = encode_access(admin_id)
-        return Response({'access': access})
+            y, m = int(year), int(month)
+        except ValueError:
+            return Response({'error': 'Invalid month/year'}, status=400)
+        qs = Attendance.objects.filter(emp_code=emp_code, date__year=y, date__month=m).order_by('-date')
+        data = AttendanceSerializer(qs, many=True).data
+        return Response(data)
+
+
+class EmployeeSelfProfileView(APIView):
+    """GET: full employee profile (read-only) for logged-in employee."""
+    def get(self, request):
+        emp_code, emp = _require_employee(request)
+        if not emp:
+            return Response({'error': 'Not allowed'}, status=403)
+        return Response(EmployeeSerializer(emp).data)
+
+
+class EmployeeSalarySummaryView(APIView):
+    """GET: monthly salary summary for logged-in employee. Params: month, year."""
+    def get(self, request):
+        emp_code, emp = _require_employee(request)
+        if not emp:
+            return Response({'error': 'Not allowed'}, status=403)
+        year = request.query_params.get('year', '').strip()
+        month = request.query_params.get('month', '').strip()
+        today = timezone.localdate()
+        y = int(year) if year else today.year
+        m = int(month) if month else today.month
+        sal = Salary.objects.filter(emp_code=emp_code, year=y, month=m).first()
+        advance = SalaryAdvance.objects.filter(emp_code=emp_code, year=y, month=m).aggregate(s=Sum('amount'))['s'] or Decimal('0')
+        penalty = Penalty.objects.filter(emp_code=emp_code, year=y, month=m).aggregate(s=Sum('deduction_amount'))['s'] or Decimal('0')
+        base_sal = float(sal.base_salary if sal else (emp.base_salary or 0))
+        salary_type = (emp.salary_type or '').strip() or 'Monthly'
+        hourly_rate = base_sal / 208 if salary_type.lower() != 'hourly' else base_sal
+        bonus_hrs = float(sal.bonus) if sal else 0
+        bonus_rs = round(bonus_hrs * hourly_rate, 2)
+        if not sal:
+            return Response({
+                'month': m, 'year': y,
+                'salary_type': salary_type,
+                'days_present': 0, 'total_working_hours': 0, 'overtime_hours': 0, 'bonus': 0, 'bonus_rs': 0,
+                'advance_total': str(advance), 'penalty_total': str(penalty),
+                'base_salary': str(emp.base_salary or 0),
+                'earned_before_bonus': '0', 'gross_salary': '0', 'amount_to_be_paid': '0',
+            })
+        total_hrs = float(sal.total_working_hours or 0)
+        ot_hrs = float(sal.overtime_hours or 0)
+        bonus = float(sal.bonus or 0)
+        gross, hr_rate = _gross_and_rate(salary_type, sal.base_salary, total_hrs, ot_hrs, bonus)
+        # Earned from hours only (before adding bonus): Hourly = hrs×rate, Monthly/Fixed = base
+        if salary_type.strip().lower() == 'hourly':
+            earned_before_bonus = Decimal(str(total_hrs)) * Decimal(str(hr_rate))
+        else:
+            earned_before_bonus = Decimal(str(sal.base_salary or 0))
+        amount_to_be_paid = gross - advance - penalty
+        return Response({
+            'month': m, 'year': y,
+            'salary_type': salary_type,
+            'days_present': sal.days_present, 'total_working_hours': total_hrs,
+            'overtime_hours': ot_hrs, 'bonus': bonus, 'bonus_rs': bonus_rs,
+            'advance_total': str(advance), 'penalty_total': str(penalty),
+            'base_salary': str(sal.base_salary),
+            'earned_before_bonus': str(round(earned_before_bonus, 2)),
+            'gross_salary': str(round(gross, 2)),
+            'amount_to_be_paid': str(round(amount_to_be_paid, 2)),
+        })
+
+
+class EmployeeLeaveRequestListCreateView(APIView):
+    """GET: list my leave requests. POST: create leave request (from_date, to_date, reason)."""
+    def get(self, request):
+        emp_code, emp = _require_employee(request)
+        if not emp:
+            return Response({'error': 'Not allowed'}, status=403)
+        from .serializers import LeaveRequestSerializer
+        qs = LeaveRequest.objects.filter(emp_code=emp_code).order_by('-requested_at')
+        return Response(LeaveRequestSerializer(qs, many=True).data)
+
+    def post(self, request):
+        emp_code, emp = _require_employee(request)
+        if not emp:
+            return Response({'error': 'Not allowed'}, status=403)
+        from_date = request.data.get('from_date')
+        to_date = request.data.get('to_date')
+        reason = (request.data.get('reason') or '').strip()
+        if not from_date or not to_date:
+            return Response({'error': 'from_date and to_date required'}, status=400)
+        try:
+            fd = date.fromisoformat(str(from_date))
+            td = date.fromisoformat(str(to_date))
+        except (TypeError, ValueError):
+            return Response({'error': 'Invalid date format'}, status=400)
+        if fd > td:
+            return Response({'error': 'from_date must be before or equal to to_date'}, status=400)
+        leave_type = (request.data.get('leave_type') or '').strip() or LeaveRequest.LEAVE_TYPE_CASUAL
+        if leave_type not in [c[0] for c in LeaveRequest.LEAVE_TYPE_CHOICES]:
+            leave_type = LeaveRequest.LEAVE_TYPE_CASUAL
+        obj = LeaveRequest.objects.create(
+            emp_code=emp_code,
+            leave_type=leave_type,
+            from_date=fd,
+            to_date=td,
+            reason=reason[:2000],
+            dept_name=emp.dept_name or '',
+            status=LeaveRequest.STATUS_PENDING,
+        )
+        from .serializers import LeaveRequestSerializer
+        return Response(LeaveRequestSerializer(obj).data, status=201)
+
+
+def _get_leave_allowance(key, default):
+    """Get int value from SystemSetting for leave allowance (e.g. casual_allowance_per_year)."""
+    try:
+        obj = SystemSetting.objects.get(key=key)
+        return int(obj.value) if obj.value else default
+    except (SystemSetting.DoesNotExist, ValueError):
+        return default
+
+
+class EmployeeLeaveBalanceView(APIView):
+    """GET: leave balance by type (casual/sick/earned) and full leave history for logged-in employee."""
+    def get(self, request):
+        emp_code, emp = _require_employee(request)
+        if not emp:
+            return Response({'error': 'Not allowed'}, status=403)
+        from .serializers import LeaveRequestSerializer
+        today = timezone.localdate()
+        year = today.year
+        # Use employee-specific allowances when set, else system default
+        def _emp_allowance(emp_attr, setting_key, default):
+            val = getattr(emp, emp_attr, None)
+            if val is not None:
+                return int(val)
+            return _get_leave_allowance(setting_key, default)
+        allowances = {
+            'casual': _emp_allowance('casual_allowance_per_year', 'casual_allowance_per_year', 12),
+            'sick': _emp_allowance('sick_allowance_per_year', 'sick_allowance_per_year', 6),
+            'earned': _emp_allowance('earned_allowance_per_year', 'earned_allowance_per_year', 0),
+        }
+        # Approved days taken this year per leave_type
+        taken = {'casual': 0, 'sick': 0, 'earned': 0, 'other': 0}
+        qs_approved = LeaveRequest.objects.filter(
+            emp_code=emp_code, status=LeaveRequest.STATUS_APPROVED,
+            from_date__year=year, to_date__year=year,
+        )
+        for lr in qs_approved:
+            days = (lr.to_date - lr.from_date).days + 1
+            lt = lr.leave_type or 'casual'
+            taken[lt] = taken.get(lt, 0) + days
+        balance = {}
+        for lt, allowance in allowances.items():
+            balance[lt] = {
+                'allowance': allowance,
+                'taken': taken.get(lt, 0),
+                'balance': max(0, allowance - taken.get(lt, 0)),
+            }
+        balance['other'] = {'allowance': 0, 'taken': taken.get('other', 0), 'balance': 0}
+        history = LeaveRequest.objects.filter(emp_code=emp_code).order_by('-requested_at')
+        return Response({
+            'balance': balance,
+            'history': LeaveRequestSerializer(history, many=True).data,
+        })
+
+
+class EmployeeChangePasswordView(APIView):
+    """POST { current_password, new_password }. Change logged-in employee password."""
+    def post(self, request):
+        emp_code, emp = _require_employee(request)
+        if not emp:
+            return Response({'error': 'Not allowed'}, status=403)
+        current = (request.data.get('current_password') or '').strip()
+        new_pw = (request.data.get('new_password') or '').strip()
+        if not current:
+            return Response({'error': 'Current password is required'}, status=400)
+        if not new_pw:
+            return Response({'error': 'New password is required'}, status=400)
+        if len(new_pw) < 6:
+            return Response({'error': 'New password must be at least 6 characters'}, status=400)
+        if not emp.password or emp.password != current:
+            return Response({'error': 'Current password is incorrect'}, status=400)
+        emp.password = new_pw
+        emp.save(update_fields=['password'])
+        return Response({'message': 'Password updated successfully'})
+
+
+def _employee_payslip_data(emp_code, emp, y, m):
+    """Return dict of salary summary for payslip (same logic as EmployeeSalarySummaryView)."""
+    sal = Salary.objects.filter(emp_code=emp_code, year=y, month=m).first()
+    advance = SalaryAdvance.objects.filter(emp_code=emp_code, year=y, month=m).aggregate(s=Sum('amount'))['s'] or Decimal('0')
+    penalty = Penalty.objects.filter(emp_code=emp_code, year=y, month=m).aggregate(s=Sum('deduction_amount'))['s'] or Decimal('0')
+    salary_type = (emp.salary_type or '').strip() or 'Monthly'
+    if not sal:
+        return {
+            'month': m, 'year': y, 'salary_type': salary_type,
+            'days_present': 0, 'total_working_hours': 0, 'overtime_hours': 0, 'bonus': 0, 'bonus_rs': 0,
+            'advance_total': advance, 'penalty_total': penalty, 'base_salary': emp.base_salary or 0,
+            'earned_before_bonus': 0, 'gross_salary': 0, 'amount_to_be_paid': 0,
+        }
+    total_hrs = float(sal.total_working_hours or 0)
+    ot_hrs = float(sal.overtime_hours or 0)
+    bonus = float(sal.bonus or 0)
+    gross, _ = _gross_and_rate(salary_type, sal.base_salary, total_hrs, ot_hrs, bonus)
+    if salary_type.strip().lower() == 'hourly':
+        earned_before_bonus = Decimal(str(total_hrs)) * Decimal(str(sal.base_salary or 0))
+    else:
+        earned_before_bonus = Decimal(str(sal.base_salary or 0))
+    amount_to_be_paid = gross - advance - penalty
+    base_sal = float(sal.base_salary or 0)
+    hourly_rate = base_sal / 208 if salary_type.lower() != 'hourly' else base_sal
+    bonus_rs = round(float(sal.bonus or 0) * hourly_rate, 2)
+    return {
+        'month': m, 'year': y, 'salary_type': salary_type,
+        'days_present': sal.days_present, 'total_working_hours': total_hrs, 'overtime_hours': ot_hrs,
+        'bonus': bonus, 'bonus_rs': bonus_rs, 'advance_total': advance, 'penalty_total': penalty,
+        'base_salary': sal.base_salary, 'earned_before_bonus': earned_before_bonus,
+        'gross_salary': round(gross, 2), 'amount_to_be_paid': round(amount_to_be_paid, 2),
+    }
+
+
+class EmployeePayslipPDFView(APIView):
+    """GET: download payslip PDF for logged-in employee. Params: month, year."""
+    def get(self, request):
+        emp_code, emp = _require_employee(request)
+        if not emp:
+            return Response({'error': 'Not allowed'}, status=403)
+        year = request.query_params.get('year', '').strip()
+        month = request.query_params.get('month', '').strip()
+        today = timezone.localdate()
+        y = int(year) if year else today.year
+        m = int(month) if month else today.month
+        data = _employee_payslip_data(emp_code, emp, y, m)
+        from django.http import HttpResponse
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.units import mm
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib import colors
+        import io
+        buf = io.BytesIO()
+        doc = SimpleDocTemplate(buf, pagesize=A4, rightMargin=20*mm, leftMargin=20*mm, topMargin=15*mm, bottomMargin=15*mm)
+        styles = getSampleStyleSheet()
+        title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=16, spaceAfter=6)
+        normal = styles['Normal']
+        company_name = emp.company.name if emp.company_id else 'Company'
+        month_name = date(y, m, 1).strftime('%B %Y')
+        story = [
+            Paragraph('Payslip', title_style),
+            Paragraph(company_name, normal),
+            Spacer(1, 8*mm),
+            Paragraph(f'<b>Employee:</b> {emp.name or emp_code}', normal),
+            Paragraph(f'<b>Code:</b> {emp_code} &nbsp; <b>Period:</b> {month_name}', normal),
+            Spacer(1, 6*mm),
+        ]
+        # Use "Rs" instead of rupee symbol so PDF font (Helvetica) renders correctly
+        def _amt(v):
+            return f"Rs {float(v):.2f}"
+        rows = [
+            ['Earned (from hours)', _amt(data.get('earned_before_bonus', 0))],
+            ['Bonus (Rs)', _amt(data.get('bonus_rs', 0))],
+            ['Gross salary', _amt(data.get('gross_salary', 0))],
+            ['Advance (deduction)', '- ' + _amt(data.get('advance_total', 0))],
+            ['Penalty (deduction)', '- ' + _amt(data.get('penalty_total', 0))],
+        ]
+        t = Table(rows, colWidths=[100*mm, 50*mm])
+        t.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('LINEABOVE', (0, 0), (-1, 0), 0.5, colors.grey),
+            ('LINEBELOW', (0, -1), (-1, -1), 1, colors.black),
+            ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+        ]))
+        story.append(t)
+        story.append(Spacer(1, 4*mm))
+        story.append(Paragraph(f'<b>Amount to be paid (final):</b> Rs {float(data.get("amount_to_be_paid", 0)):.2f}', normal))
+        doc.build(story)
+        buf.seek(0)
+        response = HttpResponse(buf.getvalue(), content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="payslip_{emp_code}_{y}_{m:02d}.pdf"'
+        return response
+
+
+class EmployeeMyRewardsView(APIView):
+    """GET: my rewards list and optional rank for logged-in employee (read-only)."""
+    def get(self, request):
+        emp_code, emp = _require_employee(request)
+        if not emp:
+            return Response({'error': 'Not allowed'}, status=403)
+        rewards = PerformanceReward.objects.filter(emp_code=emp_code).order_by('-created_at')[:50]
+        reward_list = list(rewards.values('id', 'emp_code', 'entry_type', 'trigger_reason', 'metric_data', 'is_on_leaderboard', 'admin_action_status', 'created_at'))
+        for r in reward_list:
+            r['created_at'] = r['created_at'].isoformat() if hasattr(r['created_at'], 'isoformat') else str(r['created_at'])
+        today = timezone.localdate()
+        year, month = today.year, today.month
+        from calendar import monthrange
+        _, last_day = monthrange(year, month)
+        month_start = date(year, month, 1)
+        month_end = date(year, month, last_day)
+        rewards_this_month = PerformanceReward.objects.filter(
+            is_on_leaderboard=True, entry_type='REWARD',
+            created_at__date__gte=month_start, created_at__date__lte=month_end,
+        ).order_by('-created_at').values_list('emp_code', flat=True)
+        seen = set()
+        rank_list = []
+        for ec in rewards_this_month:
+            if ec not in seen:
+                seen.add(ec)
+                rank_list.append(ec)
+        my_rank = None
+        if emp_code in rank_list:
+            my_rank = rank_list.index(emp_code) + 1
+        return Response({
+            'rewards': reward_list,
+            'my_rank_this_month': my_rank,
+            'total_on_leaderboard_this_month': len(rank_list),
+        })
+
+
+class EmployeePenaltyListView(APIView):
+    """GET: list penalties for logged-in employee. Params: month, year. Returns list + total_fine_month."""
+    def get(self, request):
+        emp_code, emp = _require_employee(request)
+        if not emp:
+            return Response({'error': 'Not allowed'}, status=403)
+        month = request.query_params.get('month', '').strip()
+        year = request.query_params.get('year', '').strip()
+        today = timezone.localdate()
+        y = int(year) if year else today.year
+        m = int(month) if month else today.month
+        qs = Penalty.objects.filter(emp_code=emp_code, year=y, month=m).order_by('-date')
+        total = qs.aggregate(s=Sum('deduction_amount'))['s'] or Decimal('0')
+        # Attach inquiry status per penalty
+        inquiry_map = {i.penalty_id: i.status for i in PenaltyInquiry.objects.filter(penalty__in=qs).values('penalty_id', 'status')}
+        data = []
+        for p in qs:
+            d = {
+                'id': p.id, 'date': str(p.date), 'month': p.month, 'year': p.year,
+                'minutes_late': p.minutes_late, 'deduction_amount': str(p.deduction_amount),
+                'description': p.description or '', 'is_manual': p.is_manual,
+                'inquiry_status': inquiry_map.get(p.id),
+            }
+            data.append(d)
+        return Response({'list': data, 'total_fine_month': str(total)})
+
+
+class EmployeePenaltyInquiryCreateView(APIView):
+    """POST: create inquiry for a penalty (penalty_id, message). One open inquiry per penalty."""
+    def post(self, request):
+        emp_code, emp = _require_employee(request)
+        if not emp:
+            return Response({'error': 'Not allowed'}, status=403)
+        penalty_id = request.data.get('penalty_id')
+        message = (request.data.get('message') or '').strip()[:2000]
+        if not penalty_id:
+            return Response({'error': 'penalty_id required'}, status=400)
+        try:
+            pen = Penalty.objects.get(pk=penalty_id)
+        except (ValueError, Penalty.DoesNotExist):
+            return Response({'error': 'Penalty not found'}, status=404)
+        if pen.emp_code != emp_code:
+            return Response({'error': 'Not allowed'}, status=403)
+        if PenaltyInquiry.objects.filter(penalty=pen, status=PenaltyInquiry.STATUS_OPEN).exists():
+            return Response({'error': 'An open inquiry already exists for this penalty'}, status=400)
+        obj = PenaltyInquiry.objects.create(penalty=pen, emp_code=emp_code, message=message, status=PenaltyInquiry.STATUS_OPEN)
+        from .serializers import PenaltyInquirySerializer
+        return Response(PenaltyInquirySerializer(obj).data, status=201)
+
+
+# ---------- Admin: Leave requests (list, approve/decline) ----------
+def _admin_leave_balance_for_employee(emp_code, leave_type_key, year):
+    """Return (allowance, days_taken, balance) for this employee and leave type for the year."""
+    try:
+        emp = Employee.objects.get(emp_code=emp_code)
+    except Employee.DoesNotExist:
+        return 0, 0, 0
+    default = 12 if leave_type_key == 'casual' else 6 if leave_type_key == 'sick' else 0
+    emp_val = getattr(emp, f'{leave_type_key}_allowance_per_year', None)
+    allowance = int(emp_val) if emp_val is not None else _get_leave_allowance(f'{leave_type_key}_allowance_per_year', default)
+    days_taken = 0
+    for lr in LeaveRequest.objects.filter(emp_code=emp_code, status=LeaveRequest.STATUS_APPROVED, from_date__year=year, to_date__year=year, leave_type=leave_type_key):
+        days_taken += (lr.to_date - lr.from_date).days + 1
+    balance = max(0, allowance - days_taken)
+    return allowance, days_taken, balance
+
+
+class LeaveRequestAdminListView(APIView):
+    """GET: list leave requests. Filters: status, department, emp_code. Admin only; filtered by company/department."""
+    def get(self, request):
+        admin, allowed_emp_codes = get_request_admin(request)
+        if not admin:
+            return Response({'error': 'Not allowed'}, status=403)
+        qs = LeaveRequest.objects.all().order_by('-requested_at')
+        if allowed_emp_codes is not None:
+            qs = qs.filter(emp_code__in=allowed_emp_codes) if allowed_emp_codes else qs.none()
+        status_filter = request.query_params.get('status', '').strip()
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        dept = request.query_params.get('department', '').strip()
+        if dept:
+            qs = qs.filter(dept_name=dept)
+        emp = request.query_params.get('emp_code', '').strip()
+        if emp:
+            qs = qs.filter(emp_code__icontains=emp)
+        from .serializers import LeaveRequestSerializer
+        data = LeaveRequestSerializer(qs, many=True).data
+        today = timezone.localdate()
+        year = today.year
+        emp_codes = list({r['emp_code'] for r in data})
+        name_map = dict(Employee.objects.filter(emp_code__in=emp_codes).values_list('emp_code', 'name'))
+        for r in data:
+            r['employee_name'] = name_map.get(r['emp_code']) or r['emp_code']
+            from_d = r.get('from_date')
+            to_d = r.get('to_date')
+            if from_d and to_d:
+                try:
+                    fd = date.fromisoformat(str(from_d))
+                    td = date.fromisoformat(str(to_d))
+                    r['days_requested'] = (td - fd).days + 1
+                except (TypeError, ValueError):
+                    r['days_requested'] = None
+            else:
+                r['days_requested'] = None
+            lt = (r.get('leave_type') or 'casual').strip() or 'casual'
+            allowance, days_taken, balance = _admin_leave_balance_for_employee(r['emp_code'], lt, year)
+            r['leave_allowance'] = allowance
+            r['leave_taken'] = days_taken
+            r['leave_balance'] = balance
+        return Response(data)
+
+
+class LeaveRequestAdminDetailView(APIView):
+    """PATCH: set status (approved/declined), admin_notes. Admin only."""
+    def patch(self, request, pk):
+        admin, allowed_emp_codes = get_request_admin(request)
+        if not admin:
+            return Response({'error': 'Not allowed'}, status=403)
+        try:
+            lr = LeaveRequest.objects.get(pk=pk)
+        except LeaveRequest.DoesNotExist:
+            return Response({'error': 'Not found'}, status=404)
+        if allowed_emp_codes is not None and lr.emp_code not in allowed_emp_codes:
+            return Response({'error': 'Not allowed'}, status=403)
+        status = request.data.get('status', '').strip().lower()
+        if status in ('approved', 'declined'):
+            lr.status = status
+            lr.reviewed_at = timezone.now()
+            lr.reviewed_by = admin
+            lr.admin_notes = (request.data.get('admin_notes') or '')[:2000]
+            lr.save()
+        from .serializers import LeaveRequestSerializer
+        return Response(LeaveRequestSerializer(lr).data)
+
+
+# ---------- Admin: Penalty inquiries (list, resolve) ----------
+class PenaltyInquiryAdminListView(APIView):
+    """GET: list penalty inquiries. Filters: status. Admin only; filtered by allowed_emp_codes."""
+    def get(self, request):
+        admin, allowed_emp_codes = get_request_admin(request)
+        if not admin:
+            return Response({'error': 'Not allowed'}, status=403)
+        qs = PenaltyInquiry.objects.select_related('penalty').all().order_by('-created_at')
+        if allowed_emp_codes is not None:
+            qs = qs.filter(emp_code__in=allowed_emp_codes) if allowed_emp_codes else qs.none()
+        status_filter = request.query_params.get('status', '').strip()
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        out = []
+        for i in qs:
+            out.append({
+                'id': i.id, 'penalty_id': i.penalty_id, 'emp_code': i.emp_code,
+                'penalty_date': str(i.penalty.date), 'deduction_amount': str(i.penalty.deduction_amount),
+                'message': i.message, 'status': i.status, 'admin_notes': i.admin_notes,
+                'reviewed_at': i.reviewed_at.isoformat() if i.reviewed_at else None,
+                'created_at': i.created_at.isoformat(),
+            })
+        return Response(out)
+
+
+class PenaltyInquiryAdminDetailView(APIView):
+    """PATCH: set status (approved/rejected/amount_adjusted), admin_notes. If amount_adjusted, can send new amount to update Penalty."""
+    def patch(self, request, pk):
+        admin, allowed_emp_codes = get_request_admin(request)
+        if not admin:
+            return Response({'error': 'Not allowed'}, status=403)
+        try:
+            inquiry = PenaltyInquiry.objects.get(pk=pk)
+        except PenaltyInquiry.DoesNotExist:
+            return Response({'error': 'Not found'}, status=404)
+        if allowed_emp_codes is not None and inquiry.emp_code not in allowed_emp_codes:
+            return Response({'error': 'Not allowed'}, status=403)
+        status = request.data.get('status', '').strip().lower()
+        if status not in ('approved', 'rejected', 'amount_adjusted'):
+            return Response({'error': 'status must be approved, rejected, or amount_adjusted'}, status=400)
+        inquiry.status = status
+        inquiry.reviewed_at = timezone.now()
+        inquiry.reviewed_by = admin
+        inquiry.admin_notes = (request.data.get('admin_notes') or '')[:2000]
+        inquiry.save()
+        if status == 'amount_adjusted':
+            new_amount = request.data.get('deduction_amount')
+            if new_amount is not None:
+                try:
+                    amt = Decimal(str(new_amount))
+                    if amt >= 0:
+                        inquiry.penalty.deduction_amount = amt
+                        inquiry.penalty.save(update_fields=['deduction_amount'])
+                except Exception:
+                    pass
+        from .serializers import PenaltyInquirySerializer
+        return Response(PenaltyInquirySerializer(inquiry).data)
 
 
 # ---------- Admin profile (for settings page) ----------
@@ -435,6 +1142,9 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         return response
 
     def perform_create(self, serializer):
+        admin, _ = get_request_admin(self.request)
+        if admin and getattr(admin, 'company_id', None):
+            serializer.validated_data['company_id'] = admin.company_id
         serializer.save()
         obj = serializer.instance
         log_activity(self.request, 'create', 'employees', 'employee', obj.emp_code, details={'name': obj.name})
@@ -577,6 +1287,36 @@ class HolidayViewSet(viewsets.ModelViewSet):
     serializer_class = HolidaySerializer
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['year']
+
+    def list(self, request, *args, **kwargs):
+        response = super().list(request, *args, **kwargs)
+        data = response.data
+        results = data.get('results') if isinstance(data, dict) else None
+        if results is not None:
+            data_list = results
+        else:
+            data_list = data if isinstance(data, list) else []
+        try:
+            year = int(request.query_params.get('year', date.today().year))
+        except ValueError:
+            year = date.today().year
+        existing_dates = {str(item.get('date')) for item in data_list}
+        d = date(year, 1, 1)
+        end = date(year, 12, 31)
+        while d <= end:
+            if d.weekday() == 6:
+                key = d.isoformat()
+                if key not in existing_dates:
+                    data_list.append({
+                        'id': None, 'date': key, 'name': 'Sunday (Weekly off)',
+                        'year': year, 'created_at': None,
+                    })
+                    existing_dates.add(key)
+            d += timedelta(days=1)
+        data_list.sort(key=lambda x: x.get('date') or '')
+        if results is not None:
+            response.data['count'] = len(data_list)
+        return response
 
     def perform_create(self, serializer):
         serializer.save()
@@ -1000,10 +1740,10 @@ class AttendanceAdjustView(APIView):
         minutes_late = _minutes_late(att.punch_in, shift_start) if att.punch_in else 0
         penalty_note = None
         if minutes_late > 0:
-            if salary_type.lower() == 'hourly':
+            if salary_type.lower() in ('hourly', 'monthly'):
                 penalty_note = f'Late-coming penalty applied ({minutes_late} min late). Check Penalty page.'
             else:
-                penalty_note = f'No automatic penalty: only Hourly employees get late penalty. This employee is {salary_type}.'
+                penalty_note = f'No automatic penalty: only Hourly/Monthly get late penalty. This employee is {salary_type}.'
         response_data = {
             'success': True,
             'attendance': AttendanceSerializer(att).data,
@@ -1081,13 +1821,14 @@ class DashboardView(APIView):
         })
 
 
-# ---------- Salary: bonus = hours for ALL types; bonus money = bonus_hours × hourly_rate ----------
-# Hourly: hourly_rate = base_salary. Monthly/Fixed: hourly_rate = base_salary/208 (26 days × 8 h).
+# ---------- Salary gross logic ----------
+# Hourly: (total_working_hours + bonus_hours) × per_hour_rate. OT → bonus hours.
+# Monthly: base_salary + (bonus_hours × hourly_rate). hourly_rate = base/208.
+# Fixed: base_salary + (bonus_hours × hourly_rate). Bonus only when given by admin/leaderboard etc.
 def _gross_and_rate(salary_type, base_salary, total_working_hours, overtime_hours, bonus_hours):
-    """Bonus is always stored as HOURS. Returns (gross, hourly_rate). Bonus money = bonus_hours × hourly_rate."""
+    """Returns (gross, hourly_rate). bonus_hours is stored in Salary.bonus."""
     base = Decimal(str(base_salary or 0))
     total_hrs = Decimal(str(total_working_hours or 0))
-    ot_hrs = Decimal(str(overtime_hours or 0))
     bonus = Decimal(str(bonus_hours or 0))
     st = (salary_type or '').strip()
     if st == 'Hourly':
@@ -1098,9 +1839,9 @@ def _gross_and_rate(salary_type, base_salary, total_working_hours, overtime_hour
         hourly_rate = base / Decimal('208') if base else Decimal('0')
         gross = base + (bonus * hourly_rate)
         return (gross, hourly_rate)
-    # Monthly: proportional by hours + bonus hours at same rate
+    # Monthly: full monthly + bonus hours at hourly rate
     hourly_rate = base / Decimal('208') if base else Decimal('0')
-    gross = (total_hrs + ot_hrs + bonus) * hourly_rate
+    gross = base + (bonus * hourly_rate)
     return (gross, hourly_rate)
 
 
@@ -1458,6 +2199,13 @@ class BonusOverviewView(APIView):
         year = int(request.query_params.get('year', today.year))
         search = request.query_params.get('search', '').strip()
 
+        # Past months (e.g. January): backfill shift OT so bonus is counted
+        if (year, month) < (today.year, today.month):
+            try:
+                from .shift_bonus import backfill_shift_overtime_bonus_for_month
+                backfill_shift_overtime_bonus_for_month(year, month)
+            except Exception:
+                pass
         from .salary_logic import ensure_monthly_salaries
         ensure_monthly_salaries(year, month)
 
@@ -2216,10 +2964,34 @@ class EmployeeProfileView(APIView):
             )
             row['gross_salary'] = str(round(gross, 2))
             row['net_pay'] = str(round(gross - advance_total - penalty_total, 2))
+        # Calendar + stats for current month (same as employee dashboard)
+        today = timezone.localdate()
+        y, m = today.year, today.month
+        first_day = date(y, m, 1)
+        last_day = (first_day.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+        days_this_month = Attendance.objects.filter(
+            emp_code=emp_code, date__year=y, date__month=m, status='Present'
+        ).count()
+        agg = Attendance.objects.filter(
+            emp_code=emp_code, date__year=y, date__month=m
+        ).aggregate(tot=Sum('total_working_hours'), ot=Sum('over_time'))
+        hours_this_month = float(agg['tot'] or 0) + float(agg['ot'] or 0)
+        status_qs = Attendance.objects.filter(
+            emp_code=emp_code, date__year=y, date__month=m
+        ).values_list('date', 'status')
+        status_map = {str(d): s for d, s in status_qs}
+        daily_status = []
+        for i in range(1, last_day.day + 1):
+            d = date(y, m, i)
+            key = d.isoformat()
+            daily_status.append({'date': key, 'day': i, 'status': status_map.get(key)})
         return Response({
             'employee': EmployeeSerializer(emp).data,
             'attendance': AttendanceSerializer(att_list, many=True).data,
             'rewards': PerformanceRewardSerializer(rewards, many=True).data,
             'adjustments': AdjustmentSerializer(adjustments, many=True).data,
             'salaries': sal_list,
+            'daily_status': daily_status,
+            'days_this_month': days_this_month,
+            'hours_this_month': round(hours_this_month, 2),
         })

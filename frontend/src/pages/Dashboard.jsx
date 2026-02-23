@@ -3,10 +3,22 @@ import { Link } from 'react-router-dom'
 import { dashboard } from '../api'
 import './Dashboard.css'
 
+function getAdminName() {
+  try {
+    const stored = localStorage.getItem('hr_admin')
+    if (stored) {
+      const o = JSON.parse(stored)
+      return o.name || ''
+    }
+  } catch (_) {}
+  return ''
+}
+
 export default function Dashboard() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState('')
+  const adminName = getAdminName()
 
   useEffect(() => {
     dashboard()
@@ -42,7 +54,7 @@ export default function Dashboard() {
     <div className="pageContent dashboard">
       <div className="dashboardWelcome card">
         <div className="welcomeContent">
-          <h2 className="welcomeTitle">Welcome back</h2>
+          <h2 className="welcomeTitle">Welcome back{adminName ? `, ${adminName}` : ''}</h2>
           <p className="welcomeSub">Here is what is happening with attendance and your team today.</p>
         </div>
         <div className="welcomeMeta">

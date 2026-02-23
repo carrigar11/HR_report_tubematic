@@ -1,0 +1,129 @@
+/* Salary Summary — full-width layout, no right gap */
+.salSummaryPage {
+  width: 100%;
+}
+
+.salSummaryTop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.salSummaryFilters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem;
+}
+
+.salSummaryFilterGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.salSummaryFilterGroup .label {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--textMuted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.salSummaryFilterGroup .input,
+.salSummaryFilterGroup select {
+  min-width: 130px;
+}
+
+.salSummaryMonthHeading {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+}
+
+.salSummaryCards {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.25rem;
+}
+
+@media (min-width: 600px) {
+  .salSummaryCards {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.salSummaryCard {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.35rem 1.5rem;
+  min-width: 0;
+}
+
+.salSummaryCardTitle {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--textMuted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 1rem 0;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.salSummaryRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 0.5rem 0;
+  gap: 1rem;
+}
+
+.salSummaryRow:not(:last-child) {
+  border-bottom: 1px solid var(--border);
+}
+
+.salSummaryRowLabel {
+  font-size: 0.88rem;
+  color: var(--textMuted);
+}
+
+.salSummaryRowValue {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.salSummaryRowValue.highlight {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.salSummaryRowValue.deduction {
+  color: #f87171;
+}
+
+.salSummarySubtotal {
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+  font-weight: 500;
+}
+
+.salSummaryNetRow {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 2px solid var(--border);
+}
+
+.salSummaryLoading,
+.salSummaryError {
+  padding: 2rem;
+  text-align: center;
+  color: var(--textMuted);
+}

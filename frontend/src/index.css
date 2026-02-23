@@ -230,3 +230,30 @@ tbody tr:hover {
   margin: 0 auto;
   min-width: 0; /* prevent flex overflow from causing horizontal scroll */
 }
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+
+.modalContent {
+  max-width: 420px;
+  width: 100%;
+}
+
+.statusBadge {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+}
+
+.statusBadge.statuspending { background: rgba(234, 179, 8, 0.2); color: var(--warn); }
+.statusBadge.statusapproved { background: rgba(34, 197, 94, 0.2); color: var(--accent); }
+.statusBadge.statusdeclined { background: rgba(239, 68, 68, 0.2); color: var(--danger); }

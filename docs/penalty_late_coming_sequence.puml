@@ -1,0 +1,117 @@
+@startuml Late-coming penalty – sequence diagram
+title Late-coming penalty (Hourly & Monthly)\n2.5 Rs/min until 300 Rs/month, then 5 Rs/min | Resets 1st of month
+
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+
+|Admin / User|
+start
+:Open Adjustments (Attendance) or\nUpload Attendance Excel;
+
+|#LightBlue|Trigger: Attendance change|
+if (Source?) then (Adjustment API)
+  :POST /api/attendance/adjust/\n(emp_code, date, punch_in, punch_out, reason);
+  |Django View (AttendanceAdjustView)|
+  :Load Attendance(emp_code, date);
+  :Update punch_in, punch_out,\nshift_from, shift_to, total_working_hours, over_time;
+  :att.save();
+  :Adjustment.objects.create(...)\n(audit log);
+  :recalculate_shift_overtime_bonus_for_date(emp_code, adj_date);
+  :**recalculate_late_penalty_for_date**(emp_code, adj_date, attendance=att);
+else (Upload Attendance Excel)
+  :Upload Excel (attendance sheet);
+  |excel_upload|
+  :Parse rows → create/update Attendance;
+  :For each inserted/updated row:;
+  :**recalculate_late_penalty_for_date**(emp_code, date);
+else (Upload Force Punch Excel)
+  :Upload Excel (force punch overwrite);
+  |excel_upload|
+  :Update punch_in, punch_out on existing Attendance;
+  :For each updated row:;
+  :**recalculate_late_penalty_for_date**(emp_code, att_date);
+endif
+
+|#LightGreen|penalty_logic.recalculate_late_penalty_for_date|
+:Entry: recalculate_late_penalty_for_date(emp_code, date, attendance=None);
+
+|Employee (DB)|
+:Employee.objects.filter(emp_code).values('salary_type').first();
+
+|penalty_logic|
+if (emp exists?) then (no)
+  :return (skip);
+  stop
+endif
+if (salary_type in ['hourly','monthly']?) then (no = Fixed or missing)
+  :return (skip);
+  stop
+endif
+
+|Attendance (DB)|
+if (attendance argument provided?) then (yes)
+  :Use provided attendance;
+else (no)
+  :Attendance.objects.filter(emp_code, date).first();
+endif
+
+|penalty_logic|
+if (no att OR no att.punch_in?) then (yes)
+  |Penalty (DB)|
+  :Penalty.objects.filter(emp_code, date, is_manual=False).first();
+  if (existing?) then (yes)
+    :existing.delete();
+  endif
+  :return (no penalty);
+  stop
+endif
+
+:shift_start = att.shift_from or 9:00 AM default;
+:_minutes_late(att.punch_in, shift_start);
+note right
+  punch_minutes - shift_minutes
+  return max(0, ...)
+end note
+
+if (minutes <= 0?) then (yes = on time)
+  |Penalty (DB)|
+  :Penalty.objects.filter(emp_code, date, is_manual=False).first();
+  if (existing?) then (yes)
+    :existing.delete();
+  endif
+  :return (no penalty);
+  stop
+endif
+
+:year, month = date.year, date.month;
+|Penalty (DB)|
+:existing_auto = Penalty.filter(emp_code, date, is_manual=False).first();
+
+|penalty_logic|
+:_monthly_deduction_so_far(emp_code, year, month, exclude_penalty_id=existing_auto);
+note right
+  Sum(deduction_amount) for emp in month
+  excluding current row if updating
+end note
+
+:remaining_at_low = max(0, 300 - deduction_so_far);
+:minutes_at_25 = min(minutes, remaining_at_low / 2.5);
+:minutes_at_5 = minutes - minutes_at_25;
+:deduction = minutes_at_25 * 2.5 + minutes_at_5 * 5;
+:rate_used = 5 if minutes_at_5 > 0 else 2.5;
+:desc = "Late punch: N min after HH:MM — ...";
+
+|Penalty (DB)|
+|transaction.atomic()|
+if (existing_auto?) then (yes)
+  :Update: minutes_late, deduction_amount, rate_used, description, month, year;
+  :existing_auto.save();
+else (no)
+  :Penalty.objects.create(\n  emp_code, date, month, year,\n  minutes_late, deduction_amount, rate_used,\n  description, is_manual=False\n);
+endif
+
+|Admin / User|
+:Response / Upload complete;
+stop
+
+@enduml

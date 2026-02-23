@@ -1,0 +1,369 @@
+/* Employee dashboard — hero, cards, chart */
+.employeeDashboardPage {
+  padding: 0;
+  width: 100%;
+}
+
+.empDashLoading,
+.empDashError {
+  padding: 2rem;
+  text-align: center;
+  color: var(--textMuted);
+}
+
+/* Greeting */
+.empDashGreeting {
+  margin-bottom: 1.25rem;
+}
+
+.empDashGreetingText {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+}
+
+/* Leave / Penalty alert row */
+.empDashAlertsRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+@media (max-width: 500px) {
+  .empDashAlertsRow {
+    grid-template-columns: 1fr;
+  }
+}
+
+.empDashAlertCard {
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--border);
+  text-decoration: none;
+  color: inherit;
+}
+
+.empDashAlertCardLink:hover {
+  background: var(--surface2);
+  border-color: rgba(34, 197, 94, 0.25);
+}
+
+.empDashAlertContent {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.empDashAlertLabel {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--textMuted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.empDashAlertValue {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.empDashAlertLink {
+  font-size: 0.85rem;
+  color: var(--accent);
+  margin-top: 0.25rem;
+}
+
+.empDashAlertCard .empDashAlertLink {
+  text-decoration: none;
+}
+
+.empDashAlertCard .empDashAlertLink:hover {
+  text-decoration: underline;
+}
+
+/* Top grid: Today's work time (left) + Calendar (right) */
+.empDashTopGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.25rem;
+  margin-bottom: 1.75rem;
+}
+
+@media (min-width: 640px) {
+  .empDashTopGrid {
+    grid-template-columns: 1fr 1.4fr;
+    gap: 1.5rem;
+  }
+}
+
+@media (min-width: 900px) {
+  .empDashTopGrid {
+    grid-template-columns: 320px 1fr;
+    gap: 1.5rem;
+  }
+}
+
+/* Today's work time — left card */
+.empDashHero {
+  background: linear-gradient(135deg, var(--surface) 0%, var(--surface2) 100%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.75rem 1.5rem;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 0;
+}
+
+.empDashHeroLabel {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--textMuted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 0 0 0.5rem 0;
+}
+
+.empDashHeroTime {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.1rem;
+  flex-wrap: wrap;
+}
+
+.empDashHeroHours,
+.empDashHeroMinutes {
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.empDashHeroHours {
+  font-size: 2.75rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+@media (min-width: 640px) {
+  .empDashHeroHours {
+    font-size: 3rem;
+  }
+}
+
+.empDashHeroMinutes {
+  font-size: 2.25rem;
+  font-weight: 700;
+  margin-left: 0.2rem;
+}
+
+@media (min-width: 640px) {
+  .empDashHeroMinutes {
+    font-size: 2.6rem;
+  }
+}
+
+.empDashHeroUnit {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--accent);
+  margin: 0 0.05rem 0 0;
+}
+
+@media (min-width: 640px) {
+  .empDashHeroUnit {
+    font-size: 1.4rem;
+  }
+}
+
+.empDashHeroSub {
+  font-size: 0.8rem;
+  color: var(--textMuted);
+  margin: 0.5rem 0 0 0;
+}
+
+/* Section grouping */
+.empDashSection {
+  margin-bottom: 1.75rem;
+}
+
+.empDashSection:last-child {
+  margin-bottom: 0;
+}
+
+.empDashSectionTitle {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--textMuted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 0.75rem 0;
+}
+
+/* Calendar — right card in top grid */
+.empDashCalendarSection {
+  padding: 1.25rem 1.35rem;
+  min-width: 0;
+}
+
+.empDashCalendarSection .empDashSectionTitle {
+  margin-bottom: 0.75rem;
+}
+
+.empDashCalendar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.empDashCalendarWeekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.empDashCalendarWeekday {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--textMuted);
+  text-align: center;
+}
+
+.empDashCalendarRow {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.empDashCalendarCell {
+  aspect-ratio: 1;
+  max-width: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border-radius: 6px;
+  color: #1a1a1a;
+}
+
+.empDashCalendarCell.present {
+  background: #22c55e;
+  color: #fff;
+}
+
+.empDashCalendarCell.absent {
+  background: #ef4444;
+  color: #fff;
+}
+
+.empDashCalendarCell.halfday {
+  background: #eab308;
+  color: #1a1a1a;
+}
+
+.empDashCalendarCell.earlyleft {
+  background: #86efac;
+  color: #14532d;
+}
+
+.empDashCalendarCell.sunday {
+  background: #e2e8f0;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.empDashCalendarCell.none,
+.empDashCalendarCell.empty {
+  background: var(--surface2);
+  color: var(--textMuted);
+  font-weight: 500;
+}
+
+.empDashCalendarLegend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.25rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.75rem;
+  color: var(--textMuted);
+}
+
+.empDashLegendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.empDashLegendItem::before {
+  content: '';
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+}
+
+.empDashLegendItem.present::before { background: #22c55e; }
+.empDashLegendItem.absent::before { background: #ef4444; }
+.empDashLegendItem.halfday::before { background: #eab308; }
+.empDashLegendItem.earlyleft::before { background: #86efac; }
+.empDashLegendItem.sunday::before { background: #e2e8f0; }
+.empDashLegendItem.none::before { background: var(--surface2); }
+
+/* Stats cards — 2 or 3 columns */
+.dashboardCards {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+}
+
+@media (min-width: 480px) {
+  .dashboardCards {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.dashboardCard {
+  padding: 1.25rem 1.35rem;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: var(--radius);
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.dashboardCard:hover {
+  background: var(--surface2);
+  border-color: rgba(34, 197, 94, 0.2);
+}
+
+.dashboardCard .dashboardCardValue {
+  font-size: 1.6rem;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text);
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboardCard .dashboardCardValue .unit {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--textMuted);
+}
+
+.dashboardCard .dashboardCardLabel {
+  font-size: 0.85rem;
+  color: var(--textMuted);
+  margin: 0.4rem 0 0 0;
+  line-height: 1.35;
+}
+
+.dashboardCard .dashboardCardLabel .muted {
+  font-size: 0.8rem;
+  opacity: 0.9;
+}
+

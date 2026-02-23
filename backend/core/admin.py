@@ -1,15 +1,26 @@
 from django.contrib import admin
-from .models import Admin, Employee, Attendance, Salary, SalaryAdvance, Adjustment, ShiftOvertimeBonus, Penalty, PerformanceReward, Holiday, SystemSetting, EmailSmtpConfig
+from .models import (
+    Admin, Company, Employee, Attendance, Salary, SalaryAdvance, Adjustment,
+    ShiftOvertimeBonus, Penalty, PenaltyInquiry, PerformanceReward, Holiday,
+    LeaveRequest, SystemSetting, EmailSmtpConfig,
+)
+
+
+@admin.register(Company)
+class CompanyAdmin(admin.ModelAdmin):
+    list_display = ('id', 'code', 'name', 'is_active')
+    list_filter = ('is_active',)
 
 
 @admin.register(Admin)
 class AdminModelAdmin(admin.ModelAdmin):
-    list_display = ('id', 'name', 'email', 'phone')
+    list_display = ('id', 'name', 'email', 'phone', 'company', 'department', 'role')
 
 
 @admin.register(Employee)
 class EmployeeAdmin(admin.ModelAdmin):
-    list_display = ('emp_code', 'name', 'dept_name', 'designation', 'status', 'employment_type', 'salary_type')
+    list_display = ('emp_code', 'name', 'company', 'dept_name', 'designation', 'status', 'employment_type', 'salary_type')
+    list_filter = ('status', 'employment_type', 'salary_type', 'company')
     search_fields = ('emp_code', 'name', 'email')
 
 
@@ -54,6 +65,18 @@ class PenaltyAdmin(admin.ModelAdmin):
 class PerformanceRewardAdmin(admin.ModelAdmin):
     list_display = ('emp_code', 'entry_type', 'trigger_reason', 'is_on_leaderboard', 'admin_action_status', 'created_at')
     list_filter = ('entry_type', 'admin_action_status')
+
+
+@admin.register(LeaveRequest)
+class LeaveRequestAdmin(admin.ModelAdmin):
+    list_display = ('id', 'emp_code', 'from_date', 'to_date', 'status', 'dept_name', 'requested_at', 'reviewed_by')
+    list_filter = ('status', 'dept_name')
+
+
+@admin.register(PenaltyInquiry)
+class PenaltyInquiryAdmin(admin.ModelAdmin):
+    list_display = ('id', 'penalty', 'emp_code', 'status', 'created_at', 'reviewed_by')
+    list_filter = ('status',)
 
 
 @admin.register(Holiday)

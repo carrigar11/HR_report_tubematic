@@ -30,6 +30,7 @@ const processQueue = (err, token = null) => {
 
 const clearAuth = () => {
   localStorage.removeItem('hr_admin')
+  localStorage.removeItem('hr_employee')
   localStorage.removeItem('hr_access_token')
   localStorage.removeItem('hr_refresh_token')
   if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
@@ -76,8 +77,44 @@ api.interceptors.response.use(
   }
 )
 
+export const config = {
+  get: () => api.get('/config/'),
+}
+
 export const auth = {
   login: (email, password) => api.post('/auth/login/', { email, password }),
+}
+
+export const employeeAuth = {
+  login: (email, password) => api.post('/employee/auth/login/', { email, password }),
+}
+
+export const employee = {
+  dashboard: () => api.get('/employee/dashboard/'),
+  attendance: (params) => api.get('/employee/attendance/', { params }),
+  profile: () => api.get('/employee/profile/'),
+  salarySummary: (params) => api.get('/employee/salary-summary/', { params }),
+  leaveRequests: {
+    list: () => api.get('/employee/leave-requests/'),
+    create: (data) => api.post('/employee/leave-requests/', data),
+  },
+  leaveBalance: () => api.get('/employee/leave-balance/'),
+  changePassword: (currentPassword, newPassword) =>
+    api.post('/employee/change-password/', { current_password: currentPassword, new_password: newPassword }),
+  payslip: (params) => api.get('/employee/payslip/', { params, responseType: 'blob' }),
+  rewards: () => api.get('/employee/rewards/'),
+  penalties: (params) => api.get('/employee/penalties/', { params }),
+  penaltyInquiryCreate: (penalty_id, message) => api.post('/employee/penalty-inquiries/', { penalty_id, message }),
+}
+
+export const leaveRequests = {
+  list: (params) => api.get('/leave-requests/', { params }),
+  patch: (id, data) => api.patch(`/leave-requests/${id}/`, data),
+}
+
+export const penaltyInquiries = {
+  list: (params) => api.get('/penalty-inquiries/', { params }),
+  patch: (id, data) => api.patch(`/penalty-inquiries/${id}/`, data),
 }
 
 export const departments = {

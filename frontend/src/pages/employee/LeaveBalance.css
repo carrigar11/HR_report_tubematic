@@ -1,0 +1,123 @@
+.leaveBalancePage {
+  padding: 0;
+  width: 100%;
+}
+
+.leaveBalanceLoading,
+.leaveBalanceError {
+  padding: 2rem;
+  text-align: center;
+  color: var(--textMuted);
+}
+
+.leaveBalanceHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.leaveBalanceTitle {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.leaveBalanceSectionTitle {
+  margin: 0 0 1rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.leaveBalanceCards {
+  margin-bottom: 1.5rem;
+}
+
+.leaveBalanceGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 1rem;
+}
+
+.leaveBalanceCard {
+  padding: 1rem;
+  border-radius: var(--radius);
+  background: var(--surface2);
+  border: 1px solid var(--border);
+}
+
+.leaveBalanceCardLabel {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--textMuted);
+  margin-bottom: 0.25rem;
+}
+
+.leaveBalanceCardValue {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.leaveBalanceCardSub {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--textMuted);
+  margin-top: 0.25rem;
+}
+
+.leaveHistorySection {
+  overflow-x: auto;
+}
+
+.leaveHistoryTable {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.leaveHistoryTable th,
+.leaveHistoryTable td {
+  padding: 0.6rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.leaveHistoryTable th {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--textMuted);
+  text-transform: uppercase;
+}
+
+.leaveHistoryTable td {
+  font-size: 0.9rem;
+}
+
+.statusBadge {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.statuspending { background: #fef3c7; color: #92400e; }
+.statusapproved { background: #d1fae5; color: #065f46; }
+.statusdeclined { background: #fee2e2; color: #991b1b; }
+
+/* Combined Leave page: request form */
+.leavePageCombined .leaveBalanceTitle { margin-bottom: 1rem; }
+.leaveRequestForm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-end;
+}
+.leaveRequestForm > div { min-width: 0; }
+.leaveRequestReason { min-width: 200px; }
+.leaveRequestMessage { margin: 0.5rem 0 0; font-size: 0.9rem; }
+.leaveRequestMessage.success { color: var(--accent); }
+.leaveRequestMessage.error { color: #dc2626; }
