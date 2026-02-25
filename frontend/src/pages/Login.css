@@ -82,3 +82,68 @@
   font-size: 0.9rem;
   margin-bottom: 1rem;
 }
+
+.loginRegisterLink {
+  margin-top: 1.25rem;
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+.loginRegisterLink a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.loginRegisterLink a:hover {
+  text-decoration: underline;
+}
+
+/* Register your company (under admin box) */
+.loginRegisterCompany {
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--borderColor, #e5e7eb);
+}
+
+.loginRegisterTitle {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0 0 0.25rem;
+}
+
+.loginRegisterSub {
+  color: var(--textMuted);
+  font-size: 0.85rem;
+  margin: 0 0 1rem;
+}
+
+.loginRegisterForm .label {
+  margin-top: 0.75rem;
+}
+
+.loginRegisterForm .label:first-of-type {
+  margin-top: 0;
+}
+
+.loginRegMessage {
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius);
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.loginRegMessage.success {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--success, #16a34a);
+}
+
+.loginRegMessage.error {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--danger);
+}
+
+.loginRegBtn {
+  width: 100%;
+  margin-top: 1rem;
+  padding: 0.6rem;
+}

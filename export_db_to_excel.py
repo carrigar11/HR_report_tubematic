@@ -54,9 +54,12 @@ DB_HOST = os.environ.get("DB_HOST", "localhost")
 DB_PORT = os.environ.get("DB_PORT", "5432")
 
 # Tables to export: (table_name, ORDER BY clause). Sheet name = table name (sanitized).
-# All core app tables so the export contains all data in the database.
+# If FETCH_ALL_TABLES is True, all tables in public schema are discovered and exported.
+FETCH_ALL_TABLES = True
+
 TABLE_EXPORT_ORDER = [
     ("companies", "id"),
+    ("company_registration_requests", "created_at DESC"),
     ("admins", "id"),
     ("employees", "dept_name, emp_code"),
     ("attendance", "date DESC, emp_code"),
@@ -97,6 +100,36 @@ def get_connection():
         port=DB_PORT,
         cursor_factory=RealDictCursor,
     )
+
+
+def get_all_tables(conn):
+    """Return list of (table_name, order_by) for all tables in public schema. order_by = 'id' or first column."""
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT table_name FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+            ORDER BY table_name
+        """)
+        tables = [r["table_name"] for r in cur.fetchall()]
+    result = []
+    for table_name in tables:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = %s
+                ORDER BY ordinal_position
+            """, (table_name,))
+            cols = [r["column_name"] for r in cur.fetchall()]
+        if not cols:
+            result.append((table_name, "1"))
+            continue
+        # Prefer id, then first column (quoted)
+        if "id" in cols:
+            order_by = "id"
+        else:
+            order_by = f'"{cols[0]}"'
+        result.append((table_name, order_by))
+    return result
 
 
 def fetch_table(conn, table_name, order_by):
@@ -323,8 +356,10 @@ def main():
         wb = Workbook()
         first_sheet = True
 
+        tables_to_export = get_all_tables(conn) if FETCH_ALL_TABLES else TABLE_EXPORT_ORDER
+
         # One sheet per table: columns and data as in the database
-        for table_name, order_by in TABLE_EXPORT_ORDER:
+        for table_name, order_by in tables_to_export:
             print(f"Fetching table: {table_name}...")
             rows = fetch_table(conn, table_name, order_by)
             stored[table_name] = rows

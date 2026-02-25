@@ -19,6 +19,23 @@ Employee (making & related):
 
 ---
 
+## Today's update
+
+Update: @Divyam Dharod sir
+
+Today's update
+Done:
+1. **Company Requests View (System Owner):** Full request data modal split into 2 columns with contained panels — left "Contact & basic" (Submitted, Company, Contact email/phone, Address, Status), right "Business & documents" (Company URL, PAN, Aadhar, GSTIN, GST Number, Business name, Type of business).
+2. **Add Employee module (System Owner):** "Add employee" button opens a modal with full form — Company (required), auto Emp code, Name, Mobile, Email, Password, Department, Designation, Gender, Status, Employment type, Salary type, Base salary, Shift name/from/to, Leave allowances (casual/sick/earned per year).
+3. **Searchable Company dropdown:** Reusable component — type to filter companies by name/code; used on Add employee modal and Edit employee page.
+4. **Edit Employee (System Owner):** Edit page uses searchable company dropdown and full fields — Company, Name, Mobile, Email, Change password, Department, Designation, Gender, Status, Employment type, Salary & shift, Leave allowances; "Edit" button on each row unchanged.
+5. **Add employee modal layout:** Two main columns (left: Company & basic + Work details; right: Salary & shift + Leave allowances); inside each section fields in 2-per-row grid; scroll inside modal; responsive (stacks on narrow screens).
+6. **Add employee modal UX:** Removed redundant "Required" text under Company; fixed popup width (override global 420px so modal uses up to 900px, with viewport-safe max).
+7. **System Owner Employees page:** Filter by company (dropdown), table with Code, Name, Department, Designation, Status, Company, Edit; Add employee + Edit flow end-to-end.
+8. **Employee (making & related):** System Owner can add employees for any company (full details, company via searchable dropdown) and edit any employee’s company, contact, work, salary, shift, and leave allowances from Edit employee page.
+
+---
+
 ## 2025-02-21 (Friday)
 
 Update: @Divyam Dharod sir

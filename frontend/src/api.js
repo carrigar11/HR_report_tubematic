@@ -81,8 +81,55 @@ export const config = {
   get: () => api.get('/config/'),
 }
 
+export const companyRegistration = {
+  submit: (data) => api.post('/company-registration/', data),
+}
+
 export const auth = {
   login: (email, password) => api.post('/auth/login/', { email, password }),
+}
+
+export const systemOwner = {
+  dashboard: () => api.get('/system-owner/dashboard/'),
+  notifications: () => api.get('/system-owner/notifications/'),
+  profile: {
+    get: () => api.get('/system-owner/profile/'),
+    update: (data) => api.patch('/system-owner/profile/', data),
+  },
+  settings: {
+    get: () => api.get('/system-owner/settings/'),
+    update: (data) => api.patch('/system-owner/settings/', data),
+  },
+  smtp: {
+    list: () => api.get('/system-owner/smtp/'),
+    get: (id) => api.get(`/system-owner/smtp/${id}/`),
+    create: (data) => api.post('/system-owner/smtp/', data),
+    update: (id, data) => api.patch(`/system-owner/smtp/${id}/`, data),
+    delete: (id) => api.delete(`/system-owner/smtp/${id}/`),
+  },
+  companies: {
+    list: () => api.get('/system-owner/companies/'),
+    get: (id) => api.get(`/system-owner/companies/${id}/`),
+    create: (data) => api.post('/system-owner/companies/', data),
+    update: (id, data) => api.patch(`/system-owner/companies/${id}/`, data),
+  },
+  companyRequests: {
+    list: () => api.get('/system-owner/company-requests/'),
+    get: (id) => api.get(`/system-owner/company-requests/${id}/`),
+    decline: (id, data) => api.post(`/system-owner/company-requests/${id}/decline/`, data),
+  },
+  employees: {
+    list: (params) => api.get('/system-owner/employees/', { params }),
+    get: (pk) => api.get(`/system-owner/employees/${pk}/`),
+    create: (data) => api.post('/system-owner/employees/', data),
+    update: (pk, data) => api.patch(`/system-owner/employees/${pk}/`, data),
+    getNextEmpCode: () => api.get('/system-owner/employees/next_emp_code/'),
+  },
+  admins: {
+    list: () => api.get('/system-owner/admins/'),
+    create: (data) => api.post('/system-owner/admins/', data),
+    update: (id, data) => api.patch(`/system-owner/admins/${id}/`, data),
+  },
 }
 
 export const employeeAuth = {

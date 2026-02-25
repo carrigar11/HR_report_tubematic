@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { auth, employeeAuth, config } from '../api'
 import './Login.css'
 
@@ -40,10 +40,15 @@ export default function Login() {
         const { data } = await auth.login(email, password)
         if (data.success && data.admin) {
           localStorage.removeItem('hr_employee')
-          localStorage.setItem('hr_admin', JSON.stringify(data.admin))
+          const admin = { ...data.admin, is_system_owner: Boolean(data.admin.is_system_owner) }
+          localStorage.setItem('hr_admin', JSON.stringify(admin))
           if (data.access) localStorage.setItem('hr_access_token', data.access)
           if (data.refresh) localStorage.setItem('hr_refresh_token', data.refresh)
-          navigate('/')
+          if (admin.is_system_owner) {
+            navigate('/system-owner', { replace: true })
+          } else {
+            navigate('/', { replace: true })
+          }
         } else {
           setError(data.message || 'Login failed')
         }
@@ -117,6 +122,11 @@ export default function Login() {
             {loading ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
+        {mode === 'admin' && (
+          <p className="loginRegisterLink">
+            <Link to="/register-company">Register your company</Link>
+          </p>
+        )}
       </div>
     </div>
   )

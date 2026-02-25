@@ -15,7 +15,7 @@ from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.formatting.rule import ColorScaleRule
 
-from .email_smtp import get_active_smtp_config
+from .email_smtp import get_active_smtp_configs
 from .google_sheets_sync import _build_sheet3_data
 from .models import PlantReportRecipient, SystemSetting
 
@@ -283,9 +283,9 @@ def send_plant_report_email():
     if not recipients:
         return {'success': False, 'message': 'No active recipients.', 'sent_count': 0}
 
-    config = get_active_smtp_config()
-    if not config or not config.auth_username:
-        return {'success': False, 'message': 'SMTP not configured. Set in Settings / Django Admin.', 'sent_count': 0}
+    configs = [c for c in get_active_smtp_configs() if getattr(c, 'auth_username', None)]
+    if not configs:
+        return {'success': False, 'message': 'SMTP not configured. Add active config(s) in System Owner → Settings.', 'sent_count': 0}
 
     try:
         buf = build_plant_report_previous_day_excel_only()
@@ -296,8 +296,6 @@ def send_plant_report_email():
 
     from_date = (timezone.localdate() - timezone.timedelta(days=1)).strftime('%d-%m-%Y')
     subject = f'Plant Report (Previous day) - {from_date}'
-    sender_address = config.force_sender or config.auth_username
-    from_email = f'Tubematic (Carrigar) <{sender_address}>' if sender_address else 'Tubematic (Carrigar) <noreply@tubematic.com>'
 
     # Our amount = Total Salary + OT bonus (rs) from Plant Report total row (previous day). Difference = ma'am amount - our amount.
     diff_block_text = ''
@@ -330,15 +328,6 @@ def send_plant_report_email():
     if img_buf:
         img_bytes = img_buf.read()
 
-    connection = get_connection(
-        backend='django.core.mail.backends.smtp.EmailBackend',
-        host=config.smtp_server,
-        port=config.smtp_port,
-        username=config.auth_username,
-        password=config.auth_password,
-        use_tls=True,
-        fail_silently=False,
-    )
     filename_xlsx = f'Plant_Report_{from_date.replace("-", "_")}.xlsx'
     text_body = (
         f'Dear Team,\n\nPlease find the Plant Report (Previous day) for {from_date}.\n\n'
@@ -346,42 +335,58 @@ def send_plant_report_email():
         f'{diff_block_text}\n\n'
         'Regards,\nTubematic (Carrigar)'
     )
-    if img_bytes:
-        html_body = (
-            '<div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; color: #333;">'
-            '<div style="padding: 16px 0 8px 0; border-bottom: 1px solid #e0e0e0;">'
-            '<p style="margin: 0; font-size: 15px;">Dear Team,</p>'
-            '</div>'
-            f'<p style="margin: 16px 0; font-size: 14px; line-height: 1.5;">Please find the <strong>Plant Report (Previous day)</strong> for <strong>{from_date}</strong>.</p>'
-            '<p style="margin: 12px 0; font-size: 14px; line-height: 1.5;">The report is shown below for quick view on any device. The full Excel file is attached for download.</p>'
-            f'{diff_block_html}'
-            '<div style="margin: 20px 0; padding: 12px 0; border: 1px solid #e8e8e8; border-radius: 6px; overflow-x: auto;">'
-            '<img src="cid:plant_report" alt="Plant Report" style="max-width:100%; height:auto; display:block;" />'
-            '</div>'
-            '<div style="padding: 16px 0 0 0; border-top: 1px solid #e0e0e0; margin-top: 20px; font-size: 13px; color: #666;">'
-            '<p style="margin: 0 0 4px 0;">Regards,</p>'
-            '<p style="margin: 0; font-weight: 600;">Tubematic (Carrigar)</p>'
-            '</div>'
-            '</div>'
+    last_error = None
+    for config in configs:
+        sender_address = config.force_sender or config.auth_username
+        from_email = f'Tubematic (Carrigar) <{sender_address}>' if sender_address else 'Tubematic (Carrigar) <noreply@tubematic.com>'
+        connection = get_connection(
+            backend='django.core.mail.backends.smtp.EmailBackend',
+            host=config.smtp_server,
+            port=config.smtp_port,
+            username=config.auth_username,
+            password=config.auth_password,
+            use_tls=True,
+            fail_silently=False,
         )
-        msg = EmailMultiAlternatives(subject, text_body, from_email, recipients, connection=connection)
-        msg.attach_alternative(html_body, 'text/html')
-        msg.mixed_subtype = 'related'
-        msg_img = MIMEImage(img_bytes)
-        msg_img.add_header('Content-ID', '<plant_report>')
-        msg_img.add_header('Content-Disposition', 'inline', filename='Plant_Report.png')
-        msg.attach(msg_img)
-    else:
-        msg = EmailMultiAlternatives(subject, text_body, from_email, recipients, connection=connection)
-    msg.attach(filename_xlsx, excel_bytes, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-    try:
-        msg.send()
-        set_plant_report_last_sent_date(timezone.localdate())
-        logger.info('Plant Report email sent to %s recipients', len(recipients))
-        return {'success': True, 'message': f'Sent to {len(recipients)} recipient(s).', 'sent_count': len(recipients)}
-    except Exception as e:
-        logger.exception('Plant Report email send failed')
-        return {'success': False, 'message': str(e), 'sent_count': 0}
+        if img_bytes:
+            html_body = (
+                '<div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; color: #333;">'
+                '<div style="padding: 16px 0 8px 0; border-bottom: 1px solid #e0e0e0;">'
+                '<p style="margin: 0; font-size: 15px;">Dear Team,</p>'
+                '</div>'
+                f'<p style="margin: 16px 0; font-size: 14px; line-height: 1.5;">Please find the <strong>Plant Report (Previous day)</strong> for <strong>{from_date}</strong>.</p>'
+                '<p style="margin: 12px 0; font-size: 14px; line-height: 1.5;">The report is shown below for quick view on any device. The full Excel file is attached for download.</p>'
+                f'{diff_block_html}'
+                '<div style="margin: 20px 0; padding: 12px 0; border: 1px solid #e8e8e8; border-radius: 6px; overflow-x: auto;">'
+                '<img src="cid:plant_report" alt="Plant Report" style="max-width:100%; height:auto; display:block;" />'
+                '</div>'
+                '<div style="padding: 16px 0 0 0; border-top: 1px solid #e0e0e0; margin-top: 20px; font-size: 13px; color: #666;">'
+                '<p style="margin: 0 0 4px 0;">Regards,</p>'
+                '<p style="margin: 0; font-weight: 600;">Tubematic (Carrigar)</p>'
+                '</div>'
+                '</div>'
+            )
+            msg = EmailMultiAlternatives(subject, text_body, from_email, recipients, connection=connection)
+            msg.attach_alternative(html_body, 'text/html')
+            msg.mixed_subtype = 'related'
+            msg_img = MIMEImage(img_bytes)
+            msg_img.add_header('Content-ID', '<plant_report>')
+            msg_img.add_header('Content-Disposition', 'inline', filename='Plant_Report.png')
+            msg.attach(msg_img)
+        else:
+            msg = EmailMultiAlternatives(subject, text_body, from_email, recipients, connection=connection)
+        msg.attach(filename_xlsx, excel_bytes, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        try:
+            msg.send()
+            set_plant_report_last_sent_date(timezone.localdate())
+            logger.info('Plant Report email sent to %s recipients via config id=%s', len(recipients), config.pk)
+            return {'success': True, 'message': f'Sent to {len(recipients)} recipient(s).', 'sent_count': len(recipients)}
+        except Exception as e:
+            last_error = str(e)
+            logger.warning('Plant Report send failed with config id=%s (%s:%s): %s', config.pk, config.smtp_server, config.smtp_port, last_error)
+            continue
+    logger.exception('Plant Report email send failed with all configs')
+    return {'success': False, 'message': last_error or 'Send failed', 'sent_count': 0}
 
 
 def maybe_send_plant_report_daily():

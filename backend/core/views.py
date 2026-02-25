@@ -6,20 +6,21 @@ from rest_framework.decorators import action
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
-from django.db.models import Sum, Count, Q
+from django.db.models import Sum, Count, Q, Max
 from django.utils import timezone
 from datetime import date, timedelta
 from decimal import Decimal
 
 from django.conf import settings
 from .models import (
-    Admin, Company, Employee, Attendance, Salary, SalaryAdvance, Adjustment,
+    Admin, Company, CompanyRegistrationRequest, Employee, Attendance, Salary, SalaryAdvance, Adjustment,
     ShiftOvertimeBonus, Penalty, PenaltyInquiry, PerformanceReward, Holiday,
     LeaveRequest, SystemSetting, PlantReportRecipient, EmailSmtpConfig, AuditLog
 )
 from .serializers import (
     AdminSerializer, AdminProfileSerializer, AdminUpdateSerializer,
     AdminListSerializer, AdminAccessUpdateSerializer, AdminCreateSerializer,
+    CompanySerializer,
     DEFAULT_ACCESS,
     AuditLogSerializer,
     EmployeeSerializer, AttendanceSerializer,
@@ -57,6 +58,8 @@ def get_request_admin(request):
         admin = Admin.objects.get(pk=admin_id)
     except (ValueError, Admin.DoesNotExist):
         return None, None
+    if getattr(admin, 'is_system_owner', False):
+        return admin, None
     if admin.is_super_admin:
         return admin, None
     qs = Employee.objects.all()
@@ -85,6 +88,20 @@ def get_request_employee(request):
         return None, None
 
 
+def _company_registration_recipient_emails():
+    """List of email addresses that receive 'Register your company' requests. Configurable via SystemSetting (comma-separated)."""
+    raw = None
+    try:
+        obj = SystemSetting.objects.get(key='company_registration_email')
+        if obj.value and str(obj.value).strip():
+            raw = str(obj.value).strip()
+    except SystemSetting.DoesNotExist:
+        pass
+    if not raw:
+        raw = getattr(settings, 'COMPANY_REGISTRATION_EMAIL', 'deveshgoswami191@gmail.com')
+    return [e.strip() for e in raw.split(',') if e.strip()]
+
+
 @method_decorator(csrf_exempt, name='dispatch')
 class ConfigView(APIView):
     """GET: public config e.g. employee_login_enabled (for login page toggle)."""
@@ -94,6 +111,57 @@ class ConfigView(APIView):
     def get(self, request):
         return Response({
             'employee_login_enabled': getattr(settings, 'EMPLOYEE_LOGIN_ENABLED', True),
+        })
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class CompanyRegistrationView(APIView):
+    """POST: public 'Register your company' form. Sends email to main admin; stores request in DB."""
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request):
+        company_name = (request.data.get('company_name') or '').strip()
+        contact_email = (request.data.get('contact_email') or '').strip()
+        if not company_name or not contact_email:
+            return Response({'error': 'company_name and contact_email required'}, status=400)
+        contact_phone = (request.data.get('contact_phone') or '').strip()[:50]
+        address = (request.data.get('address') or '').strip()
+        extra = {}
+        for k, v in request.data.items():
+            if k not in ('company_name', 'contact_email', 'contact_phone', 'address') and v not in (None, ''):
+                extra[k] = str(v)[:500]
+        req = CompanyRegistrationRequest.objects.create(
+            company_name=company_name,
+            contact_email=contact_email,
+            contact_phone=contact_phone,
+            address=address,
+            extra_data=extra,
+        )
+        to_emails = _company_registration_recipient_emails()
+        lines = [
+            f'Company name: {company_name}',
+            f'Contact email: {contact_email}',
+            f'Contact phone: {contact_phone or "—"}',
+            f'Address: {address or "—"}',
+        ]
+        for k, v in extra.items():
+            lines.append(f'{k}: {v}')
+        body = '\n'.join(lines)
+        subject = f'New company registration request: {company_name}'
+        from .email_smtp import send_simple_email
+        sent_any = False
+        for to_email in to_emails:
+            ok, _ = send_simple_email(to_email, subject, body)
+            if ok:
+                sent_any = True
+        if sent_any:
+            return Response({'success': True, 'message': 'Request submitted. We will get back to you.', 'email_sent': True})
+        return Response({
+            'success': True,
+            'message': 'Request submitted. We will get back to you.',
+            'email_sent': False,
+            'email_note': 'Notification email could not be sent. Check System Owner → Settings (SMTP and notification emails). Requests are saved under Company requests.',
         })
 
 
@@ -2995,3 +3063,504 @@ class EmployeeProfileView(APIView):
             'days_this_month': days_this_month,
             'hours_this_month': round(hours_this_month, 2),
         })
+
+
+# ---------- System owner (same login; sees all companies, employees, admins) ----------
+def get_system_owner(request):
+    """Return current admin if they are system owner, else None."""
+    admin, _ = get_request_admin(request)
+    if admin and getattr(admin, 'is_system_owner', False):
+        return admin
+    return None
+
+
+class SystemOwnerDashboardView(APIView):
+    """GET: overview stats, recent activity, and notifications for system owner."""
+    def get(self, request):
+        if not get_system_owner(request):
+            return Response({'error': 'System owner only'}, status=403)
+        companies_count = Company.objects.count()
+        employees_count = Employee.objects.count()
+        admins_count = Admin.objects.count()
+        pending_company_requests_count = CompanyRegistrationRequest.objects.filter(status=CompanyRegistrationRequest.STATUS_PENDING).count()
+        recent_requests = CompanyRegistrationRequest.objects.all().order_by('-created_at')[:5]
+        recent_companies = Company.objects.all().order_by('-created_at')[:5]
+        recent_company_requests = []
+        for r in recent_requests:
+            recent_company_requests.append({
+                'id': r.id,
+                'company_name': r.company_name,
+                'contact_email': r.contact_email,
+                'created_at': r.created_at.isoformat() if r.created_at else None,
+            })
+        recent_companies_data = []
+        for c in recent_companies:
+            recent_companies_data.append({
+                'id': c.id,
+                'name': c.name,
+                'code': c.code,
+                'created_at': c.created_at.isoformat() if c.created_at else None,
+            })
+        notifications = []
+        for r in recent_requests[:10]:
+            notifications.append({
+                'type': 'company_request',
+                'id': r.id,
+                'title': 'New company registration request',
+                'message': f'{r.company_name} — {r.contact_email}',
+                'link': '/system-owner/company-requests',
+                'created_at': r.created_at.isoformat() if r.created_at else None,
+            })
+        return Response({
+            'companies_count': companies_count,
+            'employees_count': employees_count,
+            'admins_count': admins_count,
+            'pending_company_requests_count': pending_company_requests_count,
+            'recent_company_requests': recent_company_requests,
+            'recent_companies': recent_companies_data,
+            'notifications': notifications,
+        })
+
+
+class SystemOwnerNotificationsView(APIView):
+    """GET: lightweight notifications for header bell (count + items). System owner only."""
+    def get(self, request):
+        if not get_system_owner(request):
+            return Response({'error': 'System owner only'}, status=403)
+        pending_count = CompanyRegistrationRequest.objects.filter(status=CompanyRegistrationRequest.STATUS_PENDING).count()
+        recent = CompanyRegistrationRequest.objects.all().order_by('-created_at')[:8]
+        items = []
+        for r in recent:
+            items.append({
+                'type': 'company_request',
+                'id': r.id,
+                'title': f'Request: {r.company_name}',
+                'subtitle': r.contact_email,
+                'link': '/system-owner/company-requests',
+                'created_at': r.created_at.isoformat() if r.created_at else None,
+            })
+        return Response({'count': pending_count, 'items': items})
+
+
+class SystemOwnerProfileView(APIView):
+    """GET: current system owner profile. PATCH: update name, email, password, phone (system owner only)."""
+    def get(self, request):
+        admin = get_system_owner(request)
+        if not admin:
+            return Response({'error': 'System owner only'}, status=403)
+        return Response(AdminProfileSerializer(admin).data)
+
+    def patch(self, request):
+        admin = get_system_owner(request)
+        if not admin:
+            return Response({'error': 'System owner only'}, status=403)
+        ser = AdminUpdateSerializer(data=request.data, partial=True)
+        ser.is_valid(raise_exception=True)
+        if 'name' in ser.validated_data:
+            admin.name = ser.validated_data['name']
+        if 'email' in ser.validated_data:
+            new_email = ser.validated_data['email']
+            if Admin.objects.filter(email__iexact=new_email).exclude(pk=admin.pk).exists():
+                return Response({'error': 'This email is already used by another admin.'}, status=400)
+            admin.email = new_email
+        if 'password' in ser.validated_data:
+            admin.password = ser.validated_data['password']
+        if 'phone' in ser.validated_data:
+            admin.phone = (ser.validated_data['phone'] or '')[:20]
+        admin.save()
+        log_activity(request, 'update', 'system_owner', 'profile', str(admin.pk), details={'updated': list(ser.validated_data.keys())})
+        return Response(AdminProfileSerializer(admin).data)
+
+
+class SystemOwnerSettingsView(APIView):
+    """GET/PATCH: system owner settings (e.g. company registration notification emails)."""
+    def get(self, request):
+        if not get_system_owner(request):
+            return Response({'error': 'System owner only'}, status=403)
+        company_registration_emails = ''
+        try:
+            obj = SystemSetting.objects.get(key='company_registration_email')
+            company_registration_emails = (obj.value or '').strip()
+        except SystemSetting.DoesNotExist:
+            company_registration_emails = getattr(settings, 'COMPANY_REGISTRATION_EMAIL', '')
+        return Response({'company_registration_emails': company_registration_emails})
+
+    def patch(self, request):
+        if not get_system_owner(request):
+            return Response({'error': 'System owner only'}, status=403)
+        company_registration_emails = request.data.get('company_registration_emails')
+        if company_registration_emails is not None:
+            value = str(company_registration_emails).strip()[:255]
+            SystemSetting.objects.update_or_create(
+                key='company_registration_email',
+                defaults={'value': value, 'description': 'Comma-separated emails to receive company registration requests'}
+            )
+        return self.get(request)
+
+
+class SystemOwnerSmtpListView(APIView):
+    """GET: list all SMTP configs (by priority). POST: create new config. System owner only."""
+    def get(self, request):
+        if not get_system_owner(request):
+            return Response({'error': 'System owner only'}, status=403)
+        configs = EmailSmtpConfig.objects.all().order_by('priority', 'id')
+        return Response(EmailSmtpConfigSerializer(configs, many=True).data)
+
+    def post(self, request):
+        if not get_system_owner(request):
+            return Response({'error': 'System owner only'}, status=403)
+        ser = EmailSmtpConfigSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        # Default priority to end of list when not provided
+        if 'priority' not in (request.data or {}):
+            max_prio = EmailSmtpConfig.objects.aggregate(m=Max('priority'))['m']
+            ser.validated_data['priority'] = (max_prio or -1) + 1
+        config = ser.save()
+        log_activity(request, 'create', 'system_owner', 'smtp', str(config.pk), details={'smtp_server': config.smtp_server})
+        return Response(EmailSmtpConfigSerializer(config).data, status=201)
+
+
+class SystemOwnerSmtpDetailView(APIView):
+    """GET/PATCH/DELETE: single SMTP config. System owner only."""
+    def get(self, request, pk):
+        if not get_system_owner(request):
+            return Response({'error': 'System owner only'}, status=403)
+        try:
+            config = EmailSmtpConfig.objects.get(pk=pk)
+        except EmailSmtpConfig.DoesNotExist:
+            return Response({'error': 'Not found'}, status=404)
+        return Response(EmailSmtpConfigSerializer(config).data)
+
+    def patch(self, request, pk):
+        if not get_system_owner(request):
+            return Response({'error': 'System owner only'}, status=403)
+        try:
+            config = EmailSmtpConfig.objects.get(pk=pk)
+        except EmailSmtpConfig.DoesNotExist:
+            return Response({'error': 'Not found'}, status=404)
+        ser = EmailSmtpConfigSerializer(config, data=request.data, partial=True)
+        ser.is_valid(raise_exception=True)
+        ser.save()
+        log_activity(request, 'update', 'system_owner', 'smtp', str(pk), details={})
+        return Response(EmailSmtpConfigSerializer(config).data)
+
+    def delete(self, request, pk):
+        if not get_system_owner(request):
+            return Response({'error': 'System owner only'}, status=403)
+        try:
+            config = EmailSmtpConfig.objects.get(pk=pk)
+        except EmailSmtpConfig.DoesNotExist:
+            return Response({'error': 'Not found'}, status=404)
+        config.delete()
+        log_activity(request, 'delete', 'system_owner', 'smtp', str(pk), details={})
+        return Response(status=204)
+
+
+class SystemOwnerCompanyListView(APIView):
+    """GET: list all companies with employee/admin counts. POST: create company (system owner only)."""
+    def get(self, request):
+        if not get_system_owner(request):
+            return Response({'error': 'System owner only'}, status=403)
+        companies = Company.objects.all().order_by('name')
+        return Response(CompanySerializer(companies, many=True).data)
+
+    def post(self, request):
+        if not get_system_owner(request):
+            return Response({'error': 'System owner only'}, status=403)
+        name = (request.data.get('name') or '').strip()[:255]
+        code = (request.data.get('code') or '').strip()[:50]
+        if not name or not code:
+            return Response({'error': 'name and code required'}, status=400)
+        if Company.objects.filter(code=code).exists():
+            return Response({'error': 'Company code already exists'}, status=400)
+        contact_email = (request.data.get('contact_email') or '').strip()[:254]
+        contact_phone = (request.data.get('contact_phone') or '').strip()[:50]
+        address = (request.data.get('address') or '').strip()
+        is_active = request.data.get('is_active')
+        if is_active is None:
+            is_active = True
+        else:
+            is_active = bool(is_active)
+        company = Company.objects.create(
+            name=name, code=code,
+            contact_email=contact_email, contact_phone=contact_phone, address=address,
+            is_active=is_active
+        )
+        log_activity(request, 'create', 'system_owner', 'company', str(company.pk), details={'name': name, 'code': code})
+        return Response(CompanySerializer(company).data, status=201)
+
+
+class SystemOwnerCompanyDetailView(APIView):
+    """GET/PATCH: single company (system owner only)."""
+    def get(self, request, pk):
+        if not get_system_owner(request):
+            return Response({'error': 'System owner only'}, status=403)
+        try:
+            company = Company.objects.get(pk=pk)
+        except Company.DoesNotExist:
+            return Response({'error': 'Not found'}, status=404)
+        return Response(CompanySerializer(company).data)
+
+    def patch(self, request, pk):
+        if not get_system_owner(request):
+            return Response({'error': 'System owner only'}, status=403)
+        try:
+            company = Company.objects.get(pk=pk)
+        except Company.DoesNotExist:
+            return Response({'error': 'Not found'}, status=404)
+        name = request.data.get('name')
+        code = request.data.get('code')
+        contact_email = request.data.get('contact_email')
+        contact_phone = request.data.get('contact_phone')
+        address = request.data.get('address')
+        is_active = request.data.get('is_active')
+        if name is not None:
+            company.name = str(name).strip()[:255]
+        if code is not None:
+            code = str(code).strip()[:50]
+            if code and Company.objects.filter(code=code).exclude(pk=pk).exists():
+                return Response({'error': 'Company code already exists'}, status=400)
+            company.code = code or company.code
+        if contact_email is not None:
+            company.contact_email = str(contact_email).strip()[:254] if contact_email else ''
+        if contact_phone is not None:
+            company.contact_phone = str(contact_phone).strip()[:50] if contact_phone else ''
+        if address is not None:
+            company.address = str(address).strip() if address else ''
+        if is_active is not None:
+            company.is_active = bool(is_active)
+        company.save()
+        log_activity(request, 'update', 'system_owner', 'company', str(pk), details={})
+        return Response(CompanySerializer(company).data)
+
+
+class SystemOwnerEmployeeListView(APIView):
+    """GET: list all employees (system owner only). Optional ?company_id=. POST: create employee (system owner only)."""
+    def get(self, request):
+        if not get_system_owner(request):
+            return Response({'error': 'System owner only'}, status=403)
+        qs = Employee.objects.all().order_by('emp_code')
+        company_id = request.query_params.get('company_id', '').strip()
+        if company_id:
+            try:
+                qs = qs.filter(company_id=int(company_id))
+            except ValueError:
+                pass
+        data = EmployeeSerializer(qs, many=True).data
+        return Response(data)
+
+    def post(self, request):
+        if not get_system_owner(request):
+            return Response({'error': 'System owner only'}, status=403)
+        from .serializers import EmployeeSerializer as EmpSer
+        data = dict(request.data)
+        company_id = request.data.get('company_id') or request.data.get('company')
+        if company_id is not None:
+            try:
+                data['company'] = int(company_id)
+            except (TypeError, ValueError):
+                data['company'] = None
+        ser = EmpSer(data=data)
+        ser.is_valid(raise_exception=True)
+        emp = ser.save()
+        log_activity(request, 'create', 'system_owner', 'employee', emp.emp_code, details={'name': emp.name})
+        return Response(EmployeeSerializer(emp).data, status=201)
+
+
+class SystemOwnerEmployeeNextEmpCodeView(APIView):
+    """GET: return next suggested emp_code (numeric) for system owner add employee."""
+    def get(self, request):
+        if not get_system_owner(request):
+            return Response({'error': 'System owner only'}, status=403)
+        import re
+        existing = list(Employee.objects.values_list('emp_code', flat=True))
+        max_num = 0
+        for code in existing:
+            if not code:
+                continue
+            s = str(code).strip()
+            m = re.search(r'(\d+)$', s)
+            if m:
+                max_num = max(max_num, int(m.group(1)))
+            elif s.isdigit():
+                max_num = max(max_num, int(s))
+        return Response({'next_emp_code': str(max_num + 1)})
+
+
+class SystemOwnerEmployeeDetailView(APIView):
+    """GET/PATCH: single employee by id or emp_code (system owner only)."""
+    def get(self, request, pk):
+        if not get_system_owner(request):
+            return Response({'error': 'System owner only'}, status=403)
+        emp = Employee.objects.filter(pk=pk).first() or Employee.objects.filter(emp_code=pk).first()
+        if not emp:
+            return Response({'error': 'Not found'}, status=404)
+        return Response(EmployeeSerializer(emp).data)
+
+    def patch(self, request, pk):
+        if not get_system_owner(request):
+            return Response({'error': 'System owner only'}, status=403)
+        emp = Employee.objects.filter(pk=pk).first() or Employee.objects.filter(emp_code=pk).first()
+        if not emp:
+            return Response({'error': 'Not found'}, status=404)
+        from .serializers import EmployeeSerializer as EmpSer
+        ser = EmpSer(emp, data=request.data, partial=True)
+        ser.is_valid(raise_exception=True)
+        ser.save()
+        log_activity(request, 'update', 'system_owner', 'employee', emp.emp_code, details={})
+        return Response(ser.data)
+
+
+class SystemOwnerAdminListView(APIView):
+    """GET: list all admins with company. POST: create admin (system owner only). Optional company_id to assign admin to company."""
+    def get(self, request):
+        if not get_system_owner(request):
+            return Response({'error': 'System owner only'}, status=403)
+        admins = Admin.objects.all().order_by('id').select_related('company')
+        return Response(AdminListSerializer(admins, many=True).data)
+
+    def post(self, request):
+        if not get_system_owner(request):
+            return Response({'error': 'System owner only'}, status=403)
+        ser = AdminCreateSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        admin = ser.save()
+        company_id = request.data.get('company_id')
+        if company_id is not None and company_id != '':
+            try:
+                cid = int(company_id)
+                if Company.objects.filter(pk=cid).exists():
+                    admin.company_id = cid
+                    admin.save(update_fields=['company_id'])
+            except (ValueError, TypeError):
+                pass
+        log_activity(request, 'create', 'system_owner', 'admin', str(admin.pk), details={'email': admin.email, 'company_id': getattr(admin, 'company_id', None)})
+        # When admin is assigned to a company (e.g. from Add company flow), send welcome email with company data
+        if getattr(admin, 'company_id', None):
+            try:
+                company = Company.objects.get(pk=admin.company_id)
+                lines = [
+                    'Here are the company data.',
+                    '',
+                    f'Company: {company.name}',
+                    f'Code: {company.code}',
+                    f'Contact email: {company.contact_email or "-"}',
+                    f'Contact phone: {company.contact_phone or "-"}',
+                    f'Address: {company.address or "-"}',
+                    '',
+                    'This is your super admin with all access. Thank you. Do not share this data.',
+                ]
+                body = '\n'.join(lines)
+                subject = f'Your company and super admin access — {company.name}'
+                from .email_smtp import send_simple_email
+                send_simple_email(admin.email, subject, body, from_name='Carrigar')
+            except Company.DoesNotExist:
+                pass
+            except Exception:
+                pass  # do not fail the request if email fails
+        return Response(AdminListSerializer(admin).data, status=201)
+
+
+class SystemOwnerAdminDetailView(APIView):
+    """PATCH: update admin access/department/company (system owner only)."""
+    def patch(self, request, pk):
+        if not get_system_owner(request):
+            return Response({'error': 'System owner only'}, status=403)
+        try:
+            admin = Admin.objects.get(pk=pk)
+        except Admin.DoesNotExist:
+            return Response({'error': 'Not found'}, status=404)
+        ser = AdminAccessUpdateSerializer(data=request.data, partial=True)
+        ser.is_valid(raise_exception=True)
+        if 'department' in ser.validated_data:
+            admin.department = ser.validated_data['department'] or ''
+        if 'role' in ser.validated_data and admin.pk != 1:
+            admin.role = ser.validated_data['role']
+        if 'access' in ser.validated_data:
+            admin.access = ser.validated_data['access']
+        company_id = request.data.get('company_id')
+        if company_id is not None:
+            if company_id == '' or company_id is None:
+                admin.company_id = None
+            else:
+                try:
+                    admin.company_id = int(company_id)
+                except (ValueError, TypeError):
+                    pass
+        admin.save()
+        log_activity(request, 'update', 'system_owner', 'admin', str(pk), details={})
+        return Response(AdminListSerializer(admin).data)
+
+
+# Owner contact for decline emails (contact for further notice)
+COMPANY_REQUEST_OWNER_CONTACTS = 'divyamdharod@tubematic.in / deveshgoswami191@gmail.com'
+
+
+class SystemOwnerCompanyRegistrationRequestListView(APIView):
+    """GET: list all company registration requests (from Register your company form). System owner only."""
+    def get(self, request):
+        if not get_system_owner(request):
+            return Response({'error': 'System owner only'}, status=403)
+        requests = CompanyRegistrationRequest.objects.all().order_by('-created_at')
+        data = []
+        for r in requests:
+            data.append({
+                'id': r.id,
+                'company_name': r.company_name,
+                'contact_email': r.contact_email,
+                'contact_phone': r.contact_phone or '',
+                'address': r.address or '',
+                'extra_data': r.extra_data or {},
+                'status': getattr(r, 'status', 'pending'),
+                'created_at': r.created_at.isoformat() if r.created_at else None,
+            })
+        return Response(data)
+
+
+class SystemOwnerCompanyRegistrationRequestDetailView(APIView):
+    """GET: single company registration request. System owner only."""
+    def get(self, request, pk):
+        if not get_system_owner(request):
+            return Response({'error': 'System owner only'}, status=403)
+        try:
+            r = CompanyRegistrationRequest.objects.get(pk=pk)
+        except CompanyRegistrationRequest.DoesNotExist:
+            return Response({'error': 'Not found'}, status=404)
+        return Response({
+            'id': r.id,
+            'company_name': r.company_name,
+            'contact_email': r.contact_email,
+            'contact_phone': r.contact_phone or '',
+            'address': r.address or '',
+            'extra_data': r.extra_data or {},
+            'status': getattr(r, 'status', 'pending'),
+            'created_at': r.created_at.isoformat() if r.created_at else None,
+        })
+
+
+class SystemOwnerCompanyRegistrationRequestDeclineView(APIView):
+    """POST: decline a request with reason; send email to requester. System owner only."""
+    def post(self, request, pk):
+        if not get_system_owner(request):
+            return Response({'error': 'System owner only'}, status=403)
+        try:
+            r = CompanyRegistrationRequest.objects.get(pk=pk)
+        except CompanyRegistrationRequest.DoesNotExist:
+            return Response({'error': 'Not found'}, status=404)
+        if getattr(r, 'status', 'pending') == 'declined':
+            return Response({'error': 'Request already declined'}, status=400)
+        reason = (request.data.get('reason') or '').strip()
+        if not reason:
+            return Response({'error': 'reason is required'}, status=400)
+        r.status = CompanyRegistrationRequest.STATUS_DECLINED
+        r.save(update_fields=['status'])
+        body = (
+            f'Your company registration request for "{r.company_name}" has been declined.\n\n'
+            f'Reason: {reason}\n\n'
+            f'For further information, please contact the owner: {COMPANY_REQUEST_OWNER_CONTACTS}\n'
+        )
+        subject = f'Company registration update: {r.company_name}'
+        from .email_smtp import send_simple_email
+        send_simple_email(r.contact_email, subject, body, from_name='Carrigar')
+        log_activity(request, 'update', 'system_owner', 'company_request', str(pk), details={'action': 'decline', 'reason': reason[:200]})
+        return Response({'success': True, 'message': 'Decline email sent.'})

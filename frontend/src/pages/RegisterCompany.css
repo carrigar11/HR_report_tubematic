@@ -1,0 +1,159 @@
+/* Scrollable viewport so submit button is always reachable on any screen size */
+.registerCompanyPage {
+  height: 100vh;
+  height: 100dvh;
+  max-height: 100vh;
+  max-height: 100dvh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: clamp(0.75rem, 3vw, 1.5rem);
+  padding-bottom: 2rem;
+  box-sizing: border-box;
+  -webkit-overflow-scrolling: touch;
+}
+
+.registerCompanyCard {
+  width: 100%;
+  max-width: 720px;
+  margin: clamp(1rem, 4vh, 2rem) auto;
+  margin-bottom: 2rem;
+  animation: registerCardIn 0.35s ease-out;
+  flex-shrink: 0;
+}
+
+@keyframes registerCardIn {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.registerCompanyTitle {
+  font-size: clamp(1.25rem, 4vw, 1.5rem);
+  font-weight: 700;
+  margin: 0 0 0.25rem;
+}
+
+.registerCompanySub {
+  color: var(--textMuted, #64748b);
+  margin: 0 0 1.25rem;
+  font-size: 0.9rem;
+}
+
+/* Form: two columns on wide screens, one on small */
+.registerCompanyFormInner {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+}
+
+@media (min-width: 640px) {
+  .registerCompanyFormInner {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.registerCompanySection {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.registerCompanySectionTitle {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 0 0 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border, #e2e8f0);
+  color: var(--text, #334155);
+}
+
+.registerCompanyForm .label {
+  display: block;
+  margin-top: 0.75rem;
+  font-size: 0.9rem;
+}
+
+.registerCompanyForm .label:first-of-type,
+.registerCompanySection .label:first-of-type {
+  margin-top: 0;
+}
+
+.registerCompanyForm .input {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 0.25rem;
+}
+
+.registerCompanyForm textarea.input {
+  min-height: 4rem;
+  resize: vertical;
+}
+
+.required {
+  color: var(--danger, #dc2626);
+}
+
+/* "Other" type of business — extra field */
+.registerCompanyOtherWrap {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  background: var(--bgMuted, #f8fafc);
+  border-radius: var(--radius, 8px);
+  border: 1px solid var(--border, #e2e8f0);
+}
+
+.registerCompanyOtherWrap .label {
+  margin-top: 0;
+}
+
+.registerCompanyMessage {
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius, 8px);
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.registerCompanyMessage.success {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--success, #16a34a);
+}
+
+.registerCompanyRedirectHint {
+  opacity: 0.9;
+  font-size: 0.85em;
+}
+
+.registerCompanyMessage.error {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--danger, #dc2626);
+}
+
+.registerCompanyBtn {
+  width: 100%;
+  margin-top: 1.25rem;
+  padding: 0.75rem;
+  font-size: 1rem;
+}
+
+.registerCompanyBack {
+  margin-top: 1.25rem;
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+.registerCompanyBack a {
+  color: var(--accent, #2563eb);
+  text-decoration: none;
+}
+
+.registerCompanyBack a:hover {
+  text-decoration: underline;
+}

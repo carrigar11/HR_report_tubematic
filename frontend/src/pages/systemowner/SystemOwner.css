@@ -1,0 +1,742 @@
+.systemOwnerPage {
+  padding: 0;
+}
+
+.systemOwnerPage .systemOwnerCardSection {
+  margin-bottom: 1.5rem;
+}
+
+.systemOwnerAddCompanyForm .label {
+  display: block;
+  margin-top: 0.75rem;
+}
+
+.systemOwnerAddCompanyForm .label:first-of-type {
+  margin-top: 0;
+}
+
+.systemOwnerAddCompanyForm .input {
+  margin-bottom: 0;
+}
+
+.systemOwnerAddCompanyForm button {
+  margin-top: 1rem;
+}
+
+.systemOwnerPage .pageSubtitle {
+  margin: 0 0 1rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.systemOwnerPage .tableWrap {
+  overflow-x: auto;
+}
+
+.systemOwnerPage .btnSm {
+  padding: 0.35rem 0.6rem;
+  font-size: 0.85rem;
+}
+
+/* Company requests View modal: 2 columns, stack on narrow */
+.companyRequestViewGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+@media (max-width: 640px) {
+  .companyRequestViewGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Panels inside View modal: contained boxes */
+.companyRequestViewPanel {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 1.25rem;
+}
+.systemOwnerShell .companyRequestViewPanel {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: #262626;
+}
+.companyRequestViewPanelTitle {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 0 0 1rem 0;
+  color: #a3a3a3;
+}
+.companyRequestViewPanel .companyRequestFullDataList {
+  margin: 0;
+}
+.companyRequestViewPanel .companyRequestFullDataList dd {
+  margin: 0;
+  word-break: break-word;
+}
+.companyRequestViewPre {
+  margin: 0;
+  white-space: pre-wrap;
+  font-size: 0.9rem;
+  font-family: inherit;
+}
+
+/* Searchable company dropdown */
+.searchableSelectWrap {
+  position: relative;
+}
+.searchableSelectTrigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 2.25rem;
+  padding: 0.4rem 0.6rem;
+  background: var(--input-bg, #1e293b);
+  border: 1px solid var(--input-border, #334155);
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text, #f1f5f9);
+}
+.searchableSelectTrigger .searchableSelectInput {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+}
+.searchableSelectArrow {
+  margin-left: 0.5rem;
+  font-size: 0.7rem;
+  opacity: 0.7;
+}
+.searchableSelectDropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--card-bg, #1e293b);
+  border: 1px solid var(--input-border, #334155);
+  border-radius: 6px;
+  z-index: 100;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+.searchableSelectOption {
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.searchableSelectOption:hover,
+.searchableSelectOption.selected {
+  background: rgba(255, 255, 255, 0.08);
+}
+.searchableSelectOption:last-child {
+  border-bottom: none;
+}
+.searchableSelectEmpty {
+  padding: 0.75rem;
+  color: #94a3b8;
+  font-size: 0.9rem;
+}
+.systemOwnerShell .searchableSelectTrigger {
+  background: #171717;
+  border-color: #262626;
+}
+.systemOwnerShell .searchableSelectDropdown {
+  background: #171717;
+  border-color: #262626;
+}
+
+/* Add employee modal: scroll inside modal; form in 2 columns (left block + right block), fields 2 per row */
+/* Override global .modalContent (420px) so this popup has correct width */
+.card.modalContent.systemOwnerAddEmployeeModal {
+  width: 100%;
+  max-width: min(900px, calc(100vw - 2rem));
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.addEmployeeFormColumns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+@media (max-width: 700px) {
+  .addEmployeeFormColumns {
+    grid-template-columns: 1fr;
+  }
+}
+.systemOwnerAddEmployeeForm .companyRequestViewPanel {
+  margin-bottom: 1rem;
+}
+.systemOwnerAddEmployeeForm .addEmployeeFormColumns .companyRequestViewPanel:last-child {
+  margin-bottom: 0;
+}
+
+/* 2-column grid for add employee form: every direct .addEmployeeGrid child is a cell */
+.addEmployeeGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem 1.25rem;
+  align-items: start;
+}
+.addEmployeeGrid .addEmployeeFieldFull {
+  grid-column: 1 / -1;
+}
+.addEmployeeGrid .label {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 0.9rem;
+}
+.addEmployeeGrid .muted {
+  font-size: 0.8rem;
+  margin-top: 0.25rem;
+}
+@media (max-width: 520px) {
+  .addEmployeeGrid {
+    grid-template-columns: 1fr;
+  }
+  .addEmployeeGrid .addEmployeeFieldFull {
+    grid-column: 1;
+  }
+}
+
+.systemOwnerPage .formStack .label {
+  display: block;
+  margin-top: 0.75rem;
+}
+
+.systemOwnerPage .formStack .label:first-of-type {
+  margin-top: 0;
+}
+
+.manageAdminsAccessGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.manageAdminsAccessGrid label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+/* System owner: use full width so no gap on right */
+.systemOwnerMain {
+  max-width: 100%;
+}
+
+/* System Owner: all-black dark theme */
+.systemOwnerShell .sidebar {
+  background: #0a0a0a;
+  border-right-color: #262626;
+}
+.systemOwnerShell .sidebarHead {
+  border-bottom-color: #262626;
+}
+.systemOwnerShell .navLink {
+  color: #a3a3a3;
+}
+.systemOwnerShell .navLink:hover {
+  color: #fafafa;
+  background: rgba(38, 38, 38, 0.8);
+}
+.systemOwnerShell .navLink.active {
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.15);
+}
+.systemOwnerShell .brandIcon {
+  background: #10b981;
+  color: #fff;
+}
+.systemOwnerShell .brandText {
+  color: #fafafa;
+}
+
+.systemOwnerShell .mainWrap {
+  background: #0a0a0a;
+}
+.systemOwnerShell .topbar {
+  background: #0a0a0a;
+  border-bottom: 1px solid #262626;
+}
+.systemOwnerShell .topbarTitle {
+  color: #fafafa;
+}
+.systemOwnerShell .main {
+  background: #0a0a0a;
+  color: #e5e5e5;
+}
+.systemOwnerShell .notificationBellBtn {
+  color: #e5e5e5;
+}
+.systemOwnerShell .notificationBellBtn:hover {
+  background: #262626;
+}
+.systemOwnerShell .userProfileBtn {
+  color: #e5e5e5;
+}
+.systemOwnerShell .userName {
+  color: #e5e5e5;
+}
+
+/* Cards and content on all system owner pages (black theme) */
+.systemOwnerShell .main .card {
+  background: #171717;
+  border-color: #262626;
+  color: #e5e5e5;
+}
+.systemOwnerShell .main .pageSubtitle {
+  color: #fafafa;
+}
+.systemOwnerShell .main .muted,
+.systemOwnerShell .main p.muted {
+  color: #a3a3a3;
+}
+.systemOwnerShell .main .table thead th {
+  color: #a3a3a3;
+  border-color: #262626;
+}
+.systemOwnerShell .main .table tbody td {
+  color: #e5e5e5;
+  border-color: #262626;
+}
+.systemOwnerShell .main .error {
+  color: #fca5a5;
+}
+.systemOwnerShell .main .success {
+  color: #6ee7b7;
+}
+
+/* Dashboard — full width, black theme, spaced grids */
+.systemOwnerDashboard {
+  padding: 0;
+  max-width: 1400px;
+  margin: 0 auto;
+  color: #e5e5e5;
+}
+
+.dashboardHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1.75rem;
+}
+
+.dashboardPageTitle {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: #fafafa;
+}
+
+.dashboardQuickActions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.dashboardBtnPrimary {
+  background: #10b981 !important;
+  color: #fff !important;
+  border-color: #10b981 !important;
+}
+.dashboardBtnPrimary:hover {
+  background: #059669 !important;
+  border-color: #059669 !important;
+  color: #fff !important;
+}
+
+.dashboardBtnSecondary {
+  background: #262626 !important;
+  color: #e5e5e5 !important;
+  border-color: #404040 !important;
+}
+.dashboardBtnSecondary:hover {
+  background: #404040 !important;
+  color: #fafafa !important;
+}
+
+.dashboardStats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.25rem;
+  margin-bottom: 2rem;
+}
+
+@media (max-width: 900px) {
+  .dashboardStats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .dashboardStats {
+    grid-template-columns: 1fr;
+  }
+}
+
+.dashboardStatCard {
+  padding: 1.25rem 1.35rem;
+  text-decoration: none;
+  color: #fafafa;
+  border-radius: 12px;
+  background: #171717;
+  border: 1px solid #262626;
+  transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
+}
+
+.dashboardStatCard:hover {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  transform: translateY(-2px);
+  border-color: #10b981;
+}
+
+.dashboardStatCardHighlight {
+  border-left: 4px solid #f59e0b;
+  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.2);
+}
+
+.dashboardStatContent {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.dashboardStatLabel {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #a3a3a3;
+}
+
+.dashboardStatValue {
+  display: block;
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  color: #fafafa;
+}
+
+.dashboardStatCard--primary { background: #171717; border-color: #262626; }
+.dashboardStatCard--gold { background: #171717; border-color: #262626; }
+.dashboardStatCard--purple { background: #171717; border-color: #262626; }
+.dashboardStatCard--danger { background: #171717; border-color: #262626; }
+
+.dashboardSectionHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.systemOwnerDashboard .systemOwnerCardSection {
+  margin-bottom: 2rem;
+}
+
+.dashboardSectionTitle {
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #a3a3a3;
+}
+
+.dashboardViewAllLink,
+.dashboardViewLink {
+  color: #34d399;
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+.dashboardViewAllLink:hover,
+.dashboardViewLink:hover {
+  color: #6ee7b7;
+  text-decoration: underline;
+}
+
+.dashboardMuted {
+  color: #a3a3a3;
+}
+
+.dashboardNotificationList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.dashboardNotificationItem {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 0.35rem 1rem;
+  align-items: baseline;
+  padding: 0.65rem 0;
+  border-bottom: 1px solid #262626;
+  font-size: 0.9rem;
+}
+
+.dashboardNotificationItem:last-child {
+  border-bottom: none;
+}
+
+.dashboardNotificationTitle {
+  font-weight: 500;
+  color: #e5e5e5;
+}
+
+.dashboardNotificationMessage {
+  grid-column: 1 / -1;
+  color: #a3a3a3;
+  font-size: 0.85rem;
+}
+
+.dashboardNotificationTime {
+  font-size: 0.8rem;
+  color: #a3a3a3;
+}
+
+.dashboardGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+}
+
+@media (max-width: 768px) {
+  .dashboardGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Dashboard cards: black surface */
+.systemOwnerDashboard .card {
+  border-radius: 12px;
+  border: 1px solid #262626;
+  background: #171717;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+
+.systemOwnerDashboard .card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+/* Dashboard tables: readable on dark */
+.systemOwnerDashboard .dashboardTable thead th {
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: #a3a3a3;
+  border-bottom: 1px solid #262626;
+  padding: 0.6rem 0.75rem;
+}
+.systemOwnerDashboard .dashboardTable tbody td {
+  color: #e5e5e5;
+  border-bottom: 1px solid #262626;
+  padding: 0.6rem 0.75rem;
+}
+.systemOwnerDashboard .dashboardTable tbody tr:hover td {
+  background: rgba(38, 38, 38, 0.6);
+}
+.systemOwnerDashboard .dashboardTable .btnSm {
+  color: #34d399;
+  border-color: #34d399;
+  background: transparent;
+}
+.systemOwnerDashboard .dashboardTable .btnSm:hover {
+  background: rgba(52, 211, 153, 0.15);
+  color: #6ee7b7;
+}
+
+.linkMuted {
+  color: var(--muted, #64748b);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.linkMuted:hover {
+  text-decoration: underline;
+}
+
+/* Notification bell (header) */
+.notificationBellWrap {
+  position: relative;
+  margin-right: 0.5rem;
+}
+
+.notificationBellBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text, #334155);
+}
+
+.notificationBellBtn:hover {
+  background: var(--bg-hover, #f1f5f9);
+}
+
+.notificationBellBadge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 1.1rem;
+  height: 1.1rem;
+  padding: 0 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1.1rem;
+  text-align: center;
+  background: var(--primary, #2563eb);
+  color: #fff;
+  border-radius: 10px;
+}
+
+.notificationDropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 0.25rem;
+  min-width: 280px;
+  max-width: 360px;
+  max-height: 70vh;
+  overflow-y: auto;
+  z-index: 100;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+  border-radius: 8px;
+}
+
+.notificationDropdownHead {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border, #e2e8f0);
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.notificationDropdownItem {
+  display: block;
+  padding: 0.65rem 1rem;
+  text-decoration: none;
+  color: inherit;
+  border-bottom: 1px solid var(--border, #e2e8f0);
+  font-size: 0.9rem;
+  transition: background 0.1s ease;
+}
+
+.notificationDropdownItem:hover {
+  background: var(--bg-hover, #f8fafc);
+}
+
+.notificationDropdownItemTitle {
+  font-weight: 500;
+}
+
+.notificationDropdownItemSub {
+  font-size: 0.8rem;
+  color: var(--muted, #64748b);
+  margin-top: 2px;
+}
+
+.notificationDropdownEmpty {
+  padding: 1rem;
+  text-align: center;
+  color: var(--muted, #64748b);
+  font-size: 0.9rem;
+}
+
+/* Company requests: expandable row for address + other data */
+.companyRequestToggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border: 1px solid var(--border, #e2e8f0);
+  background: var(--surface, #fff);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.7rem;
+  color: var(--textMuted, #64748b);
+}
+.companyRequestToggle:hover {
+  background: var(--bg-hover, #f1f5f9);
+  color: var(--text, #334155);
+}
+
+.companyRequestDetailsRow td {
+  background: var(--bgMuted, #f8fafc) !important;
+}
+
+.companyRequestDetails {
+  padding: 1rem 1rem 1rem 2.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+}
+
+.companyRequestDetailsBlock {
+  min-width: 200px;
+}
+.companyRequestDetailsBlock strong {
+  display: block;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--textMuted, #64748b);
+  margin-bottom: 0.35rem;
+}
+
+.companyRequestDetailsValue {
+  margin: 0;
+  font-size: 0.9rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.companyRequestDetailsList {
+  margin: 0;
+  display: grid;
+  gap: 0.25rem 1rem;
+  grid-template-columns: auto 1fr;
+  font-size: 0.9rem;
+}
+
+.companyRequestDetailsItem {
+  display: contents;
+}
+.companyRequestDetailsItem dt {
+  margin: 0;
+  color: var(--textMuted, #64748b);
+  font-weight: 500;
+}
+.companyRequestDetailsItem dd {
+  margin: 0;
+}
+.companyRequestDetailsItem dd a {
+  color: var(--accent, #2563eb);
+  text-decoration: none;
+}
+.companyRequestDetailsItem dd a:hover {
+  text-decoration: underline;
+}

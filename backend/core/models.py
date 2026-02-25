@@ -10,6 +10,9 @@ class Company(models.Model):
     """Company/organization. Employees and admins can be scoped to a company."""
     name = models.CharField(max_length=255)
     code = models.CharField(max_length=50, unique=True, db_index=True, help_text='Short code e.g. HQ, BR1')
+    contact_email = models.EmailField(blank=True)
+    contact_phone = models.CharField(max_length=50, blank=True)
+    address = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -19,6 +22,29 @@ class Company(models.Model):
 
     def __str__(self):
         return f"{self.code} - {self.name}"
+
+
+class CompanyRegistrationRequest(models.Model):
+    """Request from login page 'Register your company'. Data sent to main admin email; stored for system owner."""
+    STATUS_PENDING = 'pending'
+    STATUS_APPROVED = 'approved'
+    STATUS_DECLINED = 'declined'
+    STATUS_CHOICES = [(STATUS_PENDING, 'Pending'), (STATUS_APPROVED, 'Approved'), (STATUS_DECLINED, 'Declined')]
+
+    company_name = models.CharField(max_length=255)
+    contact_email = models.EmailField()
+    contact_phone = models.CharField(max_length=50, blank=True)
+    address = models.TextField(blank=True)
+    extra_data = models.JSONField(default=dict, blank=True, help_text='Additional fields: company_url, gstin, pan, etc.')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'company_registration_requests'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.company_name} ({self.contact_email})"
 
 
 class Admin(models.Model):
@@ -40,6 +66,8 @@ class Admin(models.Model):
     access = models.JSONField(default=dict, blank=True)
     # Optional: restrict admin to one company. When set, admin sees only that company's employees.
     company = models.ForeignKey(Company, null=True, blank=True, on_delete=models.SET_NULL, related_name='admins')
+    # System owner: logs in from same page, sees all companies, employees, admins; can edit everything.
+    is_system_owner = models.BooleanField(default=False)
 
     class Meta:
         db_table = 'admins'
@@ -391,7 +419,8 @@ class PlantReportRecipient(models.Model):
 
 
 class EmailSmtpConfig(models.Model):
-    """SMTP credentials and options for sending email. One active config is used for push email."""
+    """SMTP credentials for sending email. Multiple configs supported; tried in priority order until one succeeds."""
+    priority = models.PositiveIntegerField(default=0, help_text='Try order: lower = first. System tries each active config until send succeeds.')
     smtp_server = models.CharField(max_length=255, default='smtp.gmail.com', help_text='e.g. smtp.gmail.com')
     smtp_port = models.PositiveSmallIntegerField(default=587, help_text='Usually 587 for TLS')
     auth_username = models.CharField(max_length=254, blank=True, help_text='SMTP login email')
@@ -399,7 +428,7 @@ class EmailSmtpConfig(models.Model):
     force_sender = models.CharField(max_length=254, blank=True, help_text='From address (optional, defaults to auth_username)')
     error_logfile = models.CharField(max_length=255, blank=True, help_text='Path to error log file')
     debug_logfile = models.CharField(max_length=255, blank=True, help_text='Path to debug log file')
-    is_active = models.BooleanField(default=True, help_text='Use this config when sending email')
+    is_active = models.BooleanField(default=True, help_text='Include this config when sending (tried in priority order)')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -407,6 +436,7 @@ class EmailSmtpConfig(models.Model):
         db_table = 'email_smtp_config'
         verbose_name = 'Email SMTP config'
         verbose_name_plural = 'Email SMTP configs'
+        ordering = ['priority', 'id']
 
     def __str__(self):
         return f"{self.smtp_server}:{self.smtp_port} ({self.auth_username or 'no auth'})"

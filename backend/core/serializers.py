@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from .models import (
-    Admin, Employee, Attendance, Salary, SalaryAdvance, Adjustment,
+    Admin, Company, Employee, Attendance, Salary, SalaryAdvance, Adjustment,
     Penalty, PenaltyInquiry, PerformanceReward, Holiday, LeaveRequest,
     SystemSetting, PlantReportRecipient, EmailSmtpConfig, AuditLog
 )
@@ -31,14 +31,15 @@ DEFAULT_ACCESS = {
 
 
 class AdminSerializer(serializers.ModelSerializer):
-    """Login response: id, name, email, role, department, access (id=1 always super_admin with full access)."""
+    """Login response: id, name, email, role, department, access, is_system_owner (id=1 always super_admin with full access)."""
     role = serializers.SerializerMethodField()
     department = serializers.CharField(read_only=True)
     access = serializers.JSONField(read_only=True)
+    is_system_owner = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = Admin
-        fields = ['id', 'name', 'email', 'phone', 'role', 'department', 'access']
+        fields = ['id', 'name', 'email', 'phone', 'role', 'department', 'access', 'is_system_owner']
 
     def get_role(self, obj):
         return 'super_admin' if obj.pk == 1 else (obj.role or 'dept_admin')
@@ -71,10 +72,35 @@ class AdminUpdateSerializer(serializers.Serializer):
 
 
 class AdminListSerializer(serializers.ModelSerializer):
-    """For super admin: list all admins with role, department, access."""
+    """For super admin / system owner: list all admins with role, department, access, company."""
+    company_id = serializers.SerializerMethodField()
+    company_name = serializers.SerializerMethodField()
+
     class Meta:
         model = Admin
-        fields = ['id', 'name', 'email', 'phone', 'department', 'role', 'access']
+        fields = ['id', 'name', 'email', 'phone', 'department', 'role', 'access', 'company_id', 'company_name']
+
+    def get_company_id(self, obj):
+        return obj.company_id
+
+    def get_company_name(self, obj):
+        return obj.company.name if obj.company_id else None
+
+
+class CompanySerializer(serializers.ModelSerializer):
+    """For system owner: company list and detail."""
+    employee_count = serializers.SerializerMethodField()
+    admin_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Company
+        fields = ['id', 'name', 'code', 'contact_email', 'contact_phone', 'address', 'is_active', 'created_at', 'employee_count', 'admin_count']
+
+    def get_employee_count(self, obj):
+        return obj.employees.count() if hasattr(obj, 'employees') else 0
+
+    def get_admin_count(self, obj):
+        return obj.admins.count() if hasattr(obj, 'admins') else 0
 
 
 class AdminAccessUpdateSerializer(serializers.Serializer):
@@ -294,7 +320,7 @@ class EmailSmtpConfigSerializer(serializers.ModelSerializer):
     class Meta:
         model = EmailSmtpConfig
         fields = [
-            'id', 'smtp_server', 'smtp_port', 'auth_username', 'auth_password',
+            'id', 'priority', 'smtp_server', 'smtp_port', 'auth_username', 'auth_password',
             'force_sender', 'error_logfile', 'debug_logfile', 'is_active',
             'created_at', 'updated_at',
         ]
