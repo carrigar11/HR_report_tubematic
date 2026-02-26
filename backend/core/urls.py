@@ -17,6 +17,7 @@ urlpatterns = [
     path('auth/login/', views.AdminLoginView.as_view()),
     path('auth/refresh/', views.AdminRefreshTokenView.as_view()),
     path('employee/auth/login/', views.EmployeeLoginView.as_view()),
+    path('employee/auth/select-company/', views.EmployeeSelectCompanyView.as_view()),
     path('employee/dashboard/', views.EmployeeDashboardView.as_view()),
     path('employee/attendance/', views.EmployeeAttendanceListView.as_view()),
     path('employee/profile/', views.EmployeeSelfProfileView.as_view()),

@@ -12,6 +12,7 @@ export default function Login() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [configLoading, setConfigLoading] = useState(true)
+  const [companyChoice, setCompanyChoice] = useState(null) // { requires_company_choice: true, employees: [...] }
 
   useEffect(() => {
     config.get()
@@ -20,19 +21,45 @@ export default function Login() {
       .finally(() => setConfigLoading(false))
   }, [])
 
+  const handleEmployeeLoginSuccess = (data) => {
+    localStorage.removeItem('hr_admin')
+    localStorage.setItem('hr_employee', JSON.stringify(data.employee))
+    if (data.access) localStorage.setItem('hr_access_token', data.access)
+    if (data.refresh) localStorage.setItem('hr_refresh_token', data.refresh)
+    navigate('/employee/dashboard')
+  }
+
+  const handleSelectCompany = async (empCode) => {
+    setError('')
+    setLoading(true)
+    try {
+      const identifier = email.trim()
+      const { data } = await employeeAuth.selectCompany(identifier, password, empCode)
+      if (data.success && data.employee) {
+        setCompanyChoice(null)
+        handleEmployeeLoginSuccess(data)
+      } else {
+        setError(data.message || 'Failed to sign in')
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || err.message || 'Failed to sign in')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
+    setCompanyChoice(null)
     setLoading(true)
     try {
       if (mode === 'employee') {
         const { data } = await employeeAuth.login(email.trim(), password)
-        if (data.success && data.employee) {
-          localStorage.removeItem('hr_admin')
-          localStorage.setItem('hr_employee', JSON.stringify(data.employee))
-          if (data.access) localStorage.setItem('hr_access_token', data.access)
-          if (data.refresh) localStorage.setItem('hr_refresh_token', data.refresh)
-          navigate('/employee/dashboard')
+        if (data.success && data.requires_company_choice && data.employees?.length) {
+          setCompanyChoice({ employees: data.employees })
+        } else if (data.success && data.employee) {
+          handleEmployeeLoginSuccess(data)
         } else {
           setError(data.message || 'Login failed')
         }
@@ -126,6 +153,34 @@ export default function Login() {
           <p className="loginRegisterLink">
             <Link to="/register-company">Register your company</Link>
           </p>
+        )}
+
+        {mode === 'employee' && companyChoice && companyChoice.employees?.length > 0 && (
+          <div className="loginCompanyChoiceOverlay" onClick={() => setCompanyChoice(null)}>
+            <div className="card loginCompanyChoiceCard" onClick={(ev) => ev.stopPropagation()}>
+              <h3 className="loginCompanyChoiceTitle">Select company</h3>
+              <p className="muted" style={{ marginBottom: '1rem', fontSize: '0.9rem' }}>
+                You work in more than one company. Choose which company data to view.
+              </p>
+              <ul className="loginCompanyChoiceList">
+                {companyChoice.employees.map((emp) => (
+                  <li key={emp.emp_code}>
+                    <button
+                      type="button"
+                      className="btn btn-primary loginCompanyChoiceBtn"
+                      onClick={() => handleSelectCompany(emp.emp_code)}
+                      disabled={loading}
+                    >
+                      {emp.company_name} {emp.company_code !== '—' ? `(${emp.company_code})` : ''}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <button type="button" className="btn btn-secondary" onClick={() => setCompanyChoice(null)}>
+                Cancel
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </div>

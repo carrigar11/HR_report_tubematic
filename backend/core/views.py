@@ -232,9 +232,20 @@ class AdminRefreshTokenView(APIView):
         return Response({'error': 'Invalid or expired refresh token'}, status=401)
 
 
+def _employee_company_display(emp):
+    """Safe company name/code for an employee (handles deleted company)."""
+    if not getattr(emp, 'company_id', None):
+        return None, None
+    try:
+        return emp.company.name, emp.company.code
+    except Exception:
+        return None, None
+
+
 @method_decorator(csrf_exempt, name='dispatch')
 class EmployeeLoginView(APIView):
-    """POST { email, password } or { mobile, password }. Login by email OR phone number. Only when EMPLOYEE_LOGIN_ENABLED."""
+    """POST { email, password } or { mobile, password }. Login by email OR phone number.
+    If one employee matches -> return tokens. If multiple (same person in multiple companies) -> return requires_company_choice and list; frontend calls select-company with emp_code to get tokens."""
     authentication_classes = []
     permission_classes = []
 
@@ -245,19 +256,72 @@ class EmployeeLoginView(APIView):
         password = (request.data.get('password') or '').strip()
         if not identifier or not password:
             return Response({'success': False, 'message': 'Email or phone and password required'}, status=400)
-        emp = Employee.objects.filter(email__iexact=identifier).first()
-        if not emp:
-            emp = Employee.objects.filter(mobile=identifier).first()
-        if not emp:
+        candidates = list(Employee.objects.filter(
+            Q(email__iexact=identifier) | Q(mobile=identifier)
+        ).filter(status__in=Employee.EMPLOYED_STATUSES).select_related('company'))
+        matching = [e for e in candidates if e.password and e.password == password]
+        if not matching:
             return Response({'success': False, 'message': 'Invalid credentials'}, status=401)
-        if not emp.password or emp.password != password:
+        if len(matching) == 1:
+            emp = matching[0]
+            company_name, company_code = _employee_company_display(emp)
+            access = encode_access_employee(emp.emp_code)
+            refresh = encode_refresh_employee(emp.emp_code)
+            return Response({
+                'success': True,
+                'employee': {
+                    'emp_code': emp.emp_code,
+                    'name': emp.name,
+                    'dept_name': emp.dept_name or '',
+                    'designation': emp.designation or '',
+                    'company': company_name,
+                    'company_code': company_code,
+                },
+                'access': access,
+                'refresh': refresh,
+                'message': 'Login successful',
+            })
+        # Multiple: same person in multiple companies — ask to select company
+        employees = []
+        for emp in matching:
+            company_name, company_code = _employee_company_display(emp)
+            employees.append({
+                'emp_code': emp.emp_code,
+                'name': emp.name,
+                'company_id': emp.company_id,
+                'company_name': company_name or '—',
+                'company_code': company_code or '—',
+            })
+        return Response({
+            'success': True,
+            'requires_company_choice': True,
+            'employees': employees,
+            'message': 'Select the company to view data for',
+        })
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class EmployeeSelectCompanyView(APIView):
+    """POST { email or mobile, password, emp_code }. After login returned requires_company_choice, user picks company; this returns tokens for that emp_code."""
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request):
+        if not getattr(settings, 'EMPLOYEE_LOGIN_ENABLED', True):
+            return Response({'success': False, 'message': 'Employee login is disabled'}, status=403)
+        identifier = (request.data.get('email') or request.data.get('mobile') or '').strip()
+        password = (request.data.get('password') or '').strip()
+        emp_code = (request.data.get('emp_code') or '').strip()
+        if not identifier or not password or not emp_code:
+            return Response({'success': False, 'message': 'Email/phone, password and emp_code required'}, status=400)
+        emp = Employee.objects.filter(emp_code=emp_code).filter(
+            Q(email__iexact=identifier) | Q(mobile=identifier)
+        ).filter(status__in=Employee.EMPLOYED_STATUSES).select_related('company').first()
+        if not emp or not emp.password or emp.password != password:
             return Response({'success': False, 'message': 'Invalid credentials'}, status=401)
-        if emp.status not in Employee.EMPLOYED_STATUSES:
-            return Response({'success': False, 'message': 'Account not active'}, status=403)
+        company_name, company_code = _employee_company_display(emp)
         access = encode_access_employee(emp.emp_code)
         refresh = encode_refresh_employee(emp.emp_code)
-        company_name = emp.company.name if emp.company_id else None
-        company_code = emp.company.code if emp.company_id else None
         return Response({
             'success': True,
             'employee': {
@@ -1047,7 +1111,9 @@ class UploadEmployeesView(APIView):
         if not f:
             return Response({'success': False, 'error': 'No file'}, status=400)
         preview = request.data.get('preview', 'false').lower() == 'true'
-        result = upload_employees_excel(f, preview=preview)
+        admin, _ = get_request_admin(request)
+        company_id = getattr(admin, 'company_id', None) if admin else None
+        result = upload_employees_excel(f, preview=preview, company_id=company_id)
         if not result.get('success'):
             return Response(result, status=400)
         if not preview:
@@ -1192,13 +1258,14 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             all_emps = self.get_queryset().filter(status__in=Employee.EMPLOYED_STATUSES)
             dept_from_emps = set(all_emps.values_list('dept_name', flat=True).distinct()) - {''}
             dept_from_admins = set(Admin.objects.exclude(department='').exclude(department__isnull=True).values_list('department', flat=True).distinct())
+            dept_from_emps = {d for d in dept_from_emps if d is not None}
             departments = sorted(set(dept_from_emps) | set(d for d in dept_from_admins if (d or '').strip()))
-            designations = sorted(set(all_emps.values_list('designation', flat=True).distinct()) - {''})
-            shifts = sorted(set(all_emps.exclude(shift='').values_list('shift', flat=True).distinct()))
-            genders = sorted(set(all_emps.values_list('gender', flat=True).distinct()) - {''})
-            join_years = sorted(set(
-                Employee.objects.dates('created_at', 'year').values_list('created_at__year', flat=True)
-            ))
+            designations = sorted(x for x in (set(all_emps.values_list('designation', flat=True).distinct()) - {''}) if x is not None)
+            designations.sort()
+            shifts = sorted(x for x in all_emps.exclude(shift='').values_list('shift', flat=True).distinct() if (x or '').strip())
+            gender_set = set(all_emps.values_list('gender', flat=True).distinct()) - {''}
+            genders = sorted(x for x in gender_set if x is not None)
+            join_years = sorted(set(d.year for d in Employee.objects.dates('created_at', 'year')))
             filter_data = {
                 'departments': departments,
                 'designations': designations,

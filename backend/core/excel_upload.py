@@ -246,10 +246,22 @@ def ensure_admins_for_departments(dept_names, password=None):
     return created_emails
 
 
-def upload_employees_excel(file, preview=False) -> dict:
+def _next_available_emp_code(existing_codes, used_in_upload, prefix='UPL'):
+    """Return an emp_code not in existing_codes and not in used_in_upload."""
+    n = 1
+    while True:
+        code = f"{prefix}{n}"
+        if code not in existing_codes and code not in used_in_upload:
+            used_in_upload.add(code)
+            return code
+        n += 1
+
+
+def upload_employees_excel(file, preview=False, company_id=None) -> dict:
     """
-    If emp_code does not exist -> create.
-    If exists -> update only non-sensitive fields.
+    If emp_code does not exist -> create (with optional company_id).
+    If emp_code exists with same name -> update only non-sensitive fields.
+    If emp_code exists with different name -> create NEW employee with a generated emp_code (same person in another company).
     Never create duplicate emp_code.
     If preview=True, returns changes without applying them.
     When new department names appear in the upload, creates admin logins for them (manage-admins).
@@ -266,7 +278,11 @@ def upload_employees_excel(file, preview=False) -> dict:
     to_update = []
     upload_dept_names = set()  # department names seen in this upload
 
-    # Get existing employees for comparison
+    # All existing emp_codes in DB (for generating new codes when emp_code exists but name differs)
+    all_existing_codes = set(Employee.objects.values_list('emp_code', flat=True))
+    used_in_upload = set()  # codes we assign in this run (to_create with generated code)
+
+    # Get existing employees for comparison (by emp_code from sheet)
     emp_codes = []
     rows_data = []
     for _, row in df.iterrows():
@@ -328,23 +344,33 @@ def upload_employees_excel(file, preview=False) -> dict:
             'salary_type': salary_type,
             'base_salary': str(base_salary) if base_salary else None,
         }
+        if company_id is not None:
+            emp_data['company_id'] = company_id
 
         if emp_code in existing_employees:
             existing = existing_employees[emp_code]
-            # Check if there are actual changes
-            has_changes = (
-                existing['name'] != name or
-                existing.get('dept_name') != dept or
-                existing.get('designation') != designation or
-                existing.get('status') != status
-            )
-            if has_changes:
-                to_update.append({
-                    'emp_code': emp_code,
-                    'old': existing,
-                    'new': emp_data,
-                })
-                updated += 1
+            if (existing['name'] or '').strip() == (name or '').strip():
+                # Same person: update if there are changes (do not change company)
+                has_changes = (
+                    existing.get('dept_name') != dept or
+                    existing.get('designation') != designation or
+                    existing.get('status') != status
+                )
+                if has_changes:
+                    new_data = {k: v for k, v in emp_data.items() if k != 'company_id'}
+                    to_update.append({
+                        'emp_code': emp_code,
+                        'old': existing,
+                        'new': new_data,
+                    })
+                    updated += 1
+            else:
+                # Same emp_code but different name: create NEW employee with generated emp_code (person works in another company)
+                new_code = _next_available_emp_code(all_existing_codes, used_in_upload)
+                emp_data_new = dict(emp_data)
+                emp_data_new['emp_code'] = new_code
+                to_create.append(emp_data_new)
+                created += 1
         else:
             to_create.append(emp_data)
             created += 1

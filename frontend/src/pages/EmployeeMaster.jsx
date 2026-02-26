@@ -429,7 +429,7 @@ export default function EmployeeMaster() {
                     <label className="label">Gender</label>
                     <select className="input" value={addForm.gender} onChange={(e) => setAddForm((f) => ({ ...f, gender: e.target.value }))}>
                       <option value="">—</option>
-                      {((filterOptions.genders && filterOptions.genders.length) ? filterOptions.genders : ['Male', 'Female', 'Other']).map((g) => (
+                      {['Male', 'Female', 'Other'].map((g) => (
                         <option key={g} value={g}>{g}</option>
                       ))}
                     </select>

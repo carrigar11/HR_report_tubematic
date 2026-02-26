@@ -147,3 +147,36 @@
   margin-top: 1rem;
   padding: 0.6rem;
 }
+
+/* Employee: select company popup (multiple companies) */
+.loginCompanyChoiceOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+.loginCompanyChoiceCard {
+  max-width: 400px;
+  width: 100%;
+}
+.loginCompanyChoiceTitle {
+  margin: 0 0 0.5rem;
+  font-size: 1.15rem;
+}
+.loginCompanyChoiceList {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1rem;
+}
+.loginCompanyChoiceList li {
+  margin-bottom: 0.5rem;
+}
+.loginCompanyChoiceBtn {
+  width: 100%;
+  text-align: left;
+  padding: 0.75rem 1rem;
+}

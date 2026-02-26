@@ -135,6 +135,8 @@ export const systemOwner = {
 
 export const employeeAuth = {
   login: (email, password) => api.post('/employee/auth/login/', { email, password }),
+  selectCompany: (identifier, password, empCode) =>
+    api.post('/employee/auth/select-company/', { email: identifier, password, emp_code: empCode }),
 }
 
 export const employee = {
