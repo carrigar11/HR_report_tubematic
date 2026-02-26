@@ -1,5 +1,5 @@
 """
-Start a background thread that syncs the Google Sheet every 1 minute
+Start a background thread that syncs the Google Sheet every 2 minutes
 when the Django server is running. No Celery or Redis needed.
 """
 import logging
@@ -10,9 +10,11 @@ from django.apps import AppConfig
 
 logger = logging.getLogger(__name__)
 
+_SYNC_INTERVAL_SECONDS = 120  # 2 minutes
+
 
 def _google_sheet_sync_loop():
-    """Run sync_all every 60 seconds; also check daily Plant Report email time."""
+    """Run sync_all every 2 minutes; also check daily Plant Report email time."""
     while True:
         try:
             from core.google_sheets_sync import get_sheet_id, sync_all
@@ -36,7 +38,7 @@ def _google_sheet_sync_loop():
             mark_inactive_no_punch_6_days()
         except Exception as e:
             logger.warning('Auto mark-inactive (no punch 6 days) error: %s', e, exc_info=True)
-        time.sleep(60)
+        time.sleep(_SYNC_INTERVAL_SECONDS)
 
 
 class CoreConfig(AppConfig):
@@ -51,4 +53,4 @@ class CoreConfig(AppConfig):
             return
         thread = threading.Thread(target=_google_sheet_sync_loop, daemon=True)
         thread.start()
-        logger.info('Google Sheet auto-sync started (every 1 minute)')
+        logger.info('Google Sheet auto-sync started (every 2 minutes)')

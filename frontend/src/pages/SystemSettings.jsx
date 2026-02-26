@@ -58,6 +58,17 @@ export default function SystemSettings() {
   const [plantReportSaving, setPlantReportSaving] = useState(false)
   const [plantReportSendNowLoading, setPlantReportSendNowLoading] = useState(false)
   const [plantReportMessage, setPlantReportMessage] = useState('')
+  const [plantReportActionOpen, setPlantReportActionOpen] = useState(null)
+
+  useEffect(() => {
+    if (plantReportActionOpen == null) return
+    const close = (e) => {
+      if (e.target.closest('.plantReportRecipientActionsWrap')) return
+      setPlantReportActionOpen(null)
+    }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [plantReportActionOpen])
 
   const adminId = (() => {
     try {
@@ -282,6 +293,21 @@ export default function SystemSettings() {
       setPlantReportMessage('Recipient added.')
     } catch (err) {
       setPlantReportMessage(err.response?.data?.error || err.response?.data?.detail || err.message || 'Failed to add')
+    } finally {
+      setPlantReportSaving(false)
+    }
+  }
+
+  const handleTogglePlantReportSend = async (r) => {
+    const next = !(r.is_active !== false)
+    setPlantReportSaving(true)
+    setPlantReportMessage('')
+    try {
+      const { data } = await plantReportEmail.updateRecipient(r.id, { is_active: next })
+      setPlantReportRecipients((prev) => prev.map((x) => (x.id === r.id ? { ...x, is_active: data.is_active } : x)))
+      setPlantReportMessage(next ? 'Recipient will receive daily email.' : 'Recipient excluded from daily email.')
+    } catch (err) {
+      setPlantReportMessage(err.response?.data?.error || err.response?.data?.detail || err.message || 'Failed to update')
     } finally {
       setPlantReportSaving(false)
     }
@@ -609,33 +635,78 @@ export default function SystemSettings() {
           <span className="settingsSectionIcon settingsSectionIconSmtp"><IconMail /></span>
           <div>
             <h3 className="settingsSectionTitle">Plant Report daily email</h3>
-            <p className="muted settingsSectionDesc">Send the Plant Report (Previous day) Excel to the listed emails every day at the set time. Add/remove emails and change the time below. Requires SMTP configured above.</p>
+            <p className="muted settingsSectionDesc">Send the Plant Report (Previous day) Excel every day at the set time. Add emails below; use the checkbox to choose whom to send to (uncheck to keep in list but exclude from daily send). Requires SMTP configured above.</p>
           </div>
         </div>
         {plantReportLoading ? (
           <p className="muted">Loading…</p>
         ) : (
           <>
-            <div className="profileField" style={{ marginBottom: 12 }}>
+            <div className="profileField plantReportRecipientsBlock">
               <label className="label">Recipients</label>
-              <ul className="plantReportRecipientList">
-                {(plantReportRecipients || []).map((r) => (
-                  <li key={r.id}>
-                    <span>{r.email}</span>
-                    <button type="button" className="btn btn-secondary btnSmall" onClick={() => handleRemovePlantReportRecipient(r.id)}>Remove</button>
-                  </li>
-                ))}
-              </ul>
-              <form onSubmit={handleAddPlantReportRecipient} style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+              <p className="muted plantReportRecipientsHint">Use the action menu on each row to include in daily send or remove from list.</p>
+              <div className="plantReportRecipientListWrap">
+                {(plantReportRecipients || []).length === 0 ? (
+                  <div className="plantReportRecipientEmpty">No recipients yet. Add an email below.</div>
+                ) : (
+                  <>
+                    <div className="plantReportRecipientHeader">
+                      <span className="plantReportRecipientColEmail">Email</span>
+                      <span className="plantReportRecipientColAction" />
+                    </div>
+                    <ul className="plantReportRecipientList">
+                      {(plantReportRecipients || []).map((r) => (
+                        <li key={r.id} className={r.is_active !== false ? '' : 'plantReportRecipientExcluded'}>
+                          <span className="plantReportRecipientColEmail">{r.email}</span>
+                          <span className="plantReportRecipientColAction">
+                            <div className="plantReportRecipientActionsWrap">
+                              <button
+                                type="button"
+                                className="plantReportRecipientActionBtn"
+                                onClick={() => setPlantReportActionOpen(plantReportActionOpen === r.id ? null : r.id)}
+                                disabled={plantReportSaving}
+                                title="Actions"
+                              >
+                                {r.is_active !== false ? '✓ Send' : 'Send'}
+                                <span className="plantReportRecipientActionArrow">▾</span>
+                              </button>
+                              {plantReportActionOpen === r.id && (
+                                <div className="plantReportRecipientDropdown">
+                                  <button
+                                    type="button"
+                                    className="plantReportRecipientDropdownItem"
+                                    onClick={() => { handleTogglePlantReportSend(r); setPlantReportActionOpen(null) }}
+                                    disabled={plantReportSaving}
+                                  >
+                                    {r.is_active !== false ? '✓ Send daily' : 'Send daily'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="plantReportRecipientDropdownItem plantReportRecipientDropdownItemDanger"
+                                    onClick={() => { handleRemovePlantReportRecipient(r.id); setPlantReportActionOpen(null) }}
+                                    disabled={plantReportSaving}
+                                  >
+                                    Remove from list
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </div>
+              <form onSubmit={handleAddPlantReportRecipient} className="plantReportRecipientAddForm">
                 <input
                   type="email"
                   className="input"
                   value={plantReportNewEmail}
                   onChange={(e) => setPlantReportNewEmail(e.target.value)}
-                  placeholder="Add email address"
-                  style={{ maxWidth: 280 }}
+                  placeholder="Email address"
                 />
-                <button type="submit" className="btn btn-primary" disabled={plantReportSaving}>Add</button>
+                <button type="submit" className="btn btn-primary" disabled={plantReportSaving}>Add recipient</button>
               </form>
             </div>
             <form onSubmit={handleSavePlantReportConfig} className="smtpForm">

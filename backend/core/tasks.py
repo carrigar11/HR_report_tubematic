@@ -10,7 +10,7 @@ def run_reward_engine_task():
 
 @shared_task
 def sync_google_sheet_task():
-    """Push reports to Google Sheet. Scheduled every 1 minute via Celery Beat."""
+    """Push reports to Google Sheet. Scheduled every 2 minutes via Celery Beat."""
     from .google_sheets_sync import sync_all
     return sync_all()
 

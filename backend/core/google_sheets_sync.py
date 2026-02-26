@@ -22,6 +22,7 @@ from .export_excel import (
     _add_bonus_to_payroll_rows,
     build_plant_report_rows,
     _shift_hours,
+    _month_to_date_bonus_per_dept,
 )
 
 logger = logging.getLogger(__name__)
@@ -438,7 +439,7 @@ def _day_bonus_per_dept(single_date):
 
 # ---------- Sheet 3: Plant Report (Previous day) ----------
 def _build_sheet3_data():
-    """Plant Report for previous day: Average Salary and Average Salary/hr are for that day only; OT bonus (hrs)/(rs) are that day only."""
+    """Plant Report for previous day: Average Salary and Average Salary/hr are for that day only; OT bonus (hrs)/(rs) are from start of month till previous day."""
     today = timezone.localdate()
     yesterday = today - timedelta(days=1)
     month_start = yesterday.replace(day=1)
@@ -457,8 +458,8 @@ def _build_sheet3_data():
     emp_to_month_total = {r['emp_code']: r['total'] for r in payroll_month}
     for row in payroll_rows:
         row['total'] = emp_to_month_total.get(row['emp_code'], 0)
-    # OT bonus (hrs) and (rs) = that day only (yesterday)
-    day_bonus_per_dept = _day_bonus_per_dept(yesterday)
+    # OT bonus (hrs) and (rs) = from start of month till previous day (month-to-date for report date)
+    month_to_date_bonus_per_dept = _month_to_date_bonus_per_dept(month_start, yesterday, employees)
     month_total_per_dept = {}
     for row in payroll_rows:
         dept = row.get('department') or ''
@@ -466,7 +467,7 @@ def _build_sheet3_data():
     plant_rows = build_plant_report_rows(
         payroll_rows, sorted_dates, att_yesterday,
         month_total_per_dept=month_total_per_dept,
-        month_bonus_per_dept=day_bonus_per_dept,
+        month_bonus_per_dept=month_to_date_bonus_per_dept,
     )
 
     # Override Average Salary and Average Salary/hr to be for previous day only (that day's salary / present, that day's salary / man hrs)
@@ -658,70 +659,315 @@ def _get_sheet_id_by_title(service, spreadsheet_id, title):
     return None
 
 
-def _apply_plant_report_sheet_format(service, spreadsheet_id, sheet_id, num_rows, num_cols):
-    """
-    Apply color schema (same as other sheet): header orange, total red, in-between blue.
-    Used for Plant Report (Previous day) and Current year. Data from B2: row 1 = header, last = total.
-    """
-    if not num_rows or not num_cols or sheet_id is None:
-        return
-    # Colors RGB 0-1: orange, red, blue — one more shade light
-    header_orange = {'red': 1.0, 'green': 0.82, 'blue': 0.6}      # Light orange
-    total_red = {'red': 1.0, 'green': 0.82, 'blue': 0.82}        # Light red
-    data_blue = {'red': 0.82, 'green': 0.92, 'blue': 1.0}        # Light blue
-    # Column range: data starts at B = index 1, so endColumnIndex = 1 + num_cols
-    end_col = 1 + num_cols
+def _clear_sheet(service, spreadsheet_id, sheet_name):
+    """Clear all values in the sheet (range A1:ZZ1000)."""
+    range_name = _sheet_range(sheet_name, 'A1:ZZ1000')
+    try:
+        service.spreadsheets().values().clear(
+            spreadsheetId=spreadsheet_id,
+            range=range_name,
+        ).execute()
+        logger.debug('Cleared sheet "%s"', sheet_name)
+    except Exception as e:
+        logger.warning('Could not clear sheet "%s": %s', sheet_name, e)
 
+
+# Sheets that get full reset (unmerge + no borders) before pushing data
+_RESET_FORMAT_SHEET_NAMES = ('All dates by month', 'Current year', 'Plant Report (Previous day)')
+
+
+def _reset_sheet_formatting(service, spreadsheet_id, sheet_names):
+    """
+    For each given sheet: unmerge all cells and remove all borders in A1:ZZ1000.
+    Uses one batchUpdate so merges are cleared and borders set to NONE before we push data.
+    """
+    requests = []
+    no_border = {'style': 'NONE'}
+    borders = {'top': no_border, 'bottom': no_border, 'left': no_border, 'right': no_border}
+    for name in sheet_names:
+        sid = _get_sheet_id_by_title(service, spreadsheet_id, name)
+        if sid is None:
+            continue
+        # Unmerge entire used range
+        requests.append({
+            'unmergeCells': {
+                'range': {
+                    'sheetId': sid,
+                    'startRowIndex': 0,
+                    'endRowIndex': 1000,
+                    'startColumnIndex': 0,
+                    'endColumnIndex': 100,
+                }
+            }
+        })
+        # No borders on same range
+        requests.append({
+            'repeatCell': {
+                'range': {
+                    'sheetId': sid,
+                    'startRowIndex': 0,
+                    'endRowIndex': 1000,
+                    'startColumnIndex': 0,
+                    'endColumnIndex': 100,
+                },
+                'cell': {'userEnteredFormat': {'borders': borders}},
+                'fields': 'userEnteredFormat.borders',
+            }
+        })
+    if not requests:
+        return
+    try:
+        service.spreadsheets().batchUpdate(
+            spreadsheetId=spreadsheet_id,
+            body={'requests': requests},
+        ).execute()
+        logger.debug('Reset formatting (unmerge + no borders) for %s sheet(s)', len(sheet_names))
+    except Exception as e:
+        logger.warning('Could not reset sheet formatting: %s', e)
+
+
+def _merge_total_salary_cell(service, spreadsheet_id, sheet_id, data_start_row_1based, num_data_rows, start_col_0based=1):
+    """
+    Merge the TOTAL SALARY cell with the cell to its right and left-align the text.
+    Data is written starting at row data_start_row_1based (1-based); total row is the last row of data.
+    start_col_0based: 1 = column B (first data column).
+    """
+    if sheet_id is None or num_data_rows < 1:
+        return
+    total_row_0based = data_start_row_1based - 1 + num_data_rows - 1
     requests = [
-        # Header row (0-based row 1): light orange
+        {
+            'mergeCells': {
+                'range': {
+                    'sheetId': sheet_id,
+                    'startRowIndex': total_row_0based,
+                    'endRowIndex': total_row_0based + 1,
+                    'startColumnIndex': start_col_0based,
+                    'endColumnIndex': start_col_0based + 2,
+                },
+                'mergeType': 'MERGE_ALL',
+            }
+        },
+        # Left-align TOTAL SALARY text in the merged cell
         {
             'repeatCell': {
                 'range': {
                     'sheetId': sheet_id,
-                    'startRowIndex': 1,
-                    'endRowIndex': 2,
-                    'startColumnIndex': 1,
-                    'endColumnIndex': end_col,
+                    'startRowIndex': total_row_0based,
+                    'endRowIndex': total_row_0based + 1,
+                    'startColumnIndex': start_col_0based,
+                    'endColumnIndex': start_col_0based + 2,
                 },
+                'cell': {'userEnteredFormat': {'horizontalAlignment': 'LEFT'}},
+                'fields': 'userEnteredFormat.horizontalAlignment',
+            }
+        },
+    ]
+    try:
+        service.spreadsheets().batchUpdate(spreadsheetId=spreadsheet_id, body={'requests': requests}).execute()
+        logger.debug('Merged TOTAL SALARY cell and set left alignment')
+    except Exception as e:
+        logger.warning('Could not merge TOTAL SALARY cell: %s', e)
+
+
+def _apply_plant_report_sheet_format(service, spreadsheet_id, sheet_id, num_rows, num_cols):
+    """
+    Apply color schema (same as other sheet): header orange, total red, in-between blue.
+    Also add borders to the whole data section. Data from B2: row 1 = header, last = total.
+    """
+    if not num_rows or not num_cols or sheet_id is None:
+        return
+    header_orange = {'red': 1.0, 'green': 0.82, 'blue': 0.6}
+    total_red = {'red': 1.0, 'green': 0.82, 'blue': 0.82}
+    data_blue = {'red': 0.82, 'green': 0.92, 'blue': 1.0}
+    end_col = 1 + num_cols
+    border_style = {'style': 'SOLID', 'color': {'red': 0.2, 'green': 0.2, 'blue': 0.2}}
+    borders = {'top': border_style, 'bottom': border_style, 'left': border_style, 'right': border_style}
+    requests = [
+        {
+            'repeatCell': {
+                'range': {'sheetId': sheet_id, 'startRowIndex': 1, 'endRowIndex': 2, 'startColumnIndex': 1, 'endColumnIndex': end_col},
                 'cell': {'userEnteredFormat': {'backgroundColor': header_orange}},
                 'fields': 'userEnteredFormat.backgroundColor',
             }
         },
-        # Total row (0-based row num_rows): light red
         {
             'repeatCell': {
-                'range': {
-                    'sheetId': sheet_id,
-                    'startRowIndex': num_rows,
-                    'endRowIndex': num_rows + 1,
-                    'startColumnIndex': 1,
-                    'endColumnIndex': end_col,
-                },
+                'range': {'sheetId': sheet_id, 'startRowIndex': num_rows, 'endRowIndex': num_rows + 1, 'startColumnIndex': 1, 'endColumnIndex': end_col},
                 'cell': {'userEnteredFormat': {'backgroundColor': total_red}},
                 'fields': 'userEnteredFormat.backgroundColor',
             }
         },
-        # Data rows (0-based 2 to num_rows-1): light blue
         {
             'repeatCell': {
-                'range': {
-                    'sheetId': sheet_id,
-                    'startRowIndex': 2,
-                    'endRowIndex': num_rows,
-                    'startColumnIndex': 1,
-                    'endColumnIndex': end_col,
-                },
+                'range': {'sheetId': sheet_id, 'startRowIndex': 2, 'endRowIndex': num_rows, 'startColumnIndex': 1, 'endColumnIndex': end_col},
                 'cell': {'userEnteredFormat': {'backgroundColor': data_blue}},
                 'fields': 'userEnteredFormat.backgroundColor',
             }
         },
+        # Borders around the whole data section (B2 to end)
+        {
+            'repeatCell': {
+                'range': {'sheetId': sheet_id, 'startRowIndex': 1, 'endRowIndex': num_rows + 1, 'startColumnIndex': 1, 'endColumnIndex': end_col},
+                'cell': {'userEnteredFormat': {'borders': borders}},
+                'fields': 'userEnteredFormat.borders',
+            }
+        },
     ]
-
     try:
         service.spreadsheets().batchUpdate(spreadsheetId=spreadsheet_id, body={'requests': requests}).execute()
-        logger.info('Applied Plant Report (Previous day) color schema (orange/red/blue)')
+        logger.info('Applied Plant Report (Previous day) color schema and data borders')
     except Exception as e:
         logger.warning('Could not apply Plant Report formatting: %s', e)
+
+
+def _apply_plant_report_title_row(service, spreadsheet_id, sheet_id, num_cols):
+    """
+    Merge top row (B1 to last data column) on Plant Report sheet, set 'PLANT REPORT' styling:
+    center alignment (horizontal + vertical), light gray background, full border.
+    """
+    if sheet_id is None or num_cols < 1:
+        return
+    end_col = 1 + num_cols
+    light_gray = {'red': 0.9, 'green': 0.9, 'blue': 0.9}
+    border_style = {'style': 'SOLID', 'color': {'red': 0.2, 'green': 0.2, 'blue': 0.2}}
+    borders = {'top': border_style, 'bottom': border_style, 'left': border_style, 'right': border_style}
+    requests = [
+        {
+            'mergeCells': {
+                'range': {
+                    'sheetId': sheet_id,
+                    'startRowIndex': 0,
+                    'endRowIndex': 1,
+                    'startColumnIndex': 1,
+                    'endColumnIndex': end_col,
+                },
+                'mergeType': 'MERGE_ALL',
+            }
+        },
+        {
+            'repeatCell': {
+                'range': {
+                    'sheetId': sheet_id,
+                    'startRowIndex': 0,
+                    'endRowIndex': 1,
+                    'startColumnIndex': 1,
+                    'endColumnIndex': end_col,
+                },
+                'cell': {
+                    'userEnteredFormat': {
+                        'backgroundColor': light_gray,
+                        'horizontalAlignment': 'CENTER',
+                        'verticalAlignment': 'MIDDLE',
+                        'borders': borders,
+                    }
+                },
+                'fields': 'userEnteredFormat.backgroundColor,userEnteredFormat.horizontalAlignment,userEnteredFormat.verticalAlignment,userEnteredFormat.borders',
+            }
+        },
+    ]
+    try:
+        service.spreadsheets().batchUpdate(spreadsheetId=spreadsheet_id, body={'requests': requests}).execute()
+        logger.debug('Applied Plant Report title row (merge, center, light gray)')
+    except Exception as e:
+        logger.warning('Could not apply Plant Report title row: %s', e)
+
+
+def _get_sheet_conditional_format_count(service, spreadsheet_id, sheet_name):
+    """Return number of conditional format rules on the sheet, or 0."""
+    try:
+        meta = service.spreadsheets().get(
+            spreadsheetId=spreadsheet_id,
+            fields='sheets(properties(title,sheetId),conditionalFormats)',
+        ).execute()
+        for s in meta.get('sheets', []):
+            if s.get('properties', {}).get('title') == sheet_name:
+                return len(s.get('conditionalFormats', []))
+    except Exception as e:
+        logger.warning('Could not get conditional format count for %s: %s', sheet_name, e)
+    return 0
+
+
+def _apply_current_year_color_scale(service, spreadsheet_id, sheet_id, num_rows, num_cols):
+    """
+    Apply separate Green -> Yellow -> Red gradient to each range on Current year sheet:
+    D3:O29, P3:Q29, R3:T29 — each range has its own min/mid/max based on its values only.
+    """
+    if sheet_id is None:
+        return
+    gradient_rule = {
+        'minpoint': {
+            'color': {'red': 0.34, 'green': 0.73, 'blue': 0.54},
+            'type': 'MIN',
+        },
+        'midpoint': {
+            'color': {'red': 1.0, 'green': 0.84, 'blue': 0.4},
+            'type': 'PERCENT',
+            'value': '50',
+        },
+        'maxpoint': {
+            'color': {'red': 0.9, 'green': 0.49, 'blue': 0.45},
+            'type': 'MAX',
+        },
+    }
+    # 0-based: row 3 = 2, endRowIndex 29; D=3, O=15, P=15, Q=17, R=17, T=20
+    separate_ranges = [
+        {'sheetId': sheet_id, 'startRowIndex': 2, 'endRowIndex': 29, 'startColumnIndex': 3, 'endColumnIndex': 15},   # D3:O29
+        {'sheetId': sheet_id, 'startRowIndex': 2, 'endRowIndex': 29, 'startColumnIndex': 15, 'endColumnIndex': 17},  # P3:Q29
+        {'sheetId': sheet_id, 'startRowIndex': 2, 'endRowIndex': 29, 'startColumnIndex': 17, 'endColumnIndex': 20},  # R3:T29
+    ]
+    requests = []
+    n_rules = _get_sheet_conditional_format_count(service, spreadsheet_id, 'Current year')
+    for _ in range(n_rules):
+        requests.append({'deleteConditionalFormatRule': {'sheetId': sheet_id, 'index': 0}})
+    for i, r in enumerate(separate_ranges):
+        requests.append({
+            'addConditionalFormatRule': {
+                'rule': {
+                    'ranges': [r],
+                    'gradientRule': gradient_rule,
+                },
+                'index': i,
+            }
+        })
+    try:
+        service.spreadsheets().batchUpdate(
+            spreadsheetId=spreadsheet_id,
+            body={'requests': requests},
+        ).execute()
+        logger.info('Applied separate green-yellow-red color scale to Current year (D3:O29, P3:Q29, R3:T29)')
+    except Exception as e:
+        logger.warning('Could not apply Current year color scale: %s', e)
+
+
+def _add_data_borders(service, spreadsheet_id, sheet_id, num_rows, num_cols, start_row_0=0, start_col_0=0):
+    """Add SOLID borders to the data range. Used for Employees and department sheets (A1)."""
+    if not num_rows or not num_cols or sheet_id is None:
+        return
+    border_style = {'style': 'SOLID', 'color': {'red': 0.2, 'green': 0.2, 'blue': 0.2}}
+    borders = {'top': border_style, 'bottom': border_style, 'left': border_style, 'right': border_style}
+    try:
+        service.spreadsheets().batchUpdate(
+            spreadsheetId=spreadsheet_id,
+            body={
+                'requests': [{
+                    'repeatCell': {
+                        'range': {
+                            'sheetId': sheet_id,
+                            'startRowIndex': start_row_0,
+                            'endRowIndex': start_row_0 + num_rows,
+                            'startColumnIndex': start_col_0,
+                            'endColumnIndex': start_col_0 + num_cols,
+                        },
+                        'cell': {'userEnteredFormat': {'borders': borders}},
+                        'fields': 'userEnteredFormat.borders',
+                    }
+                }]
+            },
+        ).execute()
+        logger.debug('Applied data borders to sheet')
+    except Exception as e:
+        logger.warning('Could not apply data borders: %s', e)
 
 
 def sync_all(force_full=False):
@@ -746,6 +992,13 @@ def sync_all(force_full=False):
         sheet5_list = _build_sheet5_sheets_data()  # list of (sheet_name, data)
         all_sheet_names = FIXED_SHEET_NAMES + [name for name, _ in sheet5_list]
         _ensure_sheets_exist(service, spreadsheet_id, all_sheet_names)
+
+        # Clear all sheets before pushing new data
+        for name in all_sheet_names:
+            _clear_sheet(service, spreadsheet_id, name)
+
+        # For the 3 report sheets: unmerge all cells and remove all borders, then we push data and re-merge TOTAL SALARY
+        _reset_sheet_formatting(service, spreadsheet_id, _RESET_FORMAT_SHEET_NAMES)
 
         for sheet_name, data in zip(FIXED_SHEET_NAMES, sheets_data_1_4):
             if not data:
@@ -772,7 +1025,6 @@ def sync_all(force_full=False):
                     body=body,
                 ).execute()
                 logger.info('Updated sheet "%s" with %s rows (after retry)', sheet_name, len(data))
-            # Plant Report (Previous day) and Current year: header orange, total red, data blue
             if sheet_name in ('Plant Report (Previous day)', 'Current year') and len(data) > 0 and len(data[0]) > 0:
                 sheet_id = _get_sheet_id_by_title(service, spreadsheet_id, sheet_name)
                 _apply_plant_report_sheet_format(
@@ -780,6 +1032,36 @@ def sync_all(force_full=False):
                     num_rows=len(data),
                     num_cols=len(data[0]),
                 )
+            if sheet_name in ('All dates by month', 'Current year', 'Plant Report (Previous day)') and len(data) > 0 and len(data[0]) > 0:
+                try:
+                    service.spreadsheets().values().update(
+                        spreadsheetId=spreadsheet_id,
+                        range=_sheet_range(sheet_name, 'B1'),
+                        valueInputOption='USER_ENTERED',
+                        body={'values': [['PLANT REPORT']]},
+                    ).execute()
+                except Exception as e:
+                    logger.warning('Could not write PLANT REPORT title on %s: %s', sheet_name, e)
+                sid = _get_sheet_id_by_title(service, spreadsheet_id, sheet_name)
+                _apply_plant_report_title_row(service, spreadsheet_id, sid, len(data[0]))
+            if sheet_name == 'Current year' and len(data) >= 3 and len(data[0]) > 0:
+                sid = _get_sheet_id_by_title(service, spreadsheet_id, sheet_name)
+                _apply_current_year_color_scale(service, spreadsheet_id, sid, len(data), len(data[0]))
+            if sheet_name in ('All dates by month', 'Current year', 'Plant Report (Previous day)') and len(data) > 1:
+                sid = _get_sheet_id_by_title(service, spreadsheet_id, sheet_name)
+                _merge_total_salary_cell(
+                    service, spreadsheet_id, sid,
+                    data_start_row_1based=2,
+                    num_data_rows=len(data),
+                    start_col_0based=1,
+                )
+            # Borders on data section: "All dates by month" (B2) gets borders only; others already in _apply_plant_report_sheet_format
+            if sheet_name == 'All dates by month' and len(data) > 0 and len(data[0]) > 0:
+                sid = _get_sheet_id_by_title(service, spreadsheet_id, sheet_name)
+                _add_data_borders(service, spreadsheet_id, sid, len(data), len(data[0]), start_row_0=1, start_col_0=1)
+            if sheet_name == 'Employees' and len(data) > 0 and len(data[0]) > 0:
+                sid = _get_sheet_id_by_title(service, spreadsheet_id, sheet_name)
+                _add_data_borders(service, spreadsheet_id, sid, len(data), len(data[0]), start_row_0=0, start_col_0=0)
 
         for sheet_name, data in sheet5_list:
             if not data:
@@ -805,6 +1087,9 @@ def sync_all(force_full=False):
                     body=body,
                 ).execute()
                 logger.info('Updated sheet "%s" with %s rows (after retry)', sheet_name, len(data))
+            if len(data) > 0 and len(data[0]) > 0:
+                sid = _get_sheet_id_by_title(service, spreadsheet_id, sheet_name)
+                _add_data_borders(service, spreadsheet_id, sid, len(data), len(data[0]), start_row_0=0, start_col_0=0)
 
         # Optionally store last_sync in SystemSetting
         try:

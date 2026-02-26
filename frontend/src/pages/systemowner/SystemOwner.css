@@ -38,6 +38,16 @@
   font-size: 0.85rem;
 }
 
+/* Add company: request details box (dark theme) */
+.companyAddRequestDetails {
+  border-radius: var(--radius, 8px);
+  color: var(--text);
+}
+
+.companyAddRequestDetails a {
+  color: var(--accent);
+}
+
 /* Company requests View modal: 2 columns, stack on narrow */
 .companyRequestViewGrid {
   display: grid;

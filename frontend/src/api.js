@@ -112,6 +112,7 @@ export const systemOwner = {
     get: (id) => api.get(`/system-owner/companies/${id}/`),
     create: (data) => api.post('/system-owner/companies/', data),
     update: (id, data) => api.patch(`/system-owner/companies/${id}/`, data),
+    delete: (id) => api.delete(`/system-owner/companies/${id}/`),
   },
   companyRequests: {
     list: () => api.get('/system-owner/company-requests/'),
@@ -293,6 +294,7 @@ export const plantReportEmail = {
   updateConfig: (data) => api.patch('/settings/plant-report-email/', data),
   listRecipients: () => api.get('/settings/plant-report-email/recipients/'),
   addRecipient: (email) => api.post('/settings/plant-report-email/recipients/', { email }),
+  updateRecipient: (id, data) => api.patch(`/settings/plant-report-email/recipients/${id}/`, data),
   removeRecipient: (id) => api.delete(`/settings/plant-report-email/recipients/${id}/`),
   sendNow: (data) => api.post('/settings/plant-report-email/send-now/', data || {}),
 }

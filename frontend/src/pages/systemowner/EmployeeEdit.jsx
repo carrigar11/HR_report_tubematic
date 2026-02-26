@@ -44,6 +44,7 @@ export default function SystemOwnerEmployeeEdit() {
     systemOwner.employees.get(id)
       .then((r) => {
         const e = r.data
+        const companyId = e.company != null ? (typeof e.company === 'object' ? e.company.id : e.company) : null
         setEmp(e)
         setForm({
           name: e.name || '',
@@ -53,7 +54,7 @@ export default function SystemOwnerEmployeeEdit() {
           dept_name: e.dept_name || '',
           designation: e.designation || '',
           status: e.status || 'Active',
-          company: e.company ?? null,
+          company: companyId,
           employment_type: e.employment_type || 'Full-time',
           salary_type: e.salary_type || 'Monthly',
           base_salary: e.base_salary !== undefined && e.base_salary !== null ? String(e.base_salary) : '',
@@ -88,7 +89,13 @@ export default function SystemOwnerEmployeeEdit() {
       shift_from: (form.shift_from || '').trim() || null,
       shift_to: (form.shift_to || '').trim() || null,
     }
-    if (form.company != null && form.company !== '') payload.company = Number(form.company)
+    const rawCompany = form.company
+    const companyId = rawCompany != null && rawCompany !== '' ? Number(rawCompany) : null
+    if (companyId != null && !Number.isNaN(companyId) && companyId > 0) {
+      payload.company = companyId
+    } else if (rawCompany === null || rawCompany === '') {
+      payload.company = null
+    }
     if (form.base_salary !== '' && form.base_salary != null) {
       const num = parseFloat(form.base_salary)
       if (!isNaN(num)) payload.base_salary = num
@@ -105,7 +112,9 @@ export default function SystemOwnerEmployeeEdit() {
       setMessage('Saved.')
       setEmp((prev) => ({ ...prev, ...form }))
     } catch (err) {
-      setMessage(err.response?.data?.error || err.message || 'Failed to save')
+      const d = err.response?.data
+      const msg = d?.error || (typeof d === 'object' && d !== null && !d.error ? (Object.values(d).flat().filter(Boolean)[0] || err.message) : err.message) || 'Failed to save'
+      setMessage(msg)
     } finally {
       setSaving(false)
     }
@@ -143,7 +152,7 @@ export default function SystemOwnerEmployeeEdit() {
                   <input type="text" className="input" value={form.mobile} onChange={(e) => setForm((f) => ({ ...f, mobile: e.target.value }))} />
                 </div>
                 <div>
-                  <label className="label">Email</label>
+                  <label className="label">Email (optional)</label>
                   <input type="email" className="input" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} />
                 </div>
               </div>

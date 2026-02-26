@@ -248,7 +248,9 @@ export default function EmployeeMaster() {
             <label className="label">Gender</label>
             <select className="input" value={genderFilter} onChange={(e) => setGenderFilter(e.target.value)}>
               <option value="">All</option>
-              {filterOptions.genders.map((g) => <option key={g} value={g}>{g}</option>)}
+              {((filterOptions.genders && filterOptions.genders.length) ? filterOptions.genders : ['Male', 'Female', 'Other']).map((g) => (
+                <option key={g} value={g}>{g}</option>
+              ))}
             </select>
           </div>
           <div className="filterGroup">
@@ -427,7 +429,9 @@ export default function EmployeeMaster() {
                     <label className="label">Gender</label>
                     <select className="input" value={addForm.gender} onChange={(e) => setAddForm((f) => ({ ...f, gender: e.target.value }))}>
                       <option value="">—</option>
-                      {(filterOptions.genders || []).map((g) => <option key={g} value={g}>{g}</option>)}
+                      {((filterOptions.genders && filterOptions.genders.length) ? filterOptions.genders : ['Male', 'Female', 'Other']).map((g) => (
+                        <option key={g} value={g}>{g}</option>
+                      ))}
                     </select>
                   </div>
                   <div className="profileField">

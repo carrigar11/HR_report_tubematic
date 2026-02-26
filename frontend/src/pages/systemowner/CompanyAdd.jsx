@@ -99,9 +99,9 @@ export default function SystemOwnerCompanyAdd() {
           <>
             <p className="muted" style={{ marginBottom: '0.5rem' }}>Pre-filled from registration request. You can edit any field.</p>
             {(fromRequest.extra_data && Object.keys(fromRequest.extra_data).length > 0) && (
-              <div className="card" style={{ marginBottom: '1rem', padding: '0.75rem 1rem', background: 'var(--bgMuted, #f4f4f5)', border: '1px solid var(--border, #e2e8f0)' }}>
-                <strong style={{ fontSize: '0.9rem' }}>Request details (verify)</strong>
-                <ul style={{ margin: '0.5rem 0 0', paddingLeft: '1.25rem', fontSize: '0.9rem', color: 'var(--textMuted, #71717a)' }}>
+              <div className="companyAddRequestDetails" style={{ marginBottom: '1rem', padding: '0.75rem 1rem', background: 'var(--surface2)', border: '1px solid var(--border)' }}>
+                <strong style={{ fontSize: '0.9rem', color: 'var(--text)' }}>Request details (verify)</strong>
+                <ul style={{ margin: '0.5rem 0 0', paddingLeft: '1.25rem', fontSize: '0.9rem', color: 'var(--textMuted)' }}>
                   {fromRequest.extra_data.company_url && <li>Company URL: <a href={fromRequest.extra_data.company_url.startsWith('http') ? fromRequest.extra_data.company_url : `https://${fromRequest.extra_data.company_url}`} target="_blank" rel="noopener noreferrer">{fromRequest.extra_data.company_url}</a></li>}
                   {fromRequest.extra_data.type_of_business && <li>Type of business: {fromRequest.extra_data.type_of_business}</li>}
                   {(fromRequest.extra_data.gstin || fromRequest.extra_data.gst_number) && <li>GSTIN / GST No: {[fromRequest.extra_data.gstin, fromRequest.extra_data.gst_number].filter(Boolean).join(' / ')}</li>}
@@ -131,10 +131,10 @@ export default function SystemOwnerCompanyAdd() {
 
           <hr className="formDivider" style={{ margin: '1.25rem 0', border: 'none', borderTop: '1px solid var(--border, #e2e8f0)' }} />
 
-          <h3 className="pageSubtitle" style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Create company admin (super admin for this company)</h3>
-          <p className="muted" style={{ marginBottom: '0.75rem' }}>Optionally create an admin who will manage this company. They will have full access for this company.</p>
+          <h3 className="pageSubtitle" style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Create company admin (linked to this company)</h3>
+          <p className="muted" style={{ marginBottom: '0.75rem' }}>Optionally create an admin who will be connected to the company you are adding. They will have full access for that company only.</p>
           <label className="label">
-            <input type="checkbox" checked={createAdmin} onChange={(e) => setCreateAdmin(e.target.checked)} /> Create admin when adding company
+            <input type="checkbox" checked={createAdmin} onChange={(e) => setCreateAdmin(e.target.checked)} /> Create admin when adding company (admin will be linked to this company)
           </label>
           {createAdmin && (
             <>

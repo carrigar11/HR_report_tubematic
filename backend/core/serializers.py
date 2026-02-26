@@ -111,7 +111,7 @@ class AdminAccessUpdateSerializer(serializers.Serializer):
 
 
 class AdminCreateSerializer(serializers.Serializer):
-    """Super admin only: create new admin with name, email, password, department, role, access."""
+    """Super admin only: create new admin with name, email, password, department, role, access. Optional company_id to link admin to a company."""
     name = serializers.CharField(max_length=255)
     email = serializers.EmailField()
     password = serializers.CharField(max_length=255)
@@ -119,11 +119,18 @@ class AdminCreateSerializer(serializers.Serializer):
     department = serializers.CharField(max_length=100, required=False, allow_blank=True, default='')
     role = serializers.ChoiceField(choices=Admin.ROLE_CHOICES, default='dept_admin')
     access = serializers.JSONField(required=False, default=dict)
+    company_id = serializers.IntegerField(required=False, allow_null=True)
+
+    def validate_company_id(self, value):
+        if value is not None and not Company.objects.filter(pk=value).exists():
+            raise serializers.ValidationError('Company not found.')
+        return value
 
     def create(self, validated_data):
         access = validated_data.get('access') or {}
         access = {**DEFAULT_ACCESS, **access}
-        return Admin.objects.create(
+        company_id = validated_data.pop('company_id', None)
+        admin = Admin.objects.create(
             name=validated_data['name'],
             email=validated_data['email'],
             password=validated_data['password'],
@@ -131,7 +138,9 @@ class AdminCreateSerializer(serializers.Serializer):
             department=validated_data.get('department', ''),
             role=validated_data.get('role', 'dept_admin'),
             access=access,
+            company_id=company_id,
         )
+        return admin
 
     def validate_email(self, value):
         if Admin.objects.filter(email__iexact=value).exists():
@@ -142,6 +151,8 @@ class AdminCreateSerializer(serializers.Serializer):
 class EmployeeSerializer(serializers.ModelSerializer):
     company_name = serializers.SerializerMethodField()
     password = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=255)
+    company = serializers.PrimaryKeyRelatedField(queryset=Company.objects.all(), required=False, allow_null=True)
+    email = serializers.EmailField(required=False, allow_blank=True, allow_null=True)
 
     class Meta:
         model = Employee
@@ -155,7 +166,26 @@ class EmployeeSerializer(serializers.ModelSerializer):
         read_only_fields = ['created_at', 'updated_at']
 
     def get_company_name(self, obj):
-        return obj.company.name if obj.company_id else None
+        if not getattr(obj, 'company_id', None):
+            return None
+        try:
+            return obj.company.name
+        except Exception:
+            return None
+
+    def to_internal_value(self, data):
+        """Normalize company to int or None so PATCH with company id always works."""
+        data = dict(data)
+        if 'company' in data:
+            raw = data['company']
+            if raw is None or raw == '':
+                data['company'] = None
+            else:
+                try:
+                    data['company'] = int(raw) if raw is not None else None
+                except (TypeError, ValueError):
+                    pass
+        return super().to_internal_value(data)
 
     def create(self, validated_data):
         password = validated_data.pop('password', None) or ''
@@ -168,6 +198,8 @@ class EmployeeSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         password = validated_data.pop('password', None)
         for attr, value in validated_data.items():
+            if attr == 'email' and value is None:
+                value = ''
             setattr(instance, attr, value)
         instance.save()
         if password is not None:

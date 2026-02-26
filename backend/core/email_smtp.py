@@ -34,12 +34,18 @@ def send_simple_email(to_email, subject, body, from_name=None):
     last_error = None
     for config in configs:
         try:
+            # Same connection options as Plant Report / multi-email SMTP config
+            port = getattr(config, 'smtp_port', 587)
+            use_tls = port == 587
+            use_ssl = port == 465
             connection = get_connection(
                 backend='django.core.mail.backends.smtp.EmailBackend',
                 host=config.smtp_server,
                 port=config.smtp_port,
                 username=config.auth_username,
                 password=config.auth_password,
+                use_tls=use_tls,
+                use_ssl=use_ssl,
             )
             from_email = config.force_sender or config.auth_username
             if from_name:

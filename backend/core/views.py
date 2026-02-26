@@ -6,6 +6,7 @@ from rest_framework.decorators import action
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
+from django.db import transaction
 from django.db.models import Sum, Count, Q, Max
 from django.utils import timezone
 from datetime import date, timedelta
@@ -58,10 +59,10 @@ def get_request_admin(request):
         admin = Admin.objects.get(pk=admin_id)
     except (ValueError, Admin.DoesNotExist):
         return None, None
+    # System owner sees all companies' data; no filter.
     if getattr(admin, 'is_system_owner', False):
         return admin, None
-    if admin.is_super_admin:
-        return admin, None
+    # When admin is linked to a company, restrict to that company's employees only (even if role is super_admin).
     qs = Employee.objects.all()
     if admin.company_id:
         qs = qs.filter(company_id=admin.company_id)
@@ -1561,7 +1562,7 @@ class PlantReportEmailConfigView(APIView):
         if not _plant_report_email_settings_access(request):
             return Response({'error': 'Not allowed'}, status=403)
         from .plant_report_email import get_plant_report_send_time, is_plant_report_email_enabled, get_plant_report_last_sent_date, get_plant_report_maam_amount
-        recipients = list(PlantReportRecipient.objects.filter(is_active=True).order_by('email').values('id', 'email', 'is_active', 'created_at'))
+        recipients = list(PlantReportRecipient.objects.all().order_by('email').values('id', 'email', 'is_active', 'created_at'))
         h, m = get_plant_report_send_time()
         send_time = f'{h:02d}:{m:02d}'
         enabled = is_plant_report_email_enabled()
@@ -1613,7 +1614,7 @@ class PlantReportRecipientListCreateView(APIView):
     def get(self, request):
         if not _plant_report_email_settings_access(request):
             return Response({'error': 'Not allowed'}, status=403)
-        qs = PlantReportRecipient.objects.filter(is_active=True).order_by('email')
+        qs = PlantReportRecipient.objects.all().order_by('email')
         return Response(PlantReportRecipientSerializer(qs, many=True).data)
 
     def post(self, request):
@@ -1631,7 +1632,21 @@ class PlantReportRecipientListCreateView(APIView):
 
 
 class PlantReportRecipientDetailView(APIView):
-    """DELETE: remove recipient by id."""
+    """PATCH: update recipient (e.g. is_active to include/exclude from daily send). DELETE: remove recipient by id."""
+    def patch(self, request, pk):
+        if not _plant_report_email_settings_access(request):
+            return Response({'error': 'Not allowed'}, status=403)
+        try:
+            obj = PlantReportRecipient.objects.get(pk=pk)
+        except PlantReportRecipient.DoesNotExist:
+            return Response({'error': 'Not found'}, status=404)
+        is_active = request.data.get('is_active')
+        if is_active is not None:
+            obj.is_active = is_active in (True, 'true', '1', 'yes')
+            obj.save(update_fields=['is_active'])
+            log_activity(request, 'update', 'settings', 'plant_report_recipient', obj.email, details={'is_active': obj.is_active})
+        return Response(PlantReportRecipientSerializer(obj).data)
+
     def delete(self, request, pk):
         if not _plant_report_email_settings_access(request):
             return Response({'error': 'Not allowed'}, status=403)
@@ -3387,6 +3402,32 @@ class SystemOwnerCompanyDetailView(APIView):
         log_activity(request, 'update', 'system_owner', 'company', str(pk), details={})
         return Response(CompanySerializer(company).data)
 
+    def delete(self, request, pk):
+        """Delete company and all employees and admins under it. System owner only."""
+        if not get_system_owner(request):
+            return Response({'error': 'System owner only'}, status=403)
+        try:
+            company = Company.objects.get(pk=pk)
+        except Company.DoesNotExist:
+            return Response({'error': 'Not found'}, status=404)
+        emp_codes = list(Employee.objects.filter(company_id=pk).values_list('emp_code', flat=True))
+        with transaction.atomic():
+            if emp_codes:
+                Penalty.objects.filter(emp_code__in=emp_codes).delete()
+                LeaveRequest.objects.filter(emp_code__in=emp_codes).delete()
+                PerformanceReward.objects.filter(emp_code__in=emp_codes).delete()
+                ShiftOvertimeBonus.objects.filter(emp_code__in=emp_codes).delete()
+                Adjustment.objects.filter(emp_code__in=emp_codes).delete()
+                SalaryAdvance.objects.filter(emp_code__in=emp_codes).delete()
+                Salary.objects.filter(emp_code__in=emp_codes).delete()
+                Attendance.objects.filter(emp_code__in=emp_codes).delete()
+            Employee.objects.filter(company_id=pk).delete()
+            Admin.objects.filter(company_id=pk).exclude(pk=1).filter(is_system_owner=False).delete()
+            Admin.objects.filter(company_id=pk).update(company_id=None)
+            company.delete()
+        log_activity(request, 'delete', 'system_owner', 'company', str(pk), details={'name': getattr(company, 'name', '')})
+        return Response(status=204)
+
 
 class SystemOwnerEmployeeListView(APIView):
     """GET: list all employees (system owner only). Optional ?company_id=. POST: create employee (system owner only)."""
@@ -3479,39 +3520,38 @@ class SystemOwnerAdminListView(APIView):
         ser = AdminCreateSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         admin = ser.save()
-        company_id = request.data.get('company_id')
-        if company_id is not None and company_id != '':
-            try:
-                cid = int(company_id)
-                if Company.objects.filter(pk=cid).exists():
-                    admin.company_id = cid
-                    admin.save(update_fields=['company_id'])
-            except (ValueError, TypeError):
-                pass
         log_activity(request, 'create', 'system_owner', 'admin', str(admin.pk), details={'email': admin.email, 'company_id': getattr(admin, 'company_id', None)})
-        # When admin is assigned to a company (e.g. from Add company flow), send welcome email with company data
+        # When admin is assigned to a company (e.g. from Add company flow), send one email with company + admin login (Tubematic)
         if getattr(admin, 'company_id', None):
             try:
                 company = Company.objects.get(pk=admin.company_id)
+                admin_password = (request.data.get('password') or '').strip()
                 lines = [
-                    'Here are the company data.',
+                    'Your company has been created and an admin account has been set up.',
                     '',
+                    '— Company —',
                     f'Company: {company.name}',
                     f'Code: {company.code}',
                     f'Contact email: {company.contact_email or "-"}',
                     f'Contact phone: {company.contact_phone or "-"}',
                     f'Address: {company.address or "-"}',
                     '',
-                    'This is your super admin with all access. Thank you. Do not share this data.',
+                    '— Admin login (super admin for this company) —',
+                    f'Email: {admin.email}',
+                    f'Password: {admin_password or "(not set)"}',
+                    '',
+                    'Do not share this data.',
                 ]
                 body = '\n'.join(lines)
-                subject = f'Your company and super admin access — {company.name}'
+                subject = f'Company and admin access — {company.name}'
                 from .email_smtp import send_simple_email
-                send_simple_email(admin.email, subject, body, from_name='Carrigar')
+                to_email = (getattr(company, 'contact_email', None) or '').strip() or admin.email
+                ok, err = send_simple_email(to_email, subject, body, from_name='Tubematic')
+                if not ok:
+                    import logging
+                    logging.getLogger(__name__).warning('Company+admin email to %s failed (multi SMTP): %s', to_email, err)
             except Company.DoesNotExist:
                 pass
-            except Exception:
-                pass  # do not fail the request if email fails
         return Response(AdminListSerializer(admin).data, status=201)
 
 
@@ -3615,6 +3655,9 @@ class SystemOwnerCompanyRegistrationRequestDeclineView(APIView):
         )
         subject = f'Company registration update: {r.company_name}'
         from .email_smtp import send_simple_email
-        send_simple_email(r.contact_email, subject, body, from_name='Carrigar')
+        ok, err = send_simple_email(r.contact_email, subject, body, from_name='Carrigar')
+        if not ok:
+            import logging
+            logging.getLogger(__name__).warning('Decline email to %s failed (multi SMTP): %s', r.contact_email, err)
         log_activity(request, 'update', 'system_owner', 'company_request', str(pk), details={'action': 'decline', 'reason': reason[:200]})
         return Response({'success': True, 'message': 'Decline email sent.'})
