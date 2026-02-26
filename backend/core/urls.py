@@ -60,6 +60,7 @@ urlpatterns = [
     path('settings/plant-report-email/recipients/', views.PlantReportRecipientListCreateView.as_view()),
     path('settings/plant-report-email/recipients/<int:pk>/', views.PlantReportRecipientDetailView.as_view()),
     path('leaderboard/bonus/', views.GiveBonusView.as_view()),
+    path('leaderboard/bonus/bulk/', views.GiveBonusBulkView.as_view()),
     path('bonus/overview/', views.BonusOverviewView.as_view()),
     path('bonus/employee-details/', views.BonusEmployeeDetailsView.as_view()),
     path('bonus/set/', views.SetBonusView.as_view()),

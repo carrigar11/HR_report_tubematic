@@ -1066,11 +1066,16 @@ class UploadAttendanceView(APIView):
             return Response({'success': False, 'error': str(e)}, status=500)
         if not result.get('success'):
             return Response(result, status=400)
-        # Auto-run reward engine after actual upload (not preview)
+        # Auto-run reward engine and today attendance sync after actual upload (not preview)
         if not preview:
             try:
                 reward_result = run_reward_engine()
                 result['rewards'] = reward_result
+            except Exception:
+                pass
+            try:
+                from .attendance_sync import run_today_attendance_sync
+                run_today_attendance_sync(force_absent=True)
             except Exception:
                 pass
             log_activity(request, 'upload', 'upload', 'attendance', '', details={'filename': getattr(f, 'name', ''), 'result': result})
@@ -2255,6 +2260,55 @@ class GiveBonusView(APIView):
         sal.save()
         log_activity(request, 'update', 'bonus', 'salary', emp_code, details={'action': 'give_bonus', 'hours': str(bonus_hours), 'new_bonus': str(sal.bonus), 'month': month, 'year': year})
         return Response({'success': True, 'emp_code': emp_code, 'new_bonus': str(sal.bonus)})
+
+
+class GiveBonusBulkView(APIView):
+    """POST { emp_codes: [...], bonus_hours: number, month?, year? } — award same bonus hours to multiple employees."""
+    def post(self, request):
+        _, allowed_emp_codes = get_request_admin(request)
+        emp_codes = request.data.get('emp_codes')
+        if not isinstance(emp_codes, list) or not emp_codes:
+            return Response({'error': 'emp_codes must be a non-empty list'}, status=400)
+        bonus_hours = request.data.get('bonus_hours')
+        if bonus_hours is None:
+            return Response({'error': 'bonus_hours required'}, status=400)
+        try:
+            bonus_hours = Decimal(str(bonus_hours))
+        except Exception:
+            return Response({'error': 'Invalid bonus_hours'}, status=400)
+        if bonus_hours <= 0:
+            return Response({'error': 'bonus_hours must be > 0'}, status=400)
+        today = timezone.localdate()
+        month = request.data.get('month')
+        year = request.data.get('year')
+        if month is not None and year is not None:
+            try:
+                month, year = int(month), int(year)
+            except (TypeError, ValueError):
+                month, year = today.month, today.year
+        else:
+            month, year = today.month, today.year
+        awarded = 0
+        errors = []
+        for emp_code in emp_codes:
+            if not emp_code:
+                continue
+            emp_code = str(emp_code).strip()
+            if allowed_emp_codes is not None and emp_code not in allowed_emp_codes:
+                errors.append({'emp_code': emp_code, 'reason': 'Not allowed'})
+                continue
+            try:
+                sal, created = Salary.objects.get_or_create(
+                    emp_code=emp_code, month=month, year=year,
+                    defaults={'salary_type': 'Monthly', 'base_salary': Decimal('0')}
+                )
+                sal.bonus = (sal.bonus or Decimal('0')) + bonus_hours
+                sal.save()
+                log_activity(request, 'update', 'bonus', 'salary', emp_code, details={'action': 'give_bonus_bulk', 'hours': str(bonus_hours), 'new_bonus': str(sal.bonus), 'month': month, 'year': year})
+                awarded += 1
+            except Exception as e:
+                errors.append({'emp_code': emp_code, 'reason': str(e)})
+        return Response({'success': True, 'awarded': awarded, 'skipped': len(errors), 'errors': errors})
 
 
 # ---------- Bonus Management ----------

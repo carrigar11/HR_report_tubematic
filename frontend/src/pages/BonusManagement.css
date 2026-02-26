@@ -53,8 +53,33 @@
 .bmGivePanelTitle {
   font-size: 0.95rem;
   font-weight: 700;
-  margin: 0 0 1rem;
+  margin: 0 0 0.5rem;
   color: var(--text);
+}
+.bmGiveModeTabs {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 1rem;
+}
+.bmGiveModeTab {
+  padding: 0.4rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--textMuted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.bmGiveModeTab:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.bmGiveModeTab.active {
+  background: rgba(34,197,94,0.12);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .bmGiveGrid {
   display: flex;
@@ -71,6 +96,10 @@
 }
 .bmGiveFieldBtn {
   min-width: auto;
+}
+.bmGiveFieldWide {
+  min-width: 280px;
+  flex: 1;
 }
 .bmFieldLabel {
   font-size: 0.7rem;
@@ -154,6 +183,55 @@
   margin-left: auto;
   font-size: 0.7rem;
   color: var(--textMuted);
+}
+.bmDropItemCheck {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.bmDropItemCheck input[type="checkbox"] {
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+/* Multiple selected */
+.bmSelectedMulti {
+  margin-top: 0.5rem;
+}
+.bmSelectedChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+}
+.bmChipSel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  background: rgba(34,197,94,0.1);
+  border: 1px solid rgba(34,197,94,0.25);
+  border-radius: 6px;
+  font-size: 0.78rem;
+  color: var(--text);
+}
+.bmChipRemove {
+  padding: 0 0.2rem;
+  border: none;
+  background: none;
+  color: var(--textMuted);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+}
+.bmChipRemove:hover {
+  color: var(--danger, #ef4444);
+}
+.bmGroupHint {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--textMuted);
+  margin-top: 0.35rem;
 }
 
 /* Selected Employee Card */

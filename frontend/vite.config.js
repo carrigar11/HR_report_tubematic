@@ -5,7 +5,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5174,
-    allowedHosts: ['monitor-renewing-oarfish.ngrok-free.app'],
+    allowedHosts: ['monitor-renewing-oarfish.ngrok-free.app', 'https://distent-trilocular-mickie.ngrok-free.dev', 'distent-trilocular-mickie.ngrok-free.dev'],
     proxy: {
       '/api': {
         target: 'http://localhost:8000',

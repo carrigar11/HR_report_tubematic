@@ -246,6 +246,7 @@ export const bonus = {
   overview: (month, year, search = '') => api.get('/bonus/overview/', { params: { month, year, ...(search ? { search } : {}) } }),
   employeeDetails: (emp_code, month, year) => api.get('/bonus/employee-details/', { params: { emp_code, month, year } }),
   give: (emp_code, bonus_hours, month, year) => api.post('/leaderboard/bonus/', { emp_code, bonus_hours, ...(month != null && year != null ? { month, year } : {}) }),
+  giveBulk: (emp_codes, bonus_hours, month, year) => api.post('/leaderboard/bonus/bulk/', { emp_codes, bonus_hours, ...(month != null && year != null ? { month, year } : {}) }),
   set: (emp_code, bonus_hours, month, year) => api.post('/bonus/set/', { emp_code, bonus_hours, ...(month != null && year != null ? { month, year } : {}) }),
   hideGrant: (emp_code, month, year, hours, given_at) => api.post('/bonus/hide-grant/', { emp_code, month, year, hours, given_at }),
 }

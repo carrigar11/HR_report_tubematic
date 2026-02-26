@@ -5,14 +5,12 @@ JWT: set request.jwt_admin_id from Authorization Bearer token; return 401 if Bea
 """
 import time
 import json
-from django.utils import timezone
 from django.http import HttpResponse
-from .models import Attendance, Employee
+from .attendance_sync import run_today_attendance_sync
 from .jwt_auth import decode_token
 
 _LAST_SYNC = 0.0
 _INTERVAL = 180  # 3 minutes
-_LAST_ABSENT_RUN_DATE = None  # date when we last ran auto-absent (once per day after cutoff)
 
 
 class JWTAdminMiddleware:
@@ -51,61 +49,6 @@ class JWTAdminMiddleware:
         return self.get_response(request)
 
 
-def _run_auto_absent_if_after_cutoff():
-    """
-    After cutoff time (default 11:50 AM), mark today's no-punch rows as Absent and create
-    Absent rows for active employees who have no attendance row for today.
-    If they punch in later the same day, model save() will set status=Present.
-    """
-    global _LAST_ABSENT_RUN_DATE
-    try:
-        from .models import SystemSetting
-        cutoff_val = SystemSetting.objects.filter(key='absent_cutoff_time').values_list('value', flat=True).first()
-    except Exception:
-        cutoff_val = None
-    # Default 11:50 AM (HH:MM or H:MM)
-    if not cutoff_val or not str(cutoff_val).strip():
-        cutoff_val = '11:50'
-    parts = str(cutoff_val).strip().split(':')
-    try:
-        cutoff_hour = int(parts[0])
-        cutoff_min = int(parts[1]) if len(parts) > 1 else 0
-    except (ValueError, IndexError):
-        cutoff_hour, cutoff_min = 11, 50
-    now = timezone.now()
-    today = timezone.localdate()
-    current_minutes = now.hour * 60 + now.minute
-    cutoff_minutes = cutoff_hour * 60 + cutoff_min
-    if current_minutes < cutoff_minutes:
-        return
-    if _LAST_ABSENT_RUN_DATE == today:
-        return
-    _LAST_ABSENT_RUN_DATE = today
-    # Skip Sunday (weekly off)
-    if today.weekday() == 6:
-        return
-    # 1) Update existing today rows with no punch_in -> Absent
-    Attendance.objects.filter(
-        date=today,
-        punch_in__isnull=True
-    ).exclude(status='Absent').update(status='Absent')
-    # 2) Active employees with no row for today -> create Absent row
-    existing_emp_codes = set(
-        Attendance.objects.filter(date=today).values_list('emp_code', flat=True)
-    )
-    active_codes = list(
-        Employee.objects.filter(status=Employee.STATUS_ACTIVE).values_list('emp_code', flat=True)
-    )
-    for emp_code in active_codes:
-        if emp_code in existing_emp_codes:
-            continue
-        Attendance.objects.get_or_create(
-            emp_code=emp_code,
-            date=today,
-            defaults={'status': 'Absent', 'name': ''}
-        )
-
-
 class TodayPunchInSyncMiddleware:
     """Runs every ~3 min: if employee has punch_in for today, set status=Present. After cutoff (11:50), mark no-punch as Absent."""
 
@@ -117,12 +60,5 @@ class TodayPunchInSyncMiddleware:
         now = time.time()
         if now - _LAST_SYNC >= _INTERVAL:
             _LAST_SYNC = now
-            today = timezone.localdate()
-            # If they punched in (same day or any time), mark Present
-            Attendance.objects.filter(
-                date=today,
-                punch_in__isnull=False
-            ).exclude(status='Present').update(status='Present')
-            # After 11:50 AM: mark no-punch as Absent, create Absent rows for active employees
-            _run_auto_absent_if_after_cutoff()
+            run_today_attendance_sync(force_absent=False)
         return self.get_response(request)

@@ -20,10 +20,13 @@ export default function BonusManagement() {
 
   // Give bonus panel
   const [giveOpen, setGiveOpen] = useState(false)
+  const [giveMode, setGiveMode] = useState('single') // 'single' | 'multiple' | 'group'
   const [giveSearch, setGiveSearch] = useState('')
   const [giveResults, setGiveResults] = useState([])
   const [giveSearching, setGiveSearching] = useState(false)
   const [selectedEmp, setSelectedEmp] = useState(null)
+  const [selectedEmps, setSelectedEmps] = useState([]) // for multiple
+  const [groupDept, setGroupDept] = useState('') // for group: '' = all, or dept_name
   const [giveHours, setGiveHours] = useState('')
   const [giveLoading, setGiveLoading] = useState(false)
   const [giveMsg, setGiveMsg] = useState({ text: '', type: '' })
@@ -80,18 +83,38 @@ export default function BonusManagement() {
   }, [giveSearch])
 
   const handleGiveBonus = async () => {
-    if (!selectedEmp || !giveHours) return
     const hrs = parseFloat(giveHours)
     if (!hrs || hrs <= 0) { setGiveMsg({ text: 'Enter valid hours > 0', type: 'error' }); return }
     setGiveLoading(true)
     setGiveMsg({ text: '', type: '' })
     try {
-      const { data: res } = await bonus.give(selectedEmp.emp_code, hrs)
-      setGiveMsg({ text: `Bonus awarded! ${selectedEmp.name || selectedEmp.emp_code} now has ${res.new_bonus}h total bonus.`, type: 'success' })
-      setGiveHours('')
-      setSelectedEmp(null)
-      setGiveSearch('')
-      setGiveResults([])
+      if (giveMode === 'single') {
+        if (!selectedEmp) { setGiveMsg({ text: 'Select an employee', type: 'error' }); setGiveLoading(false); return }
+        const { data: res } = await bonus.give(selectedEmp.emp_code, hrs, month, year)
+        setGiveMsg({ text: `Bonus awarded! ${selectedEmp.name || selectedEmp.emp_code} now has ${res.new_bonus}h total bonus.`, type: 'success' })
+        setGiveHours('')
+        setSelectedEmp(null)
+        setGiveSearch('')
+        setGiveResults([])
+      } else if (giveMode === 'multiple') {
+        if (!selectedEmps.length) { setGiveMsg({ text: 'Select at least one employee', type: 'error' }); setGiveLoading(false); return }
+        const codes = selectedEmps.map((e) => e.emp_code)
+        const { data: res } = await bonus.giveBulk(codes, hrs, month, year)
+        setGiveMsg({ text: `Bonus awarded to ${res.awarded} employee(s).${res.skipped ? ` ${res.skipped} skipped.` : ''}`, type: 'success' })
+        setGiveHours('')
+        setSelectedEmps([])
+        setGiveSearch('')
+        setGiveResults([])
+      } else {
+        // group: use current list (employees) filtered by groupDept
+        const list = groupDept ? employees.filter((e) => (e.dept_name || '') === groupDept) : employees
+        if (!list.length) { setGiveMsg({ text: groupDept ? 'No employees in this department for current filters.' : 'No employees in current list.', type: 'error' }); setGiveLoading(false); return }
+        const codes = list.map((e) => e.emp_code)
+        const { data: res } = await bonus.giveBulk(codes, hrs, month, year)
+        setGiveMsg({ text: `Bonus awarded to ${res.awarded} employee(s) in ${groupDept || 'current list'}.${res.skipped ? ` ${res.skipped} skipped.` : ''}`, type: 'success' })
+        setGiveHours('')
+        setGroupDept('')
+      }
       fetchData()
     } catch (err) {
       setGiveMsg({ text: 'Error: ' + (err.response?.data?.error || err.message), type: 'error' })
@@ -99,6 +122,15 @@ export default function BonusManagement() {
       setGiveLoading(false)
     }
   }
+
+  const toggleSelectedEmp = (emp) => {
+    setSelectedEmps((prev) => {
+      const has = prev.some((e) => e.emp_code === emp.emp_code)
+      if (has) return prev.filter((e) => e.emp_code !== emp.emp_code)
+      return [...prev, emp]
+    })
+  }
+  const isSelected = (emp) => selectedEmps.some((e) => e.emp_code === emp.emp_code)
 
   const handleSetBonus = async (empCode) => {
     const hrs = parseFloat(editVal)
@@ -130,6 +162,9 @@ export default function BonusManagement() {
   const employees = data.employees || []
   const bonused = employees.filter((e) => parseFloat(e.bonus) > 0)
   const noBonusYet = employees.filter((e) => parseFloat(e.bonus) === 0)
+  const departments = [...new Set(employees.map((e) => e.dept_name).filter(Boolean))].sort()
+  const groupList = groupDept ? employees.filter((e) => (e.dept_name || '') === groupDept) : employees
+  const groupCount = groupList.length
 
   return (
     <div className="pageContent bmPage">
@@ -147,67 +182,130 @@ export default function BonusManagement() {
       {/* Give Bonus Panel */}
       {giveOpen && (
         <div className="bmGivePanel card">
-          <h3 className="bmGivePanelTitle">Award Bonus to Employee</h3>
+          <h3 className="bmGivePanelTitle">Award Bonus</h3>
+          <div className="bmGiveModeTabs">
+            <button type="button" className={`bmGiveModeTab ${giveMode === 'single' ? 'active' : ''}`} onClick={() => { setGiveMode('single'); setGiveMsg({ text: '', type: '' }); setSelectedEmps([]); setGroupDept('') }}>Single</button>
+            <button type="button" className={`bmGiveModeTab ${giveMode === 'multiple' ? 'active' : ''}`} onClick={() => { setGiveMode('multiple'); setGiveMsg({ text: '', type: '' }); setSelectedEmp(null); setGiveSearch(''); setGiveResults([]); setGroupDept('') }}>Multiple</button>
+            <button type="button" className={`bmGiveModeTab ${giveMode === 'group' ? 'active' : ''}`} onClick={() => { setGiveMode('group'); setGiveMsg({ text: '', type: '' }); setSelectedEmp(null); setSelectedEmps([]); setGiveSearch(''); setGiveResults([]) }}>Whole group</button>
+          </div>
           <div className="bmGiveGrid">
-            <div className="bmGiveField">
-              <label className="bmFieldLabel">Search Employee</label>
-              <input
-                type="text"
-                className="bmInput"
-                placeholder="Type emp code or name..."
-                value={giveSearch}
-                onChange={(e) => { setGiveSearch(e.target.value); setSelectedEmp(null) }}
-              />
-              {giveSearch && !selectedEmp && (
-                <div className="bmDropdown">
-                  {giveSearching && <div className="bmDropItem bmDropMuted">Searching...</div>}
-                  {!giveSearching && giveResults.length === 0 && giveSearch.length > 1 && <div className="bmDropItem bmDropMuted">No employees found</div>}
-                  {giveResults.slice(0, 8).map((emp) => (
-                    <div
-                      key={emp.emp_code}
-                      className="bmDropItem"
-                      onClick={() => { setSelectedEmp(emp); setGiveSearch(`${emp.emp_code} - ${emp.name}`); setGiveResults([]) }}
-                    >
-                      <span className="bmDropCode">{emp.emp_code}</span>
-                      <span className="bmDropName">{emp.name}</span>
-                      <span className="bmDropDept">{emp.dept_name || ''}</span>
+            {giveMode === 'single' && (
+              <>
+                <div className="bmGiveField">
+                  <label className="bmFieldLabel">Search Employee</label>
+                  <input
+                    type="text"
+                    className="bmInput"
+                    placeholder="Type emp code or name..."
+                    value={giveSearch}
+                    onChange={(e) => { setGiveSearch(e.target.value); setSelectedEmp(null) }}
+                  />
+                  {giveSearch && !selectedEmp && (
+                    <div className="bmDropdown">
+                      {giveSearching && <div className="bmDropItem bmDropMuted">Searching...</div>}
+                      {!giveSearching && giveResults.length === 0 && giveSearch.length > 1 && <div className="bmDropItem bmDropMuted">No employees found</div>}
+                      {giveResults.slice(0, 8).map((emp) => (
+                        <div key={emp.emp_code} className="bmDropItem" onClick={() => { setSelectedEmp(emp); setGiveSearch(`${emp.emp_code} - ${emp.name}`); setGiveResults([]) }}>
+                          <span className="bmDropCode">{emp.emp_code}</span>
+                          <span className="bmDropName">{emp.name}</span>
+                          <span className="bmDropDept">{emp.dept_name || ''}</span>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
+                  {selectedEmp && (
+                    <div className="bmSelectedEmp">
+                      <div className="bmSelectedAvatar">{(selectedEmp.name || '?').split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()}</div>
+                      <div>
+                        <div className="bmSelectedName">{selectedEmp.name}</div>
+                        <div className="bmSelectedMeta">{selectedEmp.emp_code} &middot; {selectedEmp.dept_name || '—'}</div>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              )}
-              {selectedEmp && (
-                <div className="bmSelectedEmp">
-                  <div className="bmSelectedAvatar">
-                    {(selectedEmp.name || '?').split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()}
-                  </div>
-                  <div>
-                    <div className="bmSelectedName">{selectedEmp.name}</div>
-                    <div className="bmSelectedMeta">{selectedEmp.emp_code} &middot; {selectedEmp.dept_name || '—'} &middot; {selectedEmp.designation || '—'}</div>
-                  </div>
+                <div className="bmGiveField">
+                  <label className="bmFieldLabel">Bonus Hours</label>
+                  <input type="number" className="bmInput" placeholder="e.g. 5" min="0" step="1" value={giveHours} onChange={(e) => setGiveHours(e.target.value)} />
                 </div>
-              )}
-            </div>
-            <div className="bmGiveField">
-              <label className="bmFieldLabel">Bonus Hours</label>
-              <input
-                type="number"
-                className="bmInput"
-                placeholder="e.g. 5"
-                min="0"
-                step="1"
-                value={giveHours}
-                onChange={(e) => setGiveHours(e.target.value)}
-              />
-            </div>
-            <div className="bmGiveField bmGiveFieldBtn">
-              <button
-                className="bmAwardBtn"
-                disabled={giveLoading || !selectedEmp || !giveHours}
-                onClick={handleGiveBonus}
-              >
-                {giveLoading ? 'Awarding...' : 'Award Bonus'}
-              </button>
-            </div>
+                <div className="bmGiveField bmGiveFieldBtn">
+                  <button className="bmAwardBtn" disabled={giveLoading || !selectedEmp || !giveHours} onClick={handleGiveBonus}>
+                    {giveLoading ? 'Awarding...' : 'Award Bonus'}
+                  </button>
+                </div>
+              </>
+            )}
+            {giveMode === 'multiple' && (
+              <>
+                <div className="bmGiveField bmGiveFieldWide">
+                  <label className="bmFieldLabel">Search & select employees</label>
+                  <input
+                    type="text"
+                    className="bmInput"
+                    placeholder="Type emp code or name..."
+                    value={giveSearch}
+                    onChange={(e) => setGiveSearch(e.target.value)}
+                  />
+                  {giveSearch && (
+                    <div className="bmDropdown">
+                      {giveSearching && <div className="bmDropItem bmDropMuted">Searching...</div>}
+                      {!giveSearching && giveResults.length === 0 && giveSearch.length > 1 && <div className="bmDropItem bmDropMuted">No employees found</div>}
+                      {giveResults.slice(0, 12).map((emp) => (
+                        <div key={emp.emp_code} className="bmDropItem bmDropItemCheck" onClick={() => toggleSelectedEmp(emp)}>
+                          <input type="checkbox" checked={isSelected(emp)} onChange={() => {}} />
+                          <span className="bmDropCode">{emp.emp_code}</span>
+                          <span className="bmDropName">{emp.name}</span>
+                          <span className="bmDropDept">{emp.dept_name || ''}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {selectedEmps.length > 0 && (
+                    <div className="bmSelectedMulti">
+                      <span className="bmFieldLabel">{selectedEmps.length} selected</span>
+                      <div className="bmSelectedChips">
+                        {selectedEmps.map((e) => (
+                          <span key={e.emp_code} className="bmChipSel">{e.emp_code} &middot; {e.name}
+                            <button type="button" className="bmChipRemove" onClick={() => setSelectedEmps((p) => p.filter((x) => x.emp_code !== e.emp_code))} aria-label="Remove">×</button>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="bmGiveField">
+                  <label className="bmFieldLabel">Bonus Hours (each)</label>
+                  <input type="number" className="bmInput" placeholder="e.g. 5" min="0" step="1" value={giveHours} onChange={(e) => setGiveHours(e.target.value)} />
+                </div>
+                <div className="bmGiveField bmGiveFieldBtn">
+                  <button className="bmAwardBtn" disabled={giveLoading || !selectedEmps.length || !giveHours} onClick={handleGiveBonus}>
+                    {giveLoading ? 'Awarding...' : `Award to ${selectedEmps.length} employee(s)`}
+                  </button>
+                </div>
+              </>
+            )}
+            {giveMode === 'group' && (
+              <>
+                <div className="bmGiveField bmGiveFieldWide">
+                  <label className="bmFieldLabel">Award to group</label>
+                  <select className="bmInput" value={groupDept} onChange={(e) => setGroupDept(e.target.value)}>
+                    <option value="">All in current list ({employees.length} employees)</option>
+                    {departments.map((d) => (
+                      <option key={d} value={d}>{d} ({employees.filter((e) => (e.dept_name || '') === d).length})</option>
+                    ))}
+                  </select>
+                  {groupCount > 0 && <span className="bmGroupHint">{groupCount} employee(s) will receive bonus</span>}
+                </div>
+                <div className="bmGiveField">
+                  <label className="bmFieldLabel">Bonus Hours (each)</label>
+                  <input type="number" className="bmInput" placeholder="e.g. 5" min="0" step="1" value={giveHours} onChange={(e) => setGiveHours(e.target.value)} />
+                </div>
+                <div className="bmGiveField bmGiveFieldBtn">
+                  <button className="bmAwardBtn" disabled={giveLoading || !groupCount || !giveHours} onClick={handleGiveBonus}>
+                    {giveLoading ? 'Awarding...' : `Award to group (${groupCount})`}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
           {giveMsg.text && <div className={`bmGiveMsg ${giveMsg.type}`}>{giveMsg.text}</div>}
         </div>
