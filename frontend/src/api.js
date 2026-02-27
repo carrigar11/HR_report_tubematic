@@ -209,6 +209,11 @@ export const upload = {
     fd.append('preview', preview ? 'true' : 'false')
     return api.post('/upload/force-punch/', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
   },
+  downloadTemplate: (type, mode) =>
+    api.get('/upload/template/', {
+      params: { type, mode },
+      responseType: 'blob',
+    }),
 }
 
 export const dashboard = () => api.get('/dashboard/')

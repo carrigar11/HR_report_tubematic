@@ -1,6 +1,6 @@
 """
-Excel upload: Employee and Attendance with flexible column mapping.
-- Total working hours: taken from attendance Excel only (e.g. "8h", "11h 59m").
+Excel/CSV upload: Employee and Attendance with flexible column mapping.
+- Total working hours: taken from attendance file only (e.g. "8h", "11h 59m").
 - Overtime: when total_working > expected shift hours, OT = difference (hours only, no minutes).
 """
 import pandas as pd
@@ -17,6 +17,15 @@ from .utils import (
     EMPLOYEE_COLUMN_ALIASES,
     SHIFT_COLUMN_ALIASES,
 )
+
+
+def _load_dataframe(file):
+    """Read Excel or CSV into DataFrame based on file name extension."""
+    name = getattr(file, 'name', '') or ''
+    lower = name.lower()
+    if lower.endswith('.csv'):
+        return pd.read_csv(file)
+    return pd.read_excel(file)
 
 
 def _parse_working_hours(val):
@@ -257,6 +266,185 @@ def _next_available_emp_code(existing_codes, used_in_upload, prefix='UPL'):
         n += 1
 
 
+def build_employee_sample_rows():
+    """Return header + a few sample rows for employee upload."""
+    header = [
+        'Emp Code',
+        'Name',
+        'Mobile No',
+        'Email',
+        'Gender',
+        'Department Name',
+        'Designation Name',
+        'Status',
+        'Employment Type',
+        'Salary Type',
+        'Salary',
+    ]
+    rows = [
+        [
+            'E001',
+            'John Doe',
+            '9876543210',
+            'john@example.com',
+            'Male',
+            'Production',
+            'Operator',
+            'Active',
+            'Full-time',
+            'Monthly',
+            '25000',
+        ],
+        [
+            'E002',
+            'Priya Sharma',
+            '9123456789',
+            'priya@example.com',
+            'Female',
+            'Quality',
+            'Inspector',
+            'Active',
+            'Full-time',
+            'Monthly',
+            '28000',
+        ],
+        [
+            'E003',
+            'Rahul Patil',
+            '9988776655',
+            '',
+            'Male',
+            'Stores',
+            'Helper',
+            'Inactive',
+            'Full-time',
+            'Monthly',
+            '20000',
+        ],
+        [
+            'H001',
+            'Firdos Cafe Waiter',
+            '9000011111',
+            'waiter@firdoscafe.com',
+            'Male',
+            'Canteen',
+            'Waiter',
+            'Active',
+            'Hourly',
+            'Hourly',
+            '80',  # hourly rate
+        ],
+    ]
+    return header, rows
+
+
+def build_attendance_sample_rows():
+    """Return header + a few sample rows for attendance upload."""
+    header = [
+        'Emp Id',
+        'Date',
+        'Name',
+        'Punch In',
+        'Punch Out',
+        'Total Working Hours',
+        'Total Break',
+        'Status',
+    ]
+    today = timezone.localdate()
+    rows = [
+        [
+            'E001',
+            today.isoformat(),
+            'John Doe',
+            '09:00',
+            '17:30',
+            '8.5h',
+            '0.5',
+            'Present',
+        ],
+        [
+            'E002',
+            today.isoformat(),
+            'Priya Sharma',
+            '08:55',
+            '18:10',
+            '9.25h',
+            '0.5',
+            'Present',
+        ],
+        [
+            'E003',
+            today.isoformat(),
+            'Rahul Patil',
+            '',
+            '',
+            '0',
+            '0',
+            'Absent',
+        ],
+        [
+            'H001',
+            today.isoformat(),
+            'Firdos Cafe Waiter',
+            '10:00',
+            '22:15',
+            '12.25h',
+            '1.0',
+            'Present',
+        ],
+    ]
+    return header, rows
+
+
+def build_shift_sample_rows():
+    """Return header + a few sample rows for shift upload."""
+    header = ['Emp Id', 'Shift', 'Shift From', 'Shift To']
+    rows = [
+        ['E001', 'General Shift', '09:00', '17:30'],
+        ['E002', 'Quality Shift', '08:30', '17:00'],
+        ['E003', 'Stores Shift', '10:00', '19:00'],
+        ['H001', 'Canteen Night', '16:00', '00:00'],
+    ]
+    return header, rows
+
+
+def build_force_punch_sample_rows():
+    """Return header + a few sample rows for force punch upload."""
+    header = ['Emp Id', 'Date', 'Punch In', 'Punch Out', 'Total Working Hours']
+    today = timezone.localdate()
+    rows = [
+        [
+            'E001',
+            today.isoformat(),
+            '09:05',
+            '17:25',
+            '8.33h',
+        ],
+        [
+            'E002',
+            today.isoformat(),
+            '08:45',
+            '18:05',
+            '9.33h',
+        ],
+        [
+            'E003',
+            today.isoformat(),
+            '10:00',
+            '18:00',
+            '8.0h',
+        ],
+        [
+            'H001',
+            today.isoformat(),
+            '16:00',
+            '23:45',
+            '7.75h',
+        ],
+    ]
+    return header, rows
+
+
 def upload_employees_excel(file, preview=False, company_id=None) -> dict:
     """
     Rows may have emp_code or not. New employees are linked to company_id when provided.
@@ -268,7 +456,7 @@ def upload_employees_excel(file, preview=False, company_id=None) -> dict:
     If preview=True, returns changes without applying them.
     When new department names appear in the upload, creates admin logins for them (manage-admins).
     """
-    df = pd.read_excel(file)
+    df = _load_dataframe(file)
     col_map = map_columns_to_schema(df.columns.tolist(), EMPLOYEE_COLUMN_ALIASES)
     required = ['name']
     for r in required:
@@ -483,7 +671,7 @@ def upload_attendance_excel(file, preview=False, company_id=None) -> dict:
     Never delete existing row; never overwrite full row.
     If preview=True, returns changes without applying them.
     """
-    df = pd.read_excel(file)
+    df = _load_dataframe(file)
     col_map = map_columns_to_schema(df.columns.tolist(), ATTENDANCE_COLUMN_ALIASES)
     required = ['emp id', 'date']
     for r in required:
@@ -746,7 +934,7 @@ def upload_shift_excel(file, preview=False, company_id=None) -> dict:
     Excel columns: Emp Id, Shift, From, To (Date is optional, kept for reference).
     If shift changed from old, overwrites old data.
     """
-    df = pd.read_excel(file)
+    df = _load_dataframe(file)
     col_map = map_columns_to_schema(df.columns.tolist(), SHIFT_COLUMN_ALIASES)
     required = ['emp id', 'shift']
     for r in required:
@@ -890,7 +1078,7 @@ def upload_force_punch_excel(file, preview=False, company_id=None) -> dict:
     Optional: Total Working Hours from Excel (recalcs overtime if shift exists).
     Excel columns: Emp Id, Date, Punch In, Punch Out, Total Working Hours.
     """
-    df = pd.read_excel(file)
+    df = _load_dataframe(file)
     col_map = map_columns_to_schema(df.columns.tolist(), ATTENDANCE_COLUMN_ALIASES)
     required = ['emp id', 'date', 'punch in', 'punch out']
     for r in required:

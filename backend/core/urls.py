@@ -42,6 +42,7 @@ urlpatterns = [
     path('upload/attendance/', views.UploadAttendanceView.as_view()),
     path('upload/shift/', views.UploadShiftView.as_view()),
     path('upload/force-punch/', views.UploadForcePunchView.as_view()),
+    path('upload/template/', views.UploadTemplateDownloadView.as_view()),
     path('dashboard/', views.DashboardView.as_view()),
     path('salary/monthly/', views.SalaryMonthlyView.as_view()),
     path('advance/', views.SalaryAdvanceListCreateView.as_view()),

@@ -10,6 +10,32 @@ function UploadCard({ title, icon: Icon, hint, accept, onPreview, onConfirm, typ
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [step, setStep] = useState('select') // select, preview, done
+  const [downloading, setDownloading] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+
+  const handleDownload = async (mode) => {
+    // mode: 'sample' | 'data'
+    try {
+      setDownloading(true)
+      const { data, headers } = await upload.downloadTemplate(type, mode)
+      const blob = new Blob([data], { type: 'text/csv;charset=utf-8;' })
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      const suggested =
+        headers['content-disposition']?.split('filename=')[1]?.replace(/\"/g, '') ||
+        `${type}_${mode}.csv`
+      link.href = url
+      link.setAttribute('download', suggested)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+    } catch (err) {
+      setError(err.response?.data?.error || err.message || 'Download failed')
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   const handlePreview = async (e) => {
     e.preventDefault()
@@ -74,6 +100,44 @@ function UploadCard({ title, icon: Icon, hint, accept, onPreview, onConfirm, typ
           <Icon />
         </span>
         <h2 className="uploadPageCardTitle">{title}</h2>
+        <div className="uploadPageCardActions">
+          <div className="dropdown">
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              disabled={downloading}
+              onClick={() => setMenuOpen((v) => !v)}
+            >
+              {downloading ? 'Preparing…' : 'Download'}
+            </button>
+            {menuOpen && (
+              <div className="dropdownMenu">
+                <button
+                  type="button"
+                  className="dropdownItem"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    handleDownload('sample')
+                  }}
+                  disabled={downloading}
+                >
+                  Download sample
+                </button>
+                <button
+                  type="button"
+                  className="dropdownItem"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    handleDownload('data')
+                  }}
+                  disabled={downloading}
+                >
+                  Download data
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
       <p className="uploadHint">{hint}</p>
 
@@ -447,7 +511,7 @@ export default function Upload() {
           title="Upload employees"
           icon={IconUsers}
           hint="Required columns (flexible names): Code, Name. Optional: Mobile No, Email, Gender, Department Name, Designation Name, Status, Employment Type, Salary Type, Salary. Handles *, / and case variations."
-          accept=".xlsx,.xls"
+          accept=".xlsx,.xls,.csv"
           type="employees"
           onPreview={(file) => upload.employees(file, true)}
           onConfirm={(file) => upload.employees(file, false)}
@@ -456,7 +520,7 @@ export default function Upload() {
           title="Upload attendance"
           icon={IconCalendar}
           hint="Required: Emp Id, Date. Optional: Name, Dept, Designation, Day, Punch In, Punch Out, Total Working Hours, Total Break, Status. Smart update: only missing punch_out is filled; no overwrite."
-          accept=".xlsx,.xls"
+          accept=".xlsx,.xls,.csv"
           type="attendance"
           onPreview={(file) => upload.attendance(file, true)}
           onConfirm={(file) => upload.attendance(file, false)}
@@ -465,7 +529,7 @@ export default function Upload() {
           title="Upload Employee Shifts"
           icon={IconClock}
           hint="Assigns shift to employees permanently. Required: Emp Id, Shift, From, To. Shift is fixed per employee until a new one is uploaded. All past & future attendance records will be updated."
-          accept=".xlsx,.xls"
+          accept=".xlsx,.xls,.csv"
           type="shift"
           onPreview={(file) => upload.shift(file, true)}
           onConfirm={(file) => upload.shift(file, false)}
@@ -474,7 +538,7 @@ export default function Upload() {
           title="Upload as force punch in and out"
           icon={IconClock}
           hint="Overwrites punch_in and punch_out for existing attendance records. Required: Emp Id, Date, Punch In, Punch Out. Optional: Total Working Hours. Only updates records that already exist."
-          accept=".xlsx,.xls"
+          accept=".xlsx,.xls,.csv"
           type="forcePunch"
           onPreview={(file) => upload.forcePunch(file, true)}
           onConfirm={(file) => upload.forcePunch(file, false)}

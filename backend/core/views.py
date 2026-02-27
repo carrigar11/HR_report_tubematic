@@ -31,7 +31,16 @@ from .serializers import (
     EmailSmtpConfigSerializer, PlantReportRecipientSerializer,
     AdminLoginSerializer, AttendanceAdjustPayloadSerializer,
 )
-from .excel_upload import upload_employees_excel, upload_attendance_excel, upload_shift_excel, upload_force_punch_excel
+from .excel_upload import (
+    upload_employees_excel,
+    upload_attendance_excel,
+    upload_shift_excel,
+    upload_force_punch_excel,
+    build_employee_sample_rows,
+    build_attendance_sample_rows,
+    build_shift_sample_rows,
+    build_force_punch_sample_rows,
+)
 from .reward_engine import run_reward_engine
 from .export_excel import generate_payroll_excel, generate_payroll_excel_previous_day
 from .audit_logging import log_activity, log_activity_manual
@@ -1120,6 +1129,116 @@ class UploadEmployeesView(APIView):
         if not preview:
             log_activity(request, 'upload', 'upload', 'employees', '', details={'filename': getattr(f, 'name', ''), 'result': result})
         return Response(result)
+
+
+class UploadTemplateDownloadView(APIView):
+    """Download sample or current data for upload sections (employees, attendance, shifts, force_punch)."""
+    def get(self, request):
+        kind = request.query_params.get('type', '').strip()
+        mode = request.query_params.get('mode', 'sample').strip()  # sample | data
+        if kind not in ('employees', 'attendance', 'shift', 'force_punch'):
+            return Response({'error': 'Invalid type'}, status=400)
+        admin, _ = get_request_admin(request)
+        company_id = getattr(admin, 'company_id', None) if admin else None
+
+        import csv
+        from io import StringIO
+        from django.http import HttpResponse
+
+        # Build header + rows
+        if kind == 'employees':
+            if mode == 'sample':
+                header, rows = build_employee_sample_rows()
+            else:
+                qs = Employee.objects.all().order_by('emp_code')
+                if company_id is not None:
+                    qs = qs.filter(company_id=company_id)
+                header = ['Emp Code', 'Name', 'Mobile No', 'Email', 'Gender', 'Department Name', 'Designation Name', 'Status', 'Employment Type', 'Salary Type', 'Salary']
+                rows = [
+                    [
+                        e.emp_code,
+                        e.name,
+                        e.mobile or '',
+                        e.email or '',
+                        e.gender or '',
+                        e.dept_name or '',
+                        e.designation or '',
+                        e.status or '',
+                        e.employment_type or '',
+                        e.salary_type or '',
+                        str(e.base_salary or ''),
+                    ]
+                    for e in qs
+                ]
+        elif kind == 'attendance':
+            if mode == 'sample':
+                header, rows = build_attendance_sample_rows()
+            else:
+                qs = Attendance.objects.all().order_by('-date', 'emp_code')
+                if company_id is not None:
+                    emp_codes = list(Employee.objects.filter(company_id=company_id).values_list('emp_code', flat=True))
+                    qs = qs.filter(emp_code__in=emp_codes)
+                header = ['Emp Id', 'Date', 'Name', 'Punch In', 'Punch Out', 'Total Working Hours', 'Total Break', 'Status']
+                rows = [
+                    [
+                        a.emp_code,
+                        a.date.isoformat(),
+                        a.name or '',
+                        a.punch_in.isoformat()[:5] if a.punch_in else '',
+                        a.punch_out.isoformat()[:5] if a.punch_out else '',
+                        str(a.total_working_hours or ''),
+                        str(a.total_break or ''),
+                        a.status or '',
+                    ]
+                    for a in qs
+                ]
+        elif kind == 'shift':
+            if mode == 'sample':
+                header, rows = build_shift_sample_rows()
+            else:
+                qs = Employee.objects.all().order_by('emp_code')
+                if company_id is not None:
+                    qs = qs.filter(company_id=company_id)
+                header = ['Emp Id', 'Shift', 'Shift From', 'Shift To']
+                rows = [
+                    [
+                        e.emp_code,
+                        e.shift or '',
+                        e.shift_from.isoformat()[:5] if e.shift_from else '',
+                        e.shift_to.isoformat()[:5] if e.shift_to else '',
+                    ]
+                    for e in qs
+                ]
+        else:  # force_punch
+            if mode == 'sample':
+                header, rows = build_force_punch_sample_rows()
+            else:
+                qs = Attendance.objects.all().order_by('-date', 'emp_code')
+                if company_id is not None:
+                    emp_codes = list(Employee.objects.filter(company_id=company_id).values_list('emp_code', flat=True))
+                    qs = qs.filter(emp_code__in=emp_codes)
+                header = ['Emp Id', 'Date', 'Punch In', 'Punch Out', 'Total Working Hours']
+                rows = [
+                    [
+                        a.emp_code,
+                        a.date.isoformat(),
+                        a.punch_in.isoformat()[:5] if a.punch_in else '',
+                        a.punch_out.isoformat()[:5] if a.punch_out else '',
+                        str(a.total_working_hours or ''),
+                    ]
+                    for a in qs
+                ]
+
+        # Build CSV response
+        buffer = StringIO()
+        writer = csv.writer(buffer)
+        writer.writerow(header)
+        for r in rows:
+            writer.writerow(r)
+        filename = f'{kind}_{"sample" if mode == "sample" else "data"}.csv'
+        resp = HttpResponse(buffer.getvalue(), content_type='text/csv')
+        resp['Content-Disposition'] = f'attachment; filename=\"{filename}\"'
+        return resp
 
 
 class UploadAttendanceView(APIView):
