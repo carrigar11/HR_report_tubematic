@@ -398,12 +398,12 @@ def build_attendance_sample_rows():
 
 def build_shift_sample_rows():
     """Return header + a few sample rows for shift upload."""
-    header = ['Emp Id', 'Shift', 'Shift From', 'Shift To']
+    header = ['Emp Id', 'Name', 'Shift', 'Shift From', 'Shift To']
     rows = [
-        ['E001', 'General Shift', '09:00', '17:30'],
-        ['E002', 'Quality Shift', '08:30', '17:00'],
-        ['E003', 'Stores Shift', '10:00', '19:00'],
-        ['H001', 'Canteen Night', '16:00', '00:00'],
+        ['E001', 'John Doe', 'General Shift', '09:00', '17:30'],
+        ['E002', 'Priya Sharma', 'Quality Shift', '08:30', '17:00'],
+        ['E003', 'Rahul Patil', 'Stores Shift', '10:00', '19:00'],
+        ['H001', 'Firdos Cafe Waiter', 'Canteen Night', '16:00', '00:00'],
     ]
     return header, rows
 
@@ -558,25 +558,19 @@ def upload_employees_excel(file, preview=False, company_id=None) -> dict:
         if company_id is not None:
             emp_data['company_id'] = company_id
 
-        # ---- Row has no emp_code: match by phone or create new ----
+        # ---- Row has no emp_code: match by phone (unique in this company) or create new ----
         if not emp_code:
             if mobile_stripped and mobile_stripped in existing_by_mobile:
                 existing = existing_by_mobile[mobile_stripped]
-                has_changes = (
-                    existing.get('dept_name') != dept or
-                    existing.get('designation') != designation or
-                    existing.get('status') != status or
-                    (existing.get('name') or '').strip() != (name or '').strip()
-                )
-                if has_changes:
-                    new_data = {k: v for k, v in emp_data.items() if k != 'company_id'}
-                    new_data['emp_code'] = existing['emp_code']  # update by existing emp_code
-                    to_update.append({
-                        'emp_code': existing['emp_code'],
-                        'old': existing,
-                        'new': new_data,
-                    })
-                    updated += 1
+                # Treat sheet as source of truth for all editable fields
+                new_data = {k: v for k, v in emp_data.items() if k != 'company_id'}
+                new_data['emp_code'] = existing['emp_code']  # update by existing emp_code
+                to_update.append({
+                    'emp_code': existing['emp_code'],
+                    'old': existing,
+                    'new': new_data,
+                })
+                updated += 1
             else:
                 new_code = _next_available_emp_code(all_existing_codes, used_in_upload)
                 emp_data_new = dict(emp_data)
@@ -593,19 +587,14 @@ def upload_employees_excel(file, preview=False, company_id=None) -> dict:
             phone_match = bool(mobile_stripped and (existing.get('mobile') or '').strip() == mobile_stripped)
             same_person = name_match or phone_match
             if same_person:
-                has_changes = (
-                    existing.get('dept_name') != dept or
-                    existing.get('designation') != designation or
-                    existing.get('status') != status
-                )
-                if has_changes:
-                    new_data = {k: v for k, v in emp_data.items() if k != 'company_id'}
-                    to_update.append({
-                        'emp_code': emp_code,
-                        'old': existing,
-                        'new': new_data,
-                    })
-                    updated += 1
+                # Same employee in this company: override all editable fields from upload
+                new_data = {k: v for k, v in emp_data.items() if k != 'company_id'}
+                to_update.append({
+                    'emp_code': emp_code,
+                    'old': existing,
+                    'new': new_data,
+                })
+                updated += 1
             else:
                 # Same emp_code but different name and different phone: create NEW employee with generated emp_code
                 new_code = _next_available_emp_code(all_existing_codes, used_in_upload)
@@ -759,6 +748,9 @@ def upload_attendance_excel(file, preview=False, company_id=None) -> dict:
         total_working = _parse_working_hours(row.get(col_map.get('total working hours', '')))
         if total_working is None:
             total_working = _safe_decimal(row.get(col_map.get('total working hours', '')))
+        # If hours not provided but we have both punches, derive from punch times
+        if (total_working is None or total_working == 0) and eff_punch_in and eff_punch_out:
+            total_working = _working_hours_from_punch(eff_punch_in, eff_punch_out)
         total_working = total_working or Decimal('0')
         total_break = _safe_decimal(row.get(col_map.get('total break', '')))
         over_time = _safe_decimal(row.get(col_map.get('over_time', ''))) if 'over_time' in col_map else Decimal('0')
@@ -821,29 +813,15 @@ def upload_attendance_excel(file, preview=False, company_id=None) -> dict:
         }
         
         if existing:
-            # Smart update: fill missing punch_out, or update punch when both provided
-            do_update = False
-            if punch_in and punch_out:
-                do_update = True  # We have new punch data
-            elif existing['punch_out'] is None and punch_out is not None:
-                do_update = True  # Fill missing punch_out
-
-            if do_update:
-                to_update.append({
-                    'emp_code': emp_code,
-                    'date': str(att_date),
-                    'old_punch_out': existing.get('punch_out'),
-                    'new_punch_out': str(punch_out),
-                    'data': att_data,
-                })
-                updated += 1
-            else:
-                to_skip.append({
-                    'emp_code': emp_code,
-                    'date': str(att_date),
-                    'reason': 'Already has punch_out' if existing.get('punch_out') else 'No changes needed',
-                })
-                skipped += 1
+            # Existing record: treat upload row as source of truth for editable fields
+            to_update.append({
+                'emp_code': emp_code,
+                'date': str(att_date),
+                'old_punch_out': existing.get('punch_out'),
+                'new_punch_out': str(punch_out) if punch_out else None,
+                'data': att_data,
+            })
+            updated += 1
         else:
             to_insert.append(att_data)
             inserted += 1
@@ -1155,8 +1133,11 @@ def upload_force_punch_excel(file, preview=False, company_id=None) -> dict:
 
         punch_spans_next_day = _punch_spans_next_day(punch_in, punch_out)
 
-        # Total working hours from Excel if present, else keep existing
+        # Total working hours from Excel if present, else derive from punches, else keep existing
         total_working = _parse_working_hours(row.get(col_map.get('total working hours', '')))
+        if total_working is None and punch_in and punch_out:
+            # If user omitted hours but provided punches, compute from punch times
+            total_working = _working_hours_from_punch(punch_in, punch_out)
         if total_working is None:
             total_working = existing.get('total_working_hours')
             if total_working is not None:

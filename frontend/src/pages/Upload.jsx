@@ -534,15 +534,6 @@ export default function Upload() {
           onPreview={(file) => upload.shift(file, true)}
           onConfirm={(file) => upload.shift(file, false)}
         />
-        <UploadCard
-          title="Upload as force punch in and out"
-          icon={IconClock}
-          hint="Overwrites punch_in and punch_out for existing attendance records. Required: Emp Id, Date, Punch In, Punch Out. Optional: Total Working Hours. Only updates records that already exist."
-          accept=".xlsx,.xls,.csv"
-          type="forcePunch"
-          onPreview={(file) => upload.forcePunch(file, true)}
-          onConfirm={(file) => upload.forcePunch(file, false)}
-        />
       </div>
     </div>
   )

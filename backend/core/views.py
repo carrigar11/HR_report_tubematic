@@ -1174,7 +1174,9 @@ class UploadTemplateDownloadView(APIView):
             if mode == 'sample':
                 header, rows = build_attendance_sample_rows()
             else:
-                qs = Attendance.objects.all().order_by('-date', 'emp_code')
+                # Only today's attendance for this company
+                today = timezone.localdate()
+                qs = Attendance.objects.filter(date=today).order_by('emp_code')
                 if company_id is not None:
                     emp_codes = list(Employee.objects.filter(company_id=company_id).values_list('emp_code', flat=True))
                     qs = qs.filter(emp_code__in=emp_codes)
@@ -1199,10 +1201,11 @@ class UploadTemplateDownloadView(APIView):
                 qs = Employee.objects.all().order_by('emp_code')
                 if company_id is not None:
                     qs = qs.filter(company_id=company_id)
-                header = ['Emp Id', 'Shift', 'Shift From', 'Shift To']
+                header = ['Emp Id', 'Name', 'Shift', 'Shift From', 'Shift To']
                 rows = [
                     [
                         e.emp_code,
+                        e.name or '',
                         e.shift or '',
                         e.shift_from.isoformat()[:5] if e.shift_from else '',
                         e.shift_to.isoformat()[:5] if e.shift_to else '',

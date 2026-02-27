@@ -34,6 +34,8 @@
 .uploadPageCard {
   padding: 1.5rem;
   border-left: 4px solid var(--accent);
+  background-color: var(--surface);
+  border-radius: var(--radius);
 }
 
 .uploadPageCard:nth-child(2) {
@@ -87,9 +89,36 @@
   line-height: 1.5;
 }
 
+.uploadForm {
+}
+
 .uploadForm input[type="file"] {
   margin-bottom: 1rem;
   color: var(--text);
+  background-color: var(--surface2);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius);
+}
+
+/* Style the native file button to match dark theme */
+.uploadForm input[type="file"]::-webkit-file-upload-button {
+  background-color: var(--surface3, #2a2a2a);
+  color: var(--text);
+  border: none;
+  padding: 0.35rem 0.75rem;
+  margin-right: 0.5rem;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.uploadForm input[type="file"]::file-selector-button {
+  background-color: var(--surface3, #2a2a2a);
+  color: var(--text);
+  border: none;
+  padding: 0.35rem 0.75rem;
+  margin-right: 0.5rem;
+  border-radius: var(--radius);
+  cursor: pointer;
 }
 
 .uploadError {
@@ -105,4 +134,70 @@
   border-radius: var(--radius);
   margin-bottom: 0.75rem;
   font-size: 0.9rem;
+}
+
+.uploadPreviewSummary h4 {
+  margin: 0 0 0.5rem;
+}
+
+.uploadPreviewTable h5 {
+  margin: 1rem 0 0.5rem;
+}
+
+.uploadPreviewTable table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.uploadPreviewTable thead th {
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-align: left;
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.uploadPreviewTable tbody td {
+  font-size: 0.84rem;
+  padding: 0.35rem 0.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.uploadPreviewTable .oldValue {
+  color: var(--textMuted);
+}
+
+.uploadPreviewTable .newValue {
+  color: var(--accent);
+}
+
+.uploadPageCardActions .dropdown {
+  position: relative;
+}
+
+.uploadPageCardActions .dropdownMenu {
+  position: absolute;
+  right: 0;
+  top: 110%;
+  min-width: 180px;
+  background: var(--surface2);
+  border-radius: var(--radius);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.6);
+  padding: 0.25rem 0;
+  z-index: 10;
+}
+
+.uploadPageCardActions .dropdownItem {
+  width: 100%;
+  text-align: left;
+  padding: 0.4rem 0.9rem;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.uploadPageCardActions .dropdownItem:hover {
+  background: rgba(255, 255, 255, 0.06);
 }
