@@ -259,16 +259,18 @@ def _next_available_emp_code(existing_codes, used_in_upload, prefix='UPL'):
 
 def upload_employees_excel(file, preview=False, company_id=None) -> dict:
     """
-    If emp_code does not exist -> create (with optional company_id).
-    If emp_code exists with same name -> update only non-sensitive fields.
-    If emp_code exists with different name -> create NEW employee with a generated emp_code (same person in another company).
-    Never create duplicate emp_code.
+    Rows may have emp_code or not. New employees are linked to company_id when provided.
+    - If emp_code present and exists in company with same name OR same phone -> update.
+    - If emp_code present and exists in company but both name and phone differ -> create NEW with generated emp_code.
+    - If emp_code present and not in company -> create with that emp_code (or generated if duplicate in upload).
+    - If emp_code missing: match by phone in company -> update; else create with generated emp_code.
+    Never create duplicate emp_code within company.
     If preview=True, returns changes without applying them.
     When new department names appear in the upload, creates admin logins for them (manage-admins).
     """
     df = pd.read_excel(file)
     col_map = map_columns_to_schema(df.columns.tolist(), EMPLOYEE_COLUMN_ALIASES)
-    required = ['code', 'name']
+    required = ['name']
     for r in required:
         if r not in col_map:
             return {'success': False, 'error': f'Missing required column for: {r}. Found columns: {list(df.columns)}'}
@@ -278,7 +280,7 @@ def upload_employees_excel(file, preview=False, company_id=None) -> dict:
     to_update = []
     upload_dept_names = set()  # department names seen in this upload
 
-    # Existing emp_codes in this company (for generating new codes when emp_code exists but name differs)
+    # Existing emp_codes in this company (for generating new codes)
     _emp_base = Employee.objects.all()
     if company_id is not None:
         _emp_base = _emp_base.filter(company_id=company_id)
@@ -287,38 +289,46 @@ def upload_employees_excel(file, preview=False, company_id=None) -> dict:
     all_existing_codes = set(_emp_base.values_list('emp_code', flat=True))
     used_in_upload = set()  # codes we assign in this run (to_create with generated code)
 
-    # Get existing employees in this company for comparison (by emp_code from sheet)
-    emp_codes = []
+    # Get existing employees in this company by emp_code (include mobile for same-person check)
+    emp_codes_from_sheet = []
     rows_data = []
     for _, row in df.iterrows():
-        emp_code = _safe_str(row.get(col_map['code'], ''), 50)
+        code_col = col_map.get('code')
+        emp_code = _safe_str(row.get(code_col, ''), 50) if code_col else ''
         if emp_code:
-            emp_codes.append(emp_code)
+            emp_codes_from_sheet.append(emp_code)
         rows_data.append(row)
 
     existing_employees = {}
-    if emp_codes:
-        _existing_qs = Employee.objects.filter(emp_code__in=emp_codes)
+    if emp_codes_from_sheet:
+        _existing_qs = Employee.objects.filter(emp_code__in=emp_codes_from_sheet)
         if company_id is not None:
             _existing_qs = _existing_qs.filter(company_id=company_id)
         else:
             _existing_qs = _existing_qs.filter(company_id__isnull=True)
-        for emp in _existing_qs.values('emp_code', 'name', 'dept_name', 'designation', 'status'):
+        for emp in _existing_qs.values('emp_code', 'name', 'mobile', 'dept_name', 'designation', 'status'):
             existing_employees[emp['emp_code']] = emp
 
-    company_key = company_id  # for tracking (company, emp_code) we create in this upload
+    # By phone (company-scoped): for rows without emp_code we can match existing employee by mobile
+    existing_by_mobile = {}
+    _emp_company = _emp_base.exclude(mobile='').exclude(mobile__isnull=True)
+    for emp in _emp_company.values('emp_code', 'name', 'mobile', 'dept_name', 'designation', 'status'):
+        mob = (emp.get('mobile') or '').strip()
+        if mob:
+            existing_by_mobile[mob] = emp
+
+    company_key = company_id
     created_codes_this_upload = set()  # (company_key, emp_code) already in to_create
 
     for row in rows_data:
-        emp_code = _safe_str(row.get(col_map['code'], ''), 50)
-        if not emp_code:
-            errors += 1
-            continue
+        code_col = col_map.get('code')
+        emp_code = _safe_str(row.get(code_col, ''), 50) if code_col else ''
         def _cell(k, default=''):
             return row.get(col_map[k], default) if k in col_map else default
 
         name = _safe_str(_cell('name'), 255)
         mobile = _safe_str(_cell('mobile no'), 20)
+        mobile_stripped = (mobile or '').strip()
         email = _safe_str(_cell('email'), 254)
         gender = _safe_str(_cell('gender'), 20)
         dept = _safe_str(_cell('department name'), 100)
@@ -360,10 +370,41 @@ def upload_employees_excel(file, preview=False, company_id=None) -> dict:
         if company_id is not None:
             emp_data['company_id'] = company_id
 
+        # ---- Row has no emp_code: match by phone or create new ----
+        if not emp_code:
+            if mobile_stripped and mobile_stripped in existing_by_mobile:
+                existing = existing_by_mobile[mobile_stripped]
+                has_changes = (
+                    existing.get('dept_name') != dept or
+                    existing.get('designation') != designation or
+                    existing.get('status') != status or
+                    (existing.get('name') or '').strip() != (name or '').strip()
+                )
+                if has_changes:
+                    new_data = {k: v for k, v in emp_data.items() if k != 'company_id'}
+                    new_data['emp_code'] = existing['emp_code']  # update by existing emp_code
+                    to_update.append({
+                        'emp_code': existing['emp_code'],
+                        'old': existing,
+                        'new': new_data,
+                    })
+                    updated += 1
+            else:
+                new_code = _next_available_emp_code(all_existing_codes, used_in_upload)
+                emp_data_new = dict(emp_data)
+                emp_data_new['emp_code'] = new_code
+                all_existing_codes.add(new_code)
+                to_create.append(emp_data_new)
+                created += 1
+            continue
+
+        # ---- Row has emp_code ----
         if emp_code in existing_employees:
             existing = existing_employees[emp_code]
-            if (existing['name'] or '').strip() == (name or '').strip():
-                # Same person: update if there are changes (do not change company)
+            name_match = (existing.get('name') or '').strip() == (name or '').strip()
+            phone_match = bool(mobile_stripped and (existing.get('mobile') or '').strip() == mobile_stripped)
+            same_person = name_match or phone_match
+            if same_person:
                 has_changes = (
                     existing.get('dept_name') != dept or
                     existing.get('designation') != designation or
@@ -378,7 +419,7 @@ def upload_employees_excel(file, preview=False, company_id=None) -> dict:
                     })
                     updated += 1
             else:
-                # Same emp_code but different name: create NEW employee with generated emp_code (person works in another company)
+                # Same emp_code but different name and different phone: create NEW employee with generated emp_code
                 new_code = _next_available_emp_code(all_existing_codes, used_in_upload)
                 emp_data_new = dict(emp_data)
                 emp_data_new['emp_code'] = new_code
@@ -435,7 +476,7 @@ def upload_employees_excel(file, preview=False, company_id=None) -> dict:
     }
 
 
-def upload_attendance_excel(file, preview=False) -> dict:
+def upload_attendance_excel(file, preview=False, company_id=None) -> dict:
     """
     Insert if (emp_code, date) not exists.
     If exists: only update missing punch_out (and recalc total_working_hours, over_time).
@@ -463,6 +504,24 @@ def upload_attendance_excel(file, preview=False) -> dict:
         if emp_code and att_date:
             emp_dates.append((emp_code, att_date))
         rows_data.append((row, emp_code, att_date))
+
+    # If company_id is provided, restrict to employees from that company only
+    if company_id is not None and emp_dates:
+        emp_codes_all = list(set(e[0] for e in emp_dates))
+        emp_codes_allowed = set(
+            Employee.objects.filter(company_id=company_id, emp_code__in=emp_codes_all).values_list('emp_code', flat=True)
+        )
+        # Filter emp_dates and rows_data to only allowed emp_codes
+        emp_dates = [(ec, d) for (ec, d) in emp_dates if ec in emp_codes_allowed]
+        filtered_rows = []
+        for row, ec, d in rows_data:
+            if not ec or not d:
+                filtered_rows.append((row, ec, d))
+            elif ec in emp_codes_allowed:
+                filtered_rows.append((row, ec, d))
+            else:
+                errors += 1
+        rows_data = filtered_rows
     
     existing_attendance = {}
     if emp_dates:
@@ -479,7 +538,10 @@ def upload_attendance_excel(file, preview=False) -> dict:
     employee_shifts = {}
     employee_salary_types = {}
     if emp_codes:
-        for emp in Employee.objects.filter(emp_code__in=emp_codes).values(
+        emp_qs = Employee.objects.filter(emp_code__in=emp_codes)
+        if company_id is not None:
+            emp_qs = emp_qs.filter(company_id=company_id)
+        for emp in emp_qs.values(
             'emp_code', 'name', 'shift', 'shift_from', 'shift_to', 'salary_type'
         ):
             employee_names[emp['emp_code']] = emp['name']
@@ -677,7 +739,7 @@ def upload_attendance_excel(file, preview=False) -> dict:
     }
 
 
-def upload_shift_excel(file, preview=False) -> dict:
+def upload_shift_excel(file, preview=False, company_id=None) -> dict:
     """
     Upload shift assignment per employee. Shift is assigned to the Employee and
     propagated to ALL their attendance records (past, present, future).
@@ -711,10 +773,24 @@ def upload_shift_excel(file, preview=False) -> dict:
             'shift_to': shift_to,
         }
 
+    # Restrict to employees in this company when company_id is provided
+    if company_id is not None and emp_shift_map:
+        allowed_codes = set(
+            Employee.objects.filter(company_id=company_id, emp_code__in=emp_shift_map.keys()).values_list('emp_code', flat=True)
+        )
+        # Drop emp_codes that do not belong to this company
+        for ec in list(emp_shift_map.keys()):
+            if ec not in allowed_codes:
+                errors += 1
+                emp_shift_map.pop(ec, None)
+
     # Get existing employee shift data for comparison
     existing_employees = {}
     if emp_shift_map:
-        for emp in Employee.objects.filter(emp_code__in=emp_shift_map.keys()).values(
+        emp_qs = Employee.objects.filter(emp_code__in=emp_shift_map.keys())
+        if company_id is not None:
+            emp_qs = emp_qs.filter(company_id=company_id)
+        for emp in emp_qs.values(
             'emp_code', 'name', 'shift', 'shift_from', 'shift_to'
         ):
             existing_employees[emp['emp_code']] = emp
@@ -724,7 +800,7 @@ def upload_shift_excel(file, preview=False) -> dict:
     for emp_code, new_shift in emp_shift_map.items():
         old = existing_employees.get(emp_code)
         if not old:
-            to_skip.append({'emp_code': emp_code, 'reason': 'Employee not found'})
+            to_skip.append({'emp_code': emp_code, 'reason': 'Employee not found in this company'})
             continue
         old_shift = old.get('shift') or ''
         old_from = old.get('shift_from')
@@ -770,7 +846,10 @@ def upload_shift_excel(file, preview=False) -> dict:
         emp_code = entry['emp_code']
         new = emp_shift_map[emp_code]
         # 1. Update Employee
-        Employee.objects.filter(emp_code=emp_code).update(
+        emp_qs = Employee.objects.filter(emp_code=emp_code)
+        if company_id is not None:
+            emp_qs = emp_qs.filter(company_id=company_id)
+        emp_qs.update(
             shift=new['shift'],
             shift_from=new['shift_from'],
             shift_to=new['shift_to'],
@@ -803,7 +882,7 @@ def upload_shift_excel(file, preview=False) -> dict:
     }
 
 
-def upload_force_punch_excel(file, preview=False) -> dict:
+def upload_force_punch_excel(file, preview=False, company_id=None) -> dict:
     """
     Force overwrite punch_in and punch_out from attendance Excel.
     Matches by Emp Id + Date. Only updates existing records; does not create new ones.
@@ -831,6 +910,23 @@ def upload_force_punch_excel(file, preview=False) -> dict:
             emp_dates.append((emp_code, att_date))
         rows_data.append((row, emp_code, att_date))
 
+    # Restrict to employees in this company when company_id is provided
+    if company_id is not None and emp_dates:
+        emp_codes_all = list(set(e[0] for e in emp_dates))
+        emp_codes_allowed = set(
+            Employee.objects.filter(company_id=company_id, emp_code__in=emp_codes_all).values_list('emp_code', flat=True)
+        )
+        emp_dates = [(ec, d) for (ec, d) in emp_dates if ec in emp_codes_allowed]
+        filtered_rows = []
+        for row, ec, d in rows_data:
+            if not ec or not d:
+                filtered_rows.append((row, ec, d))
+            elif ec in emp_codes_allowed:
+                filtered_rows.append((row, ec, d))
+            else:
+                errors += 1
+        rows_data = filtered_rows
+
     existing_attendance = {}
     if emp_dates:
         for att in Attendance.objects.filter(
@@ -843,7 +939,10 @@ def upload_force_punch_excel(file, preview=False) -> dict:
     emp_codes_fp = list(set(e[0] for e in emp_dates))
     employee_salary_types_fp = {}
     if emp_codes_fp:
-        for e in Employee.objects.filter(emp_code__in=emp_codes_fp).values('emp_code', 'salary_type'):
+        emp_qs = Employee.objects.filter(emp_code__in=emp_codes_fp)
+        if company_id is not None:
+            emp_qs = emp_qs.filter(company_id=company_id)
+        for e in emp_qs.values('emp_code', 'salary_type'):
             employee_salary_types_fp[e['emp_code']] = (e.get('salary_type') or 'Monthly').strip() or 'Monthly'
 
     for row, emp_code, att_date in rows_data:

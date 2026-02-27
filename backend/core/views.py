@@ -1128,8 +1128,10 @@ class UploadAttendanceView(APIView):
         if not f:
             return Response({'success': False, 'error': 'No file'}, status=400)
         preview = request.data.get('preview', 'false').lower() == 'true'
+        admin, _ = get_request_admin(request)
+        company_id = getattr(admin, 'company_id', None) if admin else None
         try:
-            result = upload_attendance_excel(f, preview=preview)
+            result = upload_attendance_excel(f, preview=preview, company_id=company_id)
         except Exception as e:
             return Response({'success': False, 'error': str(e)}, status=500)
         if not result.get('success'):
@@ -1137,8 +1139,6 @@ class UploadAttendanceView(APIView):
         # Auto-run reward engine and today attendance sync after actual upload (not preview)
         if not preview:
             try:
-                admin, _ = get_request_admin(request)
-                company_id = getattr(admin, 'company_id', None) if admin else None
                 reward_result = run_reward_engine(company_id=company_id)
                 result['rewards'] = reward_result
             except Exception:
@@ -1158,7 +1158,9 @@ class UploadShiftView(APIView):
         if not f:
             return Response({'success': False, 'error': 'No file'}, status=400)
         preview = request.data.get('preview', 'false').lower() == 'true'
-        result = upload_shift_excel(f, preview=preview)
+        admin, _ = get_request_admin(request)
+        company_id = getattr(admin, 'company_id', None) if admin else None
+        result = upload_shift_excel(f, preview=preview, company_id=company_id)
         if not result.get('success'):
             return Response(result, status=400)
         if not preview:
@@ -1173,7 +1175,9 @@ class UploadForcePunchView(APIView):
         if not f:
             return Response({'success': False, 'error': 'No file'}, status=400)
         preview = request.data.get('preview', 'false').lower() == 'true'
-        result = upload_force_punch_excel(f, preview=preview)
+        admin, _ = get_request_admin(request)
+        company_id = getattr(admin, 'company_id', None) if admin else None
+        result = upload_force_punch_excel(f, preview=preview, company_id=company_id)
         if not result.get('success'):
             return Response(result, status=400)
         if not preview:
