@@ -119,8 +119,8 @@ def _build_sheet1_data(allowed_emp_codes=None):
     att_dates = att_qs.values_list('date', flat=True).distinct()
     if not att_dates:
         return [['Sr No', 'PLANT', 'Total Man Hrs', 'Total Worker Present', 'Total Worker Absent',
-                  'Average Salary', 'Average Salary/hr', 'Absenteeism %', 'Total Salary + Bonus (payout)',
-                  'Total Bonus (hrs)', 'Total Bonus (Rs)']]
+                  'Average Salary', 'Average Salary/hr', 'Absenteeism %',
+                  'Total Salary', 'Total Salary + Bonus (payout)', 'Total Bonus (hrs)', 'Total Bonus (Rs)']]
 
     min_date = min(att_dates)
     max_date = max(att_dates)
@@ -177,9 +177,11 @@ def _build_sheet1_data(allowed_emp_codes=None):
 
     for row in payroll_rows:
         dept = row.get('department') or ''
+        total_with_bonus = float(row.get('total') or 0)
+        bonus_amt_emp = float(row.get('bonus_amount') or 0)
         dept_all_bonus_hrs[dept] += float(row.get('bonus_hours') or 0)
-        dept_all_bonus_amt[dept] += float(row.get('bonus_amount') or 0)
-        dept_all_total[dept] += float(row.get('total') or 0)
+        dept_all_bonus_amt[dept] += bonus_amt_emp
+        dept_all_total[dept] += total_with_bonus
         for i, d in enumerate(row.get('_dates', [])):
             amt = row.get('_day_totals', [])[i] if i < len(row.get('_day_totals', [])) else 0
             dept_ym_salary[(dept, (d.year, d.month))] += amt
@@ -194,7 +196,8 @@ def _build_sheet1_data(allowed_emp_codes=None):
         headers.append(f'{y}-{m:02d}')
     headers.extend([
         'Total Worker Present', 'Total Worker Absent', 'Average Salary', 'Average Salary/hr',
-        'Absenteeism %', 'Total Salary + Bonus (payout)', 'Total Bonus (hrs)', 'Total Bonus (Rs)',
+        'Absenteeism %', 'Total Salary', 'Total Salary + Bonus (payout)',
+        'Total Bonus (hrs)', 'Total Bonus (Rs)',
     ])
     rows = [headers]
     n_cols = len(year_months)
@@ -218,13 +221,16 @@ def _build_sheet1_data(allowed_emp_codes=None):
         avg_salary = round(total_salary_by_day / total_present, 2) if total_present else 0
         avg_salary_hr = round(total_salary_by_day / total_man_hrs, 2) if total_man_hrs else 0
         absenteeism = round(100.0 * total_absent / total_worker, 2) if total_worker else 0
-        all_time_salary = round(dept_all_total.get(dept, 0), 2)
+        all_time_salary_with_bonus = float(dept_all_total.get(dept, 0) or 0)
+        all_time_bonus_amt = float(dept_all_bonus_amt.get(dept, 0) or 0)
+        all_time_salary_no_bonus = round(all_time_salary_with_bonus - all_time_bonus_amt, 2)
+        all_time_salary = round(all_time_salary_with_bonus, 2)
         bonus_hrs = round(dept_all_bonus_hrs.get(dept, 0), 2)
         bonus_amt = round(dept_all_bonus_amt.get(dept, 0), 2)
 
         row = [sr, dept if dept else 'No Dept', round(total_man_hrs, 2)] + month_totals + [
             total_present, total_absent, avg_salary, avg_salary_hr, absenteeism,
-            all_time_salary, bonus_hrs, bonus_amt,
+            all_time_salary_no_bonus, all_time_salary, bonus_hrs, bonus_amt,
         ]
         rows.append(row)
 
@@ -237,16 +243,21 @@ def _build_sheet1_data(allowed_emp_codes=None):
         total_row[2] = round(total_man_hrs_all, 2)
         tot_present = sum(r[3 + n_cols] for r in rows[1:] if len(r) > 3 + n_cols)
         tot_absent = sum(r[4 + n_cols] for r in rows[1:] if len(r) > 4 + n_cols)
-        # Total Salary column per dept already includes bonus (from dept_all_total). Sum for grand total.
-        tot_salary_incl_bonus = sum((r[3 + n_cols + 5] if len(r) > 3 + n_cols + 5 else 0) for r in rows[1:])
-        tot_bonus_hrs = sum((r[3 + n_cols + 6] if len(r) > 3 + n_cols + 6 else 0) for r in rows[1:])
-        tot_bonus_rs = sum((r[3 + n_cols + 7] if len(r) > 3 + n_cols + 7 else 0) for r in rows[1:])
+        # Column indexes after month totals:
+        # +0: Total Worker Present, +1: Total Worker Absent, +2: Avg Salary, +3: Avg/hr,
+        # +4: Absenteeism %, +5: Total Salary (without bonus), +6: Total Salary + Bonus (payout),
+        # +7: Total Bonus (hrs), +8: Total Bonus (Rs)
+        tot_salary_no_bonus = sum((r[3 + n_cols + 5] if len(r) > 3 + n_cols + 5 else 0) for r in rows[1:])
+        tot_salary_incl_bonus = sum((r[3 + n_cols + 6] if len(r) > 3 + n_cols + 6 else 0) for r in rows[1:])
+        tot_bonus_hrs = sum((r[3 + n_cols + 7] if len(r) > 3 + n_cols + 7 else 0) for r in rows[1:])
+        tot_bonus_rs = sum((r[3 + n_cols + 8] if len(r) > 3 + n_cols + 8 else 0) for r in rows[1:])
         total_row.extend([
             tot_present,
             tot_absent,
             round(tot_salary_incl_bonus / max(1, tot_present), 2),
             round(tot_salary_incl_bonus / max(1e-9, total_man_hrs_all), 2),
             round(100.0 * tot_absent / max(1, tot_present + tot_absent), 2),
+            round(tot_salary_no_bonus, 2),    # Total Salary (without bonus)
             round(tot_salary_incl_bonus, 2),  # Total payout = salary + bonus (amount given)
             round(tot_bonus_hrs, 2),
             round(tot_bonus_rs, 2),
@@ -295,7 +306,8 @@ def _set_bonus_columns_for_sheet1(payroll_rows, year_months):
 
 # ---------- Sheet 2: Current year, Jan–Dec columns, no Absenteeism ----------
 def _build_sheet2_data(allowed_emp_codes=None):
-    """Current year: one row per plant, cols = Sr No, PLANT, Jan..Dec (salary per month), Average Salary, Average Salary/hr, Total Salary, Total Bonus (hrs), Total Bonus (Rs)."""
+    """Current year: one row per plant, cols = Sr No, PLANT, Jan..Dec (salary per month), Average Salary,
+    Average Salary/hr, Total Salary, Total Salary + Bonus (payout), Total Bonus (hrs), Total Bonus (Rs)."""
     today = timezone.localdate()
     year = today.year
     month_start = date(year, 1, 1)
@@ -373,7 +385,9 @@ def _build_sheet2_data(allowed_emp_codes=None):
         dept_list.append('')
 
     headers = ['Sr No', 'PLANT'] + month_names + [
-        'Average Salary', 'Average Salary/hr', 'Total Salary + Bonus (payout)', 'Total Bonus (hrs)', 'Total Bonus (Rs)',
+        'Average Salary', 'Average Salary/hr',
+        'Total Salary', 'Total Salary + Bonus (payout)',
+        'Total Bonus (hrs)', 'Total Bonus (Rs)',
     ]
     rows = [headers]
 
@@ -395,7 +409,8 @@ def _build_sheet2_data(allowed_emp_codes=None):
         rows.append([
             sr, dept if dept else 'No Dept',
             *month_vals,
-            avg_salary, avg_salary_hr, round(total_payout, 2),
+            avg_salary, avg_salary_hr,
+            round(total_salary, 2), round(total_payout, 2),
             round(dept_bonus_hrs.get(dept, 0), 2), round(bonus_amt, 2),
         ])
 
@@ -409,16 +424,20 @@ def _build_sheet2_data(allowed_emp_codes=None):
             month_totals.append(round(salary_tot + bonus_tot, 2))
         total_row = ['TOTAL SALARY', ''] + month_totals
         n_plants = len(rows[1:])
-        tot_payout = sum((r[16] if len(r) > 16 else 0) for r in rows[1:])  # Total Salary + Bonus column
+        # Column indexes after month cols: +0=Avg Salary, +1=Avg/hr, +2=Total Salary, +3=Total Salary + Bonus,
+        # +4=Total Bonus (hrs), +5=Total Bonus (Rs)
+        tot_salary_no_bonus = sum((r[16] if len(r) > 16 else 0) for r in rows[1:])  # Total Salary column
+        tot_payout = sum((r[17] if len(r) > 17 else 0) for r in rows[1:])  # Total Salary + Bonus column
         tot_man = sum(
             sum(dept_month_man_hrs.get(r[1], {}).values()) for r in rows[1:] if len(r) > 1
         )
         total_row.extend([
             round(tot_payout / max(1, n_plants), 2),
             round(tot_payout / max(1e-9, tot_man), 2) if tot_man else 0,
-            round(tot_payout, 2),  # Total payout = salary + bonus for the year
-            round(sum((r[17] if len(r) > 17 else 0) for r in rows[1:]), 2),
+            round(tot_salary_no_bonus, 2),     # Total Salary (without bonus)
+            round(tot_payout, 2),              # Total payout = salary + bonus for the year
             round(sum((r[18] if len(r) > 18 else 0) for r in rows[1:]), 2),
+            round(sum((r[19] if len(r) > 19 else 0) for r in rows[1:]), 2),
         ])
         rows.append(total_row)
 
@@ -813,78 +832,45 @@ def _merge_total_salary_cell(service, spreadsheet_id, sheet_id, data_start_row_1
         logger.warning('Could not merge TOTAL SALARY cell: %s', e)
 
 
-def _apply_plant_report_sheet_format(service, spreadsheet_id, sheet_id, num_rows, num_cols, data_start_row_0=1, data_start_col_0=1):
+def _apply_plant_report_sheet_format(service, spreadsheet_id, sheet_id, num_rows, num_cols):
     """
     Apply color schema (same as other sheet): header orange, total red, in-between blue.
-    Also add borders to the whole data section.
-
-    data_start_row_0 / data_start_col_0 are 0-based indexes of the top-left cell
-    of the data header row (where the first row of `data` was written).
-    Previously this was hard-coded for B2; now we can also support layouts like D4.
+    Also add borders to the whole data section. Data from B2: row 1 = header, last = total.
     """
     if not num_rows or not num_cols or sheet_id is None:
         return
     header_orange = {'red': 1.0, 'green': 0.82, 'blue': 0.6}
     total_red = {'red': 1.0, 'green': 0.82, 'blue': 0.82}
     data_blue = {'red': 0.82, 'green': 0.92, 'blue': 1.0}
-    end_col = data_start_col_0 + num_cols
+    end_col = 1 + num_cols
     border_style = {'style': 'SOLID', 'color': {'red': 0.2, 'green': 0.2, 'blue': 0.2}}
     borders = {'top': border_style, 'bottom': border_style, 'left': border_style, 'right': border_style}
-
-    header_row_0 = data_start_row_0
-    total_row_0 = data_start_row_0 + num_rows - 1
-    data_rows_start_0 = data_start_row_0 + 1
-
     requests = [
         {
             'repeatCell': {
-                'range': {
-                    'sheetId': sheet_id,
-                    'startRowIndex': header_row_0,
-                    'endRowIndex': header_row_0 + 1,
-                    'startColumnIndex': data_start_col_0,
-                    'endColumnIndex': end_col,
-                },
+                'range': {'sheetId': sheet_id, 'startRowIndex': 1, 'endRowIndex': 2, 'startColumnIndex': 1, 'endColumnIndex': end_col},
                 'cell': {'userEnteredFormat': {'backgroundColor': header_orange}},
                 'fields': 'userEnteredFormat.backgroundColor',
             }
         },
         {
             'repeatCell': {
-                'range': {
-                    'sheetId': sheet_id,
-                    'startRowIndex': total_row_0,
-                    'endRowIndex': total_row_0 + 1,
-                    'startColumnIndex': data_start_col_0,
-                    'endColumnIndex': end_col,
-                },
+                'range': {'sheetId': sheet_id, 'startRowIndex': num_rows, 'endRowIndex': num_rows + 1, 'startColumnIndex': 1, 'endColumnIndex': end_col},
                 'cell': {'userEnteredFormat': {'backgroundColor': total_red}},
                 'fields': 'userEnteredFormat.backgroundColor',
             }
         },
         {
             'repeatCell': {
-                'range': {
-                    'sheetId': sheet_id,
-                    'startRowIndex': data_rows_start_0,
-                    'endRowIndex': total_row_0,
-                    'startColumnIndex': data_start_col_0,
-                    'endColumnIndex': end_col,
-                },
+                'range': {'sheetId': sheet_id, 'startRowIndex': 2, 'endRowIndex': num_rows, 'startColumnIndex': 1, 'endColumnIndex': end_col},
                 'cell': {'userEnteredFormat': {'backgroundColor': data_blue}},
                 'fields': 'userEnteredFormat.backgroundColor',
             }
         },
-        # Borders around the whole data section
+        # Borders around the whole data section (B2 to end)
         {
             'repeatCell': {
-                'range': {
-                    'sheetId': sheet_id,
-                    'startRowIndex': header_row_0,
-                    'endRowIndex': total_row_0 + 1,
-                    'startColumnIndex': data_start_col_0,
-                    'endColumnIndex': end_col,
-                },
+                'range': {'sheetId': sheet_id, 'startRowIndex': 1, 'endRowIndex': num_rows + 1, 'startColumnIndex': 1, 'endColumnIndex': end_col},
                 'cell': {'userEnteredFormat': {'borders': borders}},
                 'fields': 'userEnteredFormat.borders',
             }
@@ -897,14 +883,14 @@ def _apply_plant_report_sheet_format(service, spreadsheet_id, sheet_id, num_rows
         logger.warning('Could not apply Plant Report formatting: %s', e)
 
 
-def _apply_plant_report_title_row(service, spreadsheet_id, sheet_id, num_cols, start_col_0=1):
+def _apply_plant_report_title_row(service, spreadsheet_id, sheet_id, num_cols):
     """
     Merge top row (B1 to last data column) on Plant Report sheet, set 'PLANT REPORT' styling:
     center alignment (horizontal + vertical), light gray background, full border.
     """
     if sheet_id is None or num_cols < 1:
         return
-    end_col = start_col_0 + num_cols
+    end_col = 1 + num_cols
     light_gray = {'red': 0.9, 'green': 0.9, 'blue': 0.9}
     border_style = {'style': 'SOLID', 'color': {'red': 0.2, 'green': 0.2, 'blue': 0.2}}
     borders = {'top': border_style, 'bottom': border_style, 'left': border_style, 'right': border_style}
@@ -915,7 +901,7 @@ def _apply_plant_report_title_row(service, spreadsheet_id, sheet_id, num_cols, s
                     'sheetId': sheet_id,
                     'startRowIndex': 0,
                     'endRowIndex': 1,
-                    'startColumnIndex': start_col_0,
+                    'startColumnIndex': 1,
                     'endColumnIndex': end_col,
                 },
                 'mergeType': 'MERGE_ALL',
@@ -927,7 +913,7 @@ def _apply_plant_report_title_row(service, spreadsheet_id, sheet_id, num_cols, s
                     'sheetId': sheet_id,
                     'startRowIndex': 0,
                     'endRowIndex': 1,
-                    'startColumnIndex': start_col_0,
+                    'startColumnIndex': 1,
                     'endColumnIndex': end_col,
                 },
                 'cell': {
@@ -986,11 +972,11 @@ def _apply_current_year_color_scale(service, spreadsheet_id, sheet_id, num_rows,
             'type': 'MAX',
         },
     }
-    # 0-based: row 3 = 2, endRowIndex 29; D=3, O=15, P=15, Q=17, R=17, T=20
+    # 0-based: row 3 = 2, endRowIndex 29; D=3, O=15, P=15, Q=17, R=17, S=18, T=20
     separate_ranges = [
         {'sheetId': sheet_id, 'startRowIndex': 2, 'endRowIndex': 29, 'startColumnIndex': 3, 'endColumnIndex': 15},   # D3:O29
-        {'sheetId': sheet_id, 'startRowIndex': 2, 'endRowIndex': 29, 'startColumnIndex': 15, 'endColumnIndex': 17},  # P3:Q29
-        {'sheetId': sheet_id, 'startRowIndex': 2, 'endRowIndex': 29, 'startColumnIndex': 17, 'endColumnIndex': 20},  # R3:T29
+        {'sheetId': sheet_id, 'startRowIndex': 2, 'endRowIndex': 29, 'startColumnIndex': 15, 'endColumnIndex': 18},  # P3:R29
+        {'sheetId': sheet_id, 'startRowIndex': 2, 'endRowIndex': 29, 'startColumnIndex': 18, 'endColumnIndex': 21},  # S3:U29
     ]
     requests = []
     n_rules = _get_sheet_conditional_format_count(service, spreadsheet_id, 'Current year')
@@ -1085,13 +1071,7 @@ def sync_all(force_full=False, company_id=None):
             if not data:
                 continue
             data = _values_to_sheet_format(data)
-            if sheet_name == 'Plant Report (Previous day)':
-                # Start Plant Report (Previous day) table at D4 (for nicer layout/margin)
-                start = 'D4'
-            elif sheet_name in ('All dates by month', 'Current year'):
-                start = 'B2'
-            else:
-                start = 'A1'
+            start = 'B2' if sheet_name in ('All dates by month', 'Current year', 'Plant Report (Previous day)') else 'A1'
             range_name = _sheet_range(sheet_name, start)
             body = {'values': data}
             try:
@@ -1114,58 +1094,34 @@ def sync_all(force_full=False, company_id=None):
                 logger.info('Updated sheet "%s" with %s rows (after retry)', sheet_name, len(data))
             if sheet_name in ('Plant Report (Previous day)', 'Current year') and len(data) > 0 and len(data[0]) > 0:
                 sheet_id = _get_sheet_id_by_title(service, spreadsheet_id, sheet_name)
-                if sheet_name == 'Plant Report (Previous day)':
-                    # Data header written at D4 => row index 3, column index 3 (0-based)
-                    _apply_plant_report_sheet_format(
-                        service, spreadsheet_id, sheet_id,
-                        num_rows=len(data),
-                        num_cols=len(data[0]),
-                        data_start_row_0=3,
-                        data_start_col_0=3,
-                    )
-                else:
-                    _apply_plant_report_sheet_format(
-                        service, spreadsheet_id, sheet_id,
-                        num_rows=len(data),
-                        num_cols=len(data[0]),
-                    )
+                _apply_plant_report_sheet_format(
+                    service, spreadsheet_id, sheet_id,
+                    num_rows=len(data),
+                    num_cols=len(data[0]),
+                )
             if sheet_name in ('All dates by month', 'Current year', 'Plant Report (Previous day)') and len(data) > 0 and len(data[0]) > 0:
                 try:
-                    title_start = 'D1' if sheet_name == 'Plant Report (Previous day)' else 'B1'
                     service.spreadsheets().values().update(
                         spreadsheetId=spreadsheet_id,
-                        range=_sheet_range(sheet_name, title_start),
+                        range=_sheet_range(sheet_name, 'B1'),
                         valueInputOption='USER_ENTERED',
                         body={'values': [['PLANT REPORT']]},
                     ).execute()
                 except Exception as e:
                     logger.warning('Could not write PLANT REPORT title on %s: %s', sheet_name, e)
                 sid = _get_sheet_id_by_title(service, spreadsheet_id, sheet_name)
-                if sheet_name == 'Plant Report (Previous day)':
-                    # Title row aligned with data block that starts at column D
-                    _apply_plant_report_title_row(service, spreadsheet_id, sid, len(data[0]), start_col_0=3)
-                else:
-                    _apply_plant_report_title_row(service, spreadsheet_id, sid, len(data[0]))
+                _apply_plant_report_title_row(service, spreadsheet_id, sid, len(data[0]))
             if sheet_name == 'Current year' and len(data) >= 3 and len(data[0]) > 0:
                 sid = _get_sheet_id_by_title(service, spreadsheet_id, sheet_name)
                 _apply_current_year_color_scale(service, spreadsheet_id, sid, len(data), len(data[0]))
             if sheet_name in ('All dates by month', 'Current year', 'Plant Report (Previous day)') and len(data) > 1:
                 sid = _get_sheet_id_by_title(service, spreadsheet_id, sheet_name)
-                if sheet_name == 'Plant Report (Previous day)':
-                    # Data at D4 => row 4 (1-based), column index 3 (D) for TOTAL SALARY merge
-                    _merge_total_salary_cell(
-                        service, spreadsheet_id, sid,
-                        data_start_row_1based=4,
-                        num_data_rows=len(data),
-                        start_col_0based=3,
-                    )
-                else:
-                    _merge_total_salary_cell(
-                        service, spreadsheet_id, sid,
-                        data_start_row_1based=2,
-                        num_data_rows=len(data),
-                        start_col_0based=1,
-                    )
+                _merge_total_salary_cell(
+                    service, spreadsheet_id, sid,
+                    data_start_row_1based=2,
+                    num_data_rows=len(data),
+                    start_col_0based=1,
+                )
             # Borders on data section: "All dates by month" (B2) gets borders only; others already in _apply_plant_report_sheet_format
             if sheet_name == 'All dates by month' and len(data) > 0 and len(data[0]) > 0:
                 sid = _get_sheet_id_by_title(service, spreadsheet_id, sheet_name)
