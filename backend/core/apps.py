@@ -14,18 +14,20 @@ _SYNC_INTERVAL_SECONDS = 120  # 2 minutes
 
 
 def _google_sheet_sync_loop():
-    """Run sync_all every 2 minutes; also check daily Plant Report email time."""
+    """Run sync_all every 2 minutes per company only. Each company's sheet gets only that company's employees/departments.
+    No global sync (company_id=None) so a company's sheet is never overwritten with all companies' data."""
     while True:
         try:
             from core.google_sheets_sync import get_sheet_id, sync_all
-            if get_sheet_id():
-                result = sync_all()
-                if result.get('success'):
-                    logger.debug('Google Sheet auto-sync OK')
-                else:
-                    logger.warning('Google Sheet auto-sync: %s', result.get('message', ''))
-            else:
-                logger.debug('Google Sheet ID not set; skipping auto-sync')
+            from core.models import CompanySetting
+            # Per-company sheets only: each company with google_sheet_id gets only its own data
+            for row in CompanySetting.objects.filter(key='google_sheet_id', company_id__isnull=False).exclude(value='').values_list('company_id', flat=True).distinct():
+                if get_sheet_id(company_id=row):
+                    result = sync_all(company_id=row)
+                    if result.get('success'):
+                        logger.debug('Google Sheet auto-sync OK (company %s)', row)
+                    else:
+                        logger.warning('Google Sheet auto-sync (company %s): %s', row, result.get('message', ''))
         except Exception as e:
             logger.warning('Google Sheet auto-sync error: %s', e, exc_info=True)
         try:

@@ -8,6 +8,11 @@ const KEY_LABELS = {
   streak_days: 'Consecutive present days for streak reward',
   weekly_overtime_threshold_hours: 'Min weekly OT hours for reward',
   absent_streak_days: 'Consecutive absent days for red flag',
+  penalty_rate_per_minute_rs: 'Rs per minute late (until monthly threshold)',
+  penalty_monthly_threshold_rs: 'Monthly penalty threshold (Rs); after this, higher rate applies',
+  penalty_rate_after_threshold_rs: 'Rs per minute late after monthly threshold',
+  shift_ot_min_hours: 'Min work hours in a day before shift OT bonus applies',
+  shift_ot_extra_hours_for_1_bonus: 'Every X extra hours = 1 bonus hour (e.g. 2)',
 }
 
 export default function SystemSettings() {
@@ -118,29 +123,10 @@ export default function SystemSettings() {
       .finally(() => setLoading(false))
   }, [hasFullAccess])
 
+  // Email SMTP section hidden — skip fetch to avoid unnecessary API call
   useEffect(() => {
-    if (!hasFullAccess) {
-      setSmtpLoading(false)
-      return
-    }
-    smtpConfig.get()
-      .then((r) => {
-        const d = r.data
-        setSmtp(d)
-        setSmtpForm({
-          smtp_server: d.smtp_server || '',
-          smtp_port: d.smtp_port ?? 587,
-          auth_username: d.auth_username || '',
-          auth_password: d.auth_password || '',
-          force_sender: d.force_sender || '',
-          error_logfile: d.error_logfile || '',
-          debug_logfile: d.debug_logfile || '',
-          is_active: d.is_active !== false,
-        })
-      })
-      .catch(() => setSmtp(null))
-      .finally(() => setSmtpLoading(false))
-  }, [hasFullAccess])
+    setSmtpLoading(false)
+  }, [])
 
   useEffect(() => {
     if (!hasFullAccess) {
@@ -525,68 +511,7 @@ export default function SystemSettings() {
       </section>
       )}
 
-      {/* Email SMTP (send mail) — full access only */}
-      {hasFullAccess && (
-      <section className="settingsSection card settingsSectionSmtp">
-        <div className="settingsSectionTitleRow">
-          <span className="settingsSectionIcon settingsSectionIconSmtp"><IconMail /></span>
-          <div>
-            <h3 className="settingsSectionTitle">Email SMTP (send mail)</h3>
-            <p className="muted settingsSectionDesc">SMTP credentials used to push email. Change and save below.</p>
-          </div>
-        </div>
-        {smtpLoading ? (
-          <p className="muted">Loading…</p>
-        ) : !smtp ? (
-          <p className="muted">No SMTP config found. Add one in Django Admin (Core → Email SMTP configs) or run migrations.</p>
-        ) : (
-          <form onSubmit={handleSaveSmtp} className="smtpForm">
-            <div className="smtpFormRow">
-              <div className="profileField">
-                <label className="label">SMTP server</label>
-                <input type="text" className="input" value={smtpForm.smtp_server} onChange={(e) => setSmtpForm((f) => ({ ...f, smtp_server: e.target.value }))} placeholder="smtp.gmail.com" />
-              </div>
-              <div className="profileField" style={{ maxWidth: 100 }}>
-                <label className="label">Port</label>
-                <input type="number" className="input" value={smtpForm.smtp_port} onChange={(e) => setSmtpForm((f) => ({ ...f, smtp_port: e.target.value }))} min={1} max={65535} />
-              </div>
-            </div>
-            <div className="profileField">
-              <label className="label">Auth username (email)</label>
-              <input type="text" className="input" value={smtpForm.auth_username} onChange={(e) => setSmtpForm((f) => ({ ...f, auth_username: e.target.value }))} placeholder="your@gmail.com" />
-            </div>
-            <div className="profileField">
-              <label className="label">Auth password</label>
-              <input type="password" className="input" value={smtpForm.auth_password} onChange={(e) => setSmtpForm((f) => ({ ...f, auth_password: e.target.value }))} placeholder="Leave blank to keep current" />
-            </div>
-            <div className="profileField">
-              <label className="label">Force sender (optional)</label>
-              <input type="text" className="input" value={smtpForm.force_sender} onChange={(e) => setSmtpForm((f) => ({ ...f, force_sender: e.target.value }))} placeholder="From address" />
-            </div>
-            <div className="smtpFormRow">
-              <div className="profileField">
-                <label className="label">Error log file</label>
-                <input type="text" className="input" value={smtpForm.error_logfile} onChange={(e) => setSmtpForm((f) => ({ ...f, error_logfile: e.target.value }))} placeholder="error.log" />
-              </div>
-              <div className="profileField">
-                <label className="label">Debug log file</label>
-                <input type="text" className="input" value={smtpForm.debug_logfile} onChange={(e) => setSmtpForm((f) => ({ ...f, debug_logfile: e.target.value }))} placeholder="debug.log" />
-              </div>
-            </div>
-            <div className="profileField smtpFormActive">
-              <label className="label checkboxLabel">
-                <input type="checkbox" checked={smtpForm.is_active} onChange={(e) => setSmtpForm((f) => ({ ...f, is_active: e.target.checked }))} />
-                <span>Use this config when sending email</span>
-              </label>
-            </div>
-            <div className="profileFormActions">
-              <button type="submit" className="btn btn-primary" disabled={smtpSaving}>{smtpSaving ? 'Saving…' : 'Save SMTP config'}</button>
-            </div>
-            {smtpMessage && <p className={`profileMessage ${smtpMessage.includes('Failed') || smtpMessage.includes('No SMTP') ? 'error' : 'success'}`}>{smtpMessage}</p>}
-          </form>
-        )}
-      </section>
-      )}
+      {/* Email SMTP (send mail) — hidden from admin Settings UI */}
 
       {/* Google Sheet live sync — full access only */}
       {hasFullAccess && (

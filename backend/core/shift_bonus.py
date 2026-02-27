@@ -1,15 +1,27 @@
 """
-Shift overtime bonus: if total_working_hours in a shift > 12h, award 1 bonus hour per 2 extra hours.
-Stored in ShiftOvertimeBonus (one per emp per date) so we never award twice for the same day.
-Bonus hours are added to Salary.bonus for that month.
-Runs for any date up to today (so past months like January get bonus when data is uploaded or recalculated).
+Shift overtime bonus: if total_working_hours in a shift > min_hours, award bonus (e.g. 1 hour per 2 extra hours).
+Min hours and ratio configurable per company via CompanySetting.
+Stored in ShiftOvertimeBonus (one per emp per date). Bonus hours added to Salary.bonus for that month.
 """
 from decimal import Decimal
 from django.db import transaction
 from django.utils import timezone
 
-MAX_WORK_HOURS_BEFORE_BONUS = 12
-BONUS_HOURS_PER_EXTRA_2 = 1  # every 2 extra hours -> 1 bonus hour
+
+def _get_shift_bonus_settings(company_id=None):
+    """Return (min_work_hours, extra_hours_for_1_bonus) from company settings or defaults (12, 2)."""
+    from .settings_utils import get_company_setting
+    min_h = get_company_setting('shift_ot_min_hours', company_id=company_id, default='12')
+    extra_for_1 = get_company_setting('shift_ot_extra_hours_for_1_bonus', company_id=company_id, default='2')
+    try:
+        m = float(min_h)
+    except Exception:
+        m = 12.0
+    try:
+        e = float(extra_for_1)
+    except Exception:
+        e = 2.0
+    return m, e
 
 
 def _is_allowed_bonus_date(d):
@@ -19,17 +31,17 @@ def _is_allowed_bonus_date(d):
 
 def apply_shift_overtime_bonus_for_date(emp_code, date):
     """
-    Runs for any date <= today (so past months get shift OT when upload/recalc runs).
-    If attendance for (emp_code, date) has total_working_hours > 12:
-    - extra = total_working_hours - 12
-    - bonus_hours = floor(extra / 2)
-    If bonus_hours > 0 and we have not already awarded for this (emp_code, date):
-    - Add bonus_hours to Salary for that month
-    - Create ShiftOvertimeBonus record with description (so we don't award again).
+    If attendance (emp_code, date) has total_working_hours > min_hours (company setting, default 12):
+    extra = total_working_hours - min_hours; bonus_hours = floor(extra / extra_hours_for_1_bonus) (default 2).
+    If bonus_hours > 0 and not already awarded: add to Salary.bonus and create ShiftOvertimeBonus.
     """
     if not _is_allowed_bonus_date(date):
         return
-    from .models import Attendance, Salary, ShiftOvertimeBonus
+    from .models import Attendance, Employee, Salary, ShiftOvertimeBonus
+
+    emp = Employee.objects.filter(emp_code=emp_code).values('company_id').first()
+    company_id = emp.get('company_id') if emp else None
+    MAX_WORK_HOURS_BEFORE_BONUS, EXTRA_HOURS_FOR_1_BONUS = _get_shift_bonus_settings(company_id=company_id)
 
     att = Attendance.objects.filter(emp_code=emp_code, date=date).first()
     if not att:
@@ -43,8 +55,9 @@ def apply_shift_overtime_bonus_for_date(emp_code, date):
         return
     if twh < MAX_WORK_HOURS_BEFORE_BONUS:
         return
-    extra = twh - MAX_WORK_HOURS_BEFORE_BONUS
-    bonus_hours = int(extra / 2)
+    extra = twh - Decimal(str(MAX_WORK_HOURS_BEFORE_BONUS))
+    denom = max(Decimal('0.01'), Decimal(str(EXTRA_HOURS_FOR_1_BONUS)))
+    bonus_hours = int(extra / denom)
     if bonus_hours <= 0:
         return
     if ShiftOvertimeBonus.objects.filter(emp_code=emp_code, date=date).exists():
@@ -61,8 +74,8 @@ def apply_shift_overtime_bonus_for_date(emp_code, date):
         sal.save(update_fields=['bonus'])
         extra_str = str(round(float(extra), 2))
         desc = (
-            f"Shift OT bonus: {twh}h worked (max 12h), {extra_str}h extra, "
-            f"{bonus_hours}h bonus (1h per 2h extra)"
+            f"Shift OT bonus: {twh}h worked (min {MAX_WORK_HOURS_BEFORE_BONUS}h), {extra_str}h extra, "
+            f"{bonus_hours}h bonus (1h per {EXTRA_HOURS_FOR_1_BONUS}h extra)"
         )
         ShiftOvertimeBonus.objects.create(
             emp_code=emp_code,
@@ -72,24 +85,30 @@ def apply_shift_overtime_bonus_for_date(emp_code, date):
         )
 
 
-def _compute_bonus_hours_from_att(att):
-    """Given an attendance instance, return (bonus_hours int, description str) or (0, '')."""
+def _compute_bonus_hours_from_att(att, company_id=None):
+    """Given an attendance instance, return (bonus_hours int, description str) or (0, ''). Uses company settings if company_id provided."""
     if not att or att.total_working_hours is None:
         return 0, ''
+    if company_id is None and att:
+        from .models import Employee
+        emp = Employee.objects.filter(emp_code=att.emp_code).values('company_id').first()
+        company_id = emp.get('company_id') if emp else None
+    MAX_WORK_HOURS_BEFORE_BONUS, EXTRA_HOURS_FOR_1_BONUS = _get_shift_bonus_settings(company_id=company_id)
     try:
         twh = Decimal(str(att.total_working_hours))
     except Exception:
         return 0, ''
     if twh < MAX_WORK_HOURS_BEFORE_BONUS:
         return 0, ''
-    extra = twh - MAX_WORK_HOURS_BEFORE_BONUS
-    bonus_hours = int(extra / 2)
+    extra = twh - Decimal(str(MAX_WORK_HOURS_BEFORE_BONUS))
+    denom = max(Decimal('0.01'), Decimal(str(EXTRA_HOURS_FOR_1_BONUS)))
+    bonus_hours = int(extra / denom)
     if bonus_hours <= 0:
         return 0, ''
     extra_str = str(round(float(extra), 2))
     desc = (
-        f"Shift OT bonus: {twh}h worked (max 12h), {extra_str}h extra, "
-        f"{bonus_hours}h bonus (1h per 2h extra)"
+        f"Shift OT bonus: {twh}h worked (min {MAX_WORK_HOURS_BEFORE_BONUS}h), {extra_str}h extra, "
+        f"{bonus_hours}h bonus (1h per {EXTRA_HOURS_FOR_1_BONUS}h extra)"
     )
     return bonus_hours, desc[:500]
 

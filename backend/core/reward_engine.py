@@ -8,10 +8,13 @@ from decimal import Decimal
 from django.db.models import Sum
 from django.db.models.functions import TruncDate
 
-from .models import Attendance, PerformanceReward, Holiday, SystemSetting
+from .models import Attendance, PerformanceReward, Holiday, SystemSetting, Employee
+from .settings_utils import get_company_setting
 
 
-def _get_setting(key, default):
+def _get_setting(key, default, company_id=None):
+    if company_id is not None:
+        return get_company_setting(key, company_id=company_id, default=default)
     try:
         s = SystemSetting.objects.get(key=key)
         return s.value
@@ -26,14 +29,18 @@ def _is_holiday(d):
     return Holiday.objects.filter(date=d).exists()
 
 
-def run_streak_reward(target_date=None):
+def run_streak_reward(target_date=None, company_id=None):
     """Present 4 consecutive days -> REWARD, leaderboard."""
     target_date = target_date or date.today()
-    streak_days = int(_get_setting('streak_days', '4'))
-    # Consider last N+5 days to find streaks ending near target_date
+    streak_days = int(_get_setting('streak_days', '4', company_id=company_id))
     start = target_date - timedelta(days=streak_days + 5)
     end = target_date
     att = Attendance.objects.filter(date__gte=start, date__lte=end, status='Present').order_by('emp_code', 'date')
+    if company_id is not None:
+        emp_codes = list(Employee.objects.filter(company_id=company_id).values_list('emp_code', flat=True))
+        if not emp_codes:
+            return 0
+        att = att.filter(emp_code__in=emp_codes)
     by_emp = {}
     for a in att:
         if a.emp_code not in by_emp:
@@ -68,14 +75,18 @@ def run_streak_reward(target_date=None):
     return created
 
 
-def run_weekly_overtime_reward(target_date=None):
+def run_weekly_overtime_reward(target_date=None, company_id=None):
     """Sum over_time in last 7 days > 6 hours -> REWARD, leaderboard."""
     target_date = target_date or date.today()
     week_start = target_date - timedelta(days=6)
-    threshold_hours = float(_get_setting('weekly_overtime_threshold_hours', '6'))
-    agg = Attendance.objects.filter(
-        date__gte=week_start, date__lte=target_date
-    ).values('emp_code').annotate(total_ot=Sum('over_time'))
+    threshold_hours = float(_get_setting('weekly_overtime_threshold_hours', '6', company_id=company_id))
+    att_qs = Attendance.objects.filter(date__gte=week_start, date__lte=target_date)
+    if company_id is not None:
+        emp_codes = list(Employee.objects.filter(company_id=company_id).values_list('emp_code', flat=True))
+        if not emp_codes:
+            return 0
+        att_qs = att_qs.filter(emp_code__in=emp_codes)
+    agg = att_qs.values('emp_code').annotate(total_ot=Sum('over_time'))
     created = 0
     for row in agg:
         total_ot = row['total_ot'] or Decimal('0')
@@ -96,15 +107,20 @@ def run_weekly_overtime_reward(target_date=None):
     return created
 
 
-def run_absentee_red_flag(target_date=None):
+def run_absentee_red_flag(target_date=None, company_id=None):
     """Absent 3 consecutive days (excluding holidays) -> ACTION, Pending, not leaderboard."""
     target_date = target_date or date.today()
-    absent_days = int(_get_setting('absent_streak_days', '3'))
+    absent_days = int(_get_setting('absent_streak_days', '3', company_id=company_id))
     start = target_date - timedelta(days=absent_days + 10)
-    # Get all absents in range
-    absents = Attendance.objects.filter(
+    abs_qs = Attendance.objects.filter(
         date__gte=start, date__lte=target_date, status='Absent'
-    ).values_list('emp_code', 'date')
+    )
+    if company_id is not None:
+        emp_codes = list(Employee.objects.filter(company_id=company_id).values_list('emp_code', flat=True))
+        if not emp_codes:
+            return 0
+        abs_qs = abs_qs.filter(emp_code__in=emp_codes)
+    absents = abs_qs.values_list('emp_code', 'date')
     by_emp = {}
     for emp_code, d in absents:
         by_emp.setdefault(emp_code, []).append(d)
@@ -139,10 +155,10 @@ def run_absentee_red_flag(target_date=None):
     return created
 
 
-def run_reward_engine(target_date=None):
-    """Run all three automations."""
+def run_reward_engine(target_date=None, company_id=None):
+    """Run all three automations. When company_id is set, only that company's employees and settings are used."""
     target_date = target_date or date.today()
-    a = run_streak_reward(target_date)
-    b = run_weekly_overtime_reward(target_date)
-    c = run_absentee_red_flag(target_date)
+    a = run_streak_reward(target_date, company_id=company_id)
+    b = run_weekly_overtime_reward(target_date, company_id=company_id)
+    c = run_absentee_red_flag(target_date, company_id=company_id)
     return {'streak': a, 'overtime': b, 'absentee': c}

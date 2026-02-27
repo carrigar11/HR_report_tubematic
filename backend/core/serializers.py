@@ -130,13 +130,17 @@ class AdminCreateSerializer(serializers.Serializer):
         access = validated_data.get('access') or {}
         access = {**DEFAULT_ACCESS, **access}
         company_id = validated_data.pop('company_id', None)
+        # When linking admin to a company and role not specified, default to super_admin so they have full access to all data and settings of their company
+        role = validated_data.get('role', 'dept_admin')
+        if company_id is not None and 'role' not in self.initial_data:
+            role = Admin.ROLE_SUPER  # company super admin: full access to their company's data and settings
         admin = Admin.objects.create(
             name=validated_data['name'],
             email=validated_data['email'],
             password=validated_data['password'],
             phone=validated_data.get('phone', ''),
             department=validated_data.get('department', ''),
-            role=validated_data.get('role', 'dept_admin'),
+            role=role,
             access=access,
             company_id=company_id,
         )
@@ -186,6 +190,27 @@ class EmployeeSerializer(serializers.ModelSerializer):
                 except (TypeError, ValueError):
                     pass
         return super().to_internal_value(data)
+
+    def validate(self, attrs):
+        """Ensure emp_code is unique within the same company."""
+        emp_code = attrs.get('emp_code') if 'emp_code' in attrs else (getattr(self.instance, 'emp_code', None) if self.instance else None)
+        company = attrs.get('company') if 'company' in attrs else (getattr(self.instance, 'company_id', None) if self.instance else None)
+        if company is None and not self.instance:
+            company = self.context.get('default_company_id')
+        if emp_code is None:
+            return attrs
+        qs = Employee.objects.filter(emp_code=emp_code)
+        if company is not None:
+            qs = qs.filter(company_id=company)
+        else:
+            qs = qs.filter(company_id__isnull=True)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError(
+                {'emp_code': 'An employee with this number already exists in this company.'}
+            )
+        return attrs
 
     def create(self, validated_data):
         password = validated_data.pop('password', None) or ''

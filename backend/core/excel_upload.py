@@ -278,11 +278,16 @@ def upload_employees_excel(file, preview=False, company_id=None) -> dict:
     to_update = []
     upload_dept_names = set()  # department names seen in this upload
 
-    # All existing emp_codes in DB (for generating new codes when emp_code exists but name differs)
-    all_existing_codes = set(Employee.objects.values_list('emp_code', flat=True))
+    # Existing emp_codes in this company (for generating new codes when emp_code exists but name differs)
+    _emp_base = Employee.objects.all()
+    if company_id is not None:
+        _emp_base = _emp_base.filter(company_id=company_id)
+    else:
+        _emp_base = _emp_base.filter(company_id__isnull=True)
+    all_existing_codes = set(_emp_base.values_list('emp_code', flat=True))
     used_in_upload = set()  # codes we assign in this run (to_create with generated code)
 
-    # Get existing employees for comparison (by emp_code from sheet)
+    # Get existing employees in this company for comparison (by emp_code from sheet)
     emp_codes = []
     rows_data = []
     for _, row in df.iterrows():
@@ -293,8 +298,16 @@ def upload_employees_excel(file, preview=False, company_id=None) -> dict:
 
     existing_employees = {}
     if emp_codes:
-        for emp in Employee.objects.filter(emp_code__in=emp_codes).values('emp_code', 'name', 'dept_name', 'designation', 'status'):
+        _existing_qs = Employee.objects.filter(emp_code__in=emp_codes)
+        if company_id is not None:
+            _existing_qs = _existing_qs.filter(company_id=company_id)
+        else:
+            _existing_qs = _existing_qs.filter(company_id__isnull=True)
+        for emp in _existing_qs.values('emp_code', 'name', 'dept_name', 'designation', 'status'):
             existing_employees[emp['emp_code']] = emp
+
+    company_key = company_id  # for tracking (company, emp_code) we create in this upload
+    created_codes_this_upload = set()  # (company_key, emp_code) already in to_create
 
     for row in rows_data:
         emp_code = _safe_str(row.get(col_map['code'], ''), 50)
@@ -369,9 +382,20 @@ def upload_employees_excel(file, preview=False, company_id=None) -> dict:
                 new_code = _next_available_emp_code(all_existing_codes, used_in_upload)
                 emp_data_new = dict(emp_data)
                 emp_data_new['emp_code'] = new_code
+                all_existing_codes.add(new_code)
                 to_create.append(emp_data_new)
                 created += 1
         else:
+            # New emp_code for this company: ensure we don't duplicate within same upload
+            key = (company_key, emp_code)
+            if key in created_codes_this_upload:
+                new_code = _next_available_emp_code(all_existing_codes, used_in_upload)
+                emp_data = dict(emp_data)
+                emp_data['emp_code'] = new_code
+                all_existing_codes.add(new_code)
+                created_codes_this_upload.add((company_key, new_code))
+            else:
+                created_codes_this_upload.add(key)
             to_create.append(emp_data)
             created += 1
 
@@ -392,7 +416,12 @@ def upload_employees_excel(file, preview=False, company_id=None) -> dict:
         Employee.objects.create(**emp_data)
 
     for update_data in to_update:
-        Employee.objects.filter(emp_code=update_data['emp_code']).update(**update_data['new'])
+        update_qs = Employee.objects.filter(emp_code=update_data['emp_code'])
+        if company_id is not None:
+            update_qs = update_qs.filter(company_id=company_id)
+        else:
+            update_qs = update_qs.filter(company_id__isnull=True)
+        update_qs.update(**update_data['new'])
 
     # New departments from this upload: create admin for each that does not exist (manage-admins)
     created_admins = ensure_admins_for_departments(upload_dept_names)

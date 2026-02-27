@@ -54,14 +54,17 @@ DB_HOST = os.environ.get("DB_HOST", "localhost")
 DB_PORT = os.environ.get("DB_PORT", "5432")
 
 # Tables to export: (table_name, ORDER BY clause). Sheet name = table name (sanitized).
-# If FETCH_ALL_TABLES is True, all tables in public schema are discovered and exported.
+# If FETCH_ALL_TABLES is True, ALL tables in public schema are discovered and exported
+# (including any new tables from migrations). Use False to export only the list below.
 FETCH_ALL_TABLES = True
 
+# Explicit list of all known app tables (used when FETCH_ALL_TABLES is False).
 TABLE_EXPORT_ORDER = [
     ("companies", "id"),
     ("company_registration_requests", "created_at DESC"),
+    ("company_settings", "company_id, key"),
     ("admins", "id"),
-    ("employees", "dept_name, emp_code"),
+    ("employees", "company_id, dept_name, emp_code"),
     ("attendance", "date DESC, emp_code"),
     ("salaries", "year DESC, month DESC, emp_code"),
     ("salary_advances", "year DESC, month DESC, emp_code"),
@@ -74,7 +77,7 @@ TABLE_EXPORT_ORDER = [
     ("leave_requests", "requested_at DESC"),
     ("system_settings", "key"),
     ("plant_report_recipients", "id"),
-    ("email_smtp_config", "id"),
+    ("email_smtp_config", "priority, id"),
     ("audit_log", "created_at DESC"),
 ]
 

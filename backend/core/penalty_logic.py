@@ -1,6 +1,6 @@
 """
 Late-coming penalty for Hourly and Monthly employees.
-Shift start = 9:00 AM (or employee's shift_from). 2.5 Rs per minute late until total deduction in month reaches 300 Rs, then 5 Rs per minute.
+Shift start = 9:00 AM (or employee's shift_from). Rate and threshold configurable per company via CompanySetting.
 Resets on 1st of each month. Fixed employees are not auto-penalized.
 """
 from datetime import time
@@ -10,9 +10,27 @@ from django.db.models import Sum
 
 
 SHIFT_START_DEFAULT = time(9, 0, 0)
-RATE_PER_MINUTE_RS = Decimal('2.5')
-RATE_AFTER_300_RS = Decimal('5')
-THRESHOLD_RS = Decimal('300')
+
+
+def _get_penalty_settings(company_id=None):
+    """Return (rate_per_minute, monthly_threshold_rs, rate_after_threshold) from company or defaults."""
+    from .settings_utils import get_company_setting
+    rate = get_company_setting('penalty_rate_per_minute_rs', company_id=company_id, default='2.5')
+    threshold = get_company_setting('penalty_monthly_threshold_rs', company_id=company_id, default='300')
+    rate_after = get_company_setting('penalty_rate_after_threshold_rs', company_id=company_id, default='5')
+    try:
+        r = Decimal(str(rate))
+    except Exception:
+        r = Decimal('2.5')
+    try:
+        t = Decimal(str(threshold))
+    except Exception:
+        t = Decimal('300')
+    try:
+        ra = Decimal(str(rate_after))
+    except Exception:
+        ra = Decimal('5')
+    return r, t, ra
 
 
 def _minutes_late(punch_in, shift_start=None):
@@ -38,18 +56,21 @@ def _monthly_deduction_so_far(emp_code, year, month, exclude_penalty_id=None):
 def recalculate_late_penalty_for_date(emp_code, date, attendance=None):
     """
     For Hourly and Monthly employees: if punch_in is after shift start (default 9:00 AM), compute penalty and create/update Penalty record.
-    Uses 2.5 Rs/min until monthly total reaches 300, then 5 Rs/min. Resets each month.
+    Rate and threshold from company settings (or defaults: 2.5 Rs/min until 300 Rs, then 5 Rs/min). Resets each month.
     Fixed employees are not auto-penalized.
     If attendance is provided (e.g. just-saved from adjustment), use it to avoid stale read.
     """
     from .models import Attendance, Employee, Penalty
 
-    emp = Employee.objects.filter(emp_code=emp_code).values('salary_type').first()
+    emp = Employee.objects.filter(emp_code=emp_code).values('salary_type', 'company_id').first()
     if not emp:
         return
     salary_type = (emp.get('salary_type') or '').strip().lower()
     if salary_type not in ('hourly', 'monthly'):
         return
+    company_id = emp.get('company_id')
+    RATE_PER_MINUTE_RS, THRESHOLD_RS, RATE_AFTER_300_RS = _get_penalty_settings(company_id=company_id)
+
     att = attendance if attendance is not None else Attendance.objects.filter(emp_code=emp_code, date=date).first()
     if not att or not att.punch_in:
         # Remove auto penalty if they removed punch or are on time
@@ -70,13 +91,12 @@ def recalculate_late_penalty_for_date(emp_code, date, attendance=None):
     existing_auto = Penalty.objects.filter(emp_code=emp_code, date=date, is_manual=False).first()
     deduction_so_far = _monthly_deduction_so_far(emp_code, year, month, exclude_penalty_id=existing_auto.id if existing_auto else None)
 
-    # First 300 Rs at 2.5/min, then 5/min
     remaining_at_low = max(Decimal('0'), THRESHOLD_RS - deduction_so_far)
-    minutes_at_25 = min(minutes, int(remaining_at_low / RATE_PER_MINUTE_RS))
-    minutes_at_5 = minutes - minutes_at_25
-    deduction = minutes_at_25 * RATE_PER_MINUTE_RS + minutes_at_5 * RATE_AFTER_300_RS
-    rate_used = RATE_AFTER_300_RS if minutes_at_5 > 0 else RATE_PER_MINUTE_RS
-    desc = f"Late punch: {minutes} min after {shift_start.strftime('%H:%M')} — {minutes_at_25} min @ 2.5 Rs, {minutes_at_5} min @ 5 Rs"
+    minutes_at_low = min(minutes, int(remaining_at_low / RATE_PER_MINUTE_RS)) if RATE_PER_MINUTE_RS else 0
+    minutes_at_high = minutes - minutes_at_low
+    deduction = minutes_at_low * RATE_PER_MINUTE_RS + minutes_at_high * RATE_AFTER_300_RS
+    rate_used = RATE_AFTER_300_RS if minutes_at_high > 0 else RATE_PER_MINUTE_RS
+    desc = f"Late punch: {minutes} min after {shift_start.strftime('%H:%M')} — {minutes_at_low} min @ {RATE_PER_MINUTE_RS} Rs, {minutes_at_high} min @ {RATE_AFTER_300_RS} Rs"
 
     with transaction.atomic():
         if existing_auto:

@@ -16,7 +16,7 @@ from django.conf import settings
 from .models import (
     Admin, Company, CompanyRegistrationRequest, Employee, Attendance, Salary, SalaryAdvance, Adjustment,
     ShiftOvertimeBonus, Penalty, PenaltyInquiry, PerformanceReward, Holiday,
-    LeaveRequest, SystemSetting, PlantReportRecipient, EmailSmtpConfig, AuditLog
+    LeaveRequest, SystemSetting, CompanySetting, PlantReportRecipient, EmailSmtpConfig, AuditLog
 )
 from .serializers import (
     AdminSerializer, AdminProfileSerializer, AdminUpdateSerializer,
@@ -36,6 +36,7 @@ from .reward_engine import run_reward_engine
 from .export_excel import generate_payroll_excel, generate_payroll_excel_previous_day
 from .audit_logging import log_activity, log_activity_manual
 from .google_sheets_sync import get_sheet_id, sync_all
+from .settings_utils import get_company_setting, set_company_setting
 from .jwt_auth import encode_access, encode_refresh, encode_access_employee, encode_refresh_employee, decode_token
 
 
@@ -1011,19 +1012,19 @@ class AdminProfileView(APIView):
 
 # ---------- Super admin: list/create/update other admins (access) ----------
 class DepartmentsListView(APIView):
-    """GET: list distinct department names from employees and from admins (so admin-created depts appear). Super admin only."""
+    """GET: list distinct department names from employees and from admins. Scoped by company when admin has company_id."""
     def get(self, request):
-        current, _ = get_request_admin(request)
-        if not current or not current.is_super_admin:
-            return Response({'error': 'Super admin only'}, status=403)
-        from_employees = set(
-            Employee.objects.exclude(dept_name='').exclude(dept_name__isnull=True)
-            .values_list('dept_name', flat=True).distinct()
-        )
-        from_admins = set(
-            Admin.objects.exclude(department='').exclude(department__isnull=True)
-            .values_list('department', flat=True).distinct()
-        )
+        current, allowed_emp_codes = get_request_admin(request)
+        if not current:
+            return Response({'error': 'Unauthorized'}, status=403)
+        qs_emp = Employee.objects.exclude(dept_name='').exclude(dept_name__isnull=True)
+        if allowed_emp_codes is not None:
+            qs_emp = qs_emp.filter(emp_code__in=allowed_emp_codes) if allowed_emp_codes else qs_emp.none()
+        from_employees = set(qs_emp.values_list('dept_name', flat=True).distinct())
+        qs_admin = Admin.objects.exclude(department='').exclude(department__isnull=True)
+        if getattr(current, 'company_id', None):
+            qs_admin = qs_admin.filter(company_id=current.company_id)
+        from_admins = set(qs_admin.values_list('department', flat=True).distinct())
         depts = sorted(set(from_employees) | set(from_admins))
         return Response({'departments': [d.strip() for d in depts if (d or '').strip()]})
 
@@ -1136,7 +1137,9 @@ class UploadAttendanceView(APIView):
         # Auto-run reward engine and today attendance sync after actual upload (not preview)
         if not preview:
             try:
-                reward_result = run_reward_engine()
+                admin, _ = get_request_admin(request)
+                company_id = getattr(admin, 'company_id', None) if admin else None
+                reward_result = run_reward_engine(company_id=company_id)
                 result['rewards'] = reward_result
             except Exception:
                 pass
@@ -1175,7 +1178,9 @@ class UploadForcePunchView(APIView):
             return Response(result, status=400)
         if not preview:
             try:
-                reward_result = run_reward_engine()
+                admin, _ = get_request_admin(request)
+                company_id = getattr(admin, 'company_id', None) if admin else None
+                reward_result = run_reward_engine(company_id=company_id)
                 result['rewards'] = reward_result
             except Exception:
                 pass
@@ -1189,6 +1194,13 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     serializer_class = EmployeeSerializer
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['status', 'dept_name', 'employment_type']
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        admin, _ = get_request_admin(self.request)
+        if admin and getattr(admin, 'company_id', None):
+            context['default_company_id'] = admin.company_id
+        return context
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -1265,7 +1277,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             shifts = sorted(x for x in all_emps.exclude(shift='').values_list('shift', flat=True).distinct() if (x or '').strip())
             gender_set = set(all_emps.values_list('gender', flat=True).distinct()) - {''}
             genders = sorted(x for x in gender_set if x is not None)
-            join_years = sorted(set(d.year for d in Employee.objects.dates('created_at', 'year')))
+            join_years = sorted(set(d.year for d in all_emps.dates('created_at', 'year')))
             filter_data = {
                 'departments': departments,
                 'designations': designations,
@@ -1331,12 +1343,12 @@ class AttendanceViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         today = timezone.localdate()
-        Attendance.objects.filter(
-            date=today,
-            punch_in__isnull=False
-        ).exclude(status='Present').update(status='Present')
-        qs = super().get_queryset()
         _, allowed_emp_codes = get_request_admin(self.request)
+        punch_in_update_qs = Attendance.objects.filter(date=today, punch_in__isnull=False).exclude(status='Present')
+        if allowed_emp_codes is not None:
+            punch_in_update_qs = punch_in_update_qs.filter(emp_code__in=allowed_emp_codes) if allowed_emp_codes else punch_in_update_qs.none()
+        punch_in_update_qs.update(status='Present')
+        qs = super().get_queryset()
         if allowed_emp_codes is not None:
             qs = qs.filter(emp_code__in=allowed_emp_codes) if allowed_emp_codes else qs.none()
         date_from = self.request.query_params.get('date_from', '').strip()
@@ -1474,6 +1486,21 @@ class HolidayViewSet(viewsets.ModelViewSet):
         instance.delete()
 
 
+# Keys that can be overridden per company (bonus/penalty rules). Company-scoped admin sees and edits these for their company.
+COMPANY_SETTING_KEYS = {
+    'streak_days': 'Consecutive present days for streak reward',
+    'weekly_overtime_threshold_hours': 'Min weekly OT hours for reward',
+    'absent_streak_days': 'Consecutive absent days for red flag',
+    # Penalty (late punch): Rs per minute
+    'penalty_rate_per_minute_rs': 'Rs per minute late (until monthly threshold)',
+    'penalty_monthly_threshold_rs': 'Monthly penalty threshold (Rs); after this, higher rate applies',
+    'penalty_rate_after_threshold_rs': 'Rs per minute late after monthly threshold',
+    # Shift OT bonus: after how many hours, how much bonus
+    'shift_ot_min_hours': 'Min work hours in a day before shift OT bonus applies',
+    'shift_ot_extra_hours_for_1_bonus': 'Every X extra hours = 1 bonus hour (e.g. 2)',
+}
+
+
 class SystemSettingViewSet(viewsets.ModelViewSet):
     queryset = SystemSetting.objects.all()
     serializer_class = SystemSettingSerializer
@@ -1485,12 +1512,35 @@ class SystemSettingViewSet(viewsets.ModelViewSet):
             from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied('Full access required for System settings.')
 
+    def _company_scoped_settings(self, request):
+        """When admin has company_id, return effective settings list and allow update to CompanySetting."""
+        admin, _ = get_request_admin(request)
+        return getattr(admin, 'company_id', None) if admin else None
+
     def list(self, request, *args, **kwargs):
         self._check_full_access()
+        company_id = self._company_scoped_settings(request)
+        if company_id is not None:
+            results = [
+                {'key': k, 'value': get_company_setting(k, company_id=company_id, default=''), 'description': desc}
+                for k, desc in COMPANY_SETTING_KEYS.items()
+            ]
+            return Response({'results': results})
         return super().list(request, *args, **kwargs)
 
     def retrieve(self, request, *args, **kwargs):
         self._check_full_access()
+        company_id = self._company_scoped_settings(request)
+        if company_id is not None:
+            key = kwargs.get(self.lookup_url_kwarg or self.lookup_field)
+            if key not in COMPANY_SETTING_KEYS:
+                from rest_framework.exceptions import NotFound
+                raise NotFound()
+            return Response({
+                'key': key,
+                'value': get_company_setting(key, company_id=company_id, default=''),
+                'description': COMPANY_SETTING_KEYS.get(key, ''),
+            })
         return super().retrieve(request, *args, **kwargs)
 
     def create(self, request, *args, **kwargs):
@@ -1503,6 +1553,20 @@ class SystemSettingViewSet(viewsets.ModelViewSet):
 
     def partial_update(self, request, *args, **kwargs):
         self._check_full_access()
+        company_id = self._company_scoped_settings(request)
+        if company_id is not None:
+            key = kwargs.get(self.lookup_url_kwarg or self.lookup_field)
+            if key not in COMPANY_SETTING_KEYS:
+                from rest_framework.exceptions import NotFound
+                raise NotFound()
+            value = (request.data.get('value') or '').strip()
+            set_company_setting(key, value, company_id, description=COMPANY_SETTING_KEYS.get(key, ''))
+            log_activity(request, 'update', 'settings', 'setting', key, details={'company_id': company_id, 'value': value})
+            return Response({
+                'key': key,
+                'value': get_company_setting(key, company_id=company_id, default=''),
+                'description': COMPANY_SETTING_KEYS.get(key, ''),
+            })
         return super().partial_update(request, *args, **kwargs)
 
     def destroy(self, request, *args, **kwargs):
@@ -1526,7 +1590,8 @@ class SystemSettingViewSet(viewsets.ModelViewSet):
 
 # ---------- Full access: super_admin OR (settings AND manage_admins) — for System settings & Google Sheet only ----------
 def _full_settings_access(request):
-    """True if admin has full access: can see/update System settings and Google Sheet live sync."""
+    """True if admin has full access: can see/update System settings and Google Sheet live sync.
+    Company super_admin (role=super_admin with company_id) has full access to all data and settings of their company."""
     current_admin, _ = get_request_admin(request)
     if not current_admin:
         return False
@@ -1569,48 +1634,46 @@ class EmailSmtpConfigView(APIView):
         return Response(EmailSmtpConfigSerializer(config).data)
 
 
-# ---------- Google Sheet settings & manual sync ----------
+# ---------- Google Sheet settings & manual sync (per company when admin has company_id) ----------
 class GoogleSheetConfigView(APIView):
-    """GET: return google_sheet_id and last_sync. PATCH: update google_sheet_id (body: { google_sheet_id }). Full access only."""
+    """GET: return google_sheet_id and last_sync for current admin's company. PATCH: update (body: { google_sheet_id }). Full access only."""
     def get(self, request):
         if not _full_settings_access(request):
             return Response({'error': 'Not allowed'}, status=403)
-        sheet_id = get_sheet_id()
-        last_sync = None
-        try:
-            obj = SystemSetting.objects.get(key='google_sheet_last_sync')
-            last_sync = obj.value or None
-        except SystemSetting.DoesNotExist:
-            pass
+        admin, _ = get_request_admin(request)
+        company_id = getattr(admin, 'company_id', None) if admin else None
+        sheet_id = get_sheet_id(company_id=company_id)
+        last_sync = get_company_setting('google_sheet_last_sync', company_id=company_id, default='') or None
         return Response({'google_sheet_id': sheet_id or '', 'last_sync': last_sync})
 
     def patch(self, request):
         if not _full_settings_access(request):
             return Response({'error': 'Not allowed'}, status=403)
+        admin, _ = get_request_admin(request)
+        company_id = getattr(admin, 'company_id', None) if admin else None
         new_id = (request.data.get('google_sheet_id') or '').strip()
-        obj, _ = SystemSetting.objects.get_or_create(
-            key='google_sheet_id',
-            defaults={'value': new_id, 'description': 'Google Sheet ID for live sync'}
-        )
-        obj.value = new_id
-        obj.save(update_fields=['value'])
-        log_activity(request, 'update', 'settings', 'google_sheet_id', '', details={'google_sheet_id': new_id[:20] + '...' if len(new_id) > 20 else new_id})
-        last_sync = None
-        try:
-            ls = SystemSetting.objects.get(key='google_sheet_last_sync')
-            last_sync = ls.value or None
-        except SystemSetting.DoesNotExist:
-            pass
-        return Response({'google_sheet_id': obj.value, 'last_sync': last_sync})
+        set_company_setting('google_sheet_id', new_id, company_id, description='Google Sheet ID for live sync')
+        log_activity(request, 'update', 'settings', 'google_sheet_id', '', details={'company_id': company_id, 'google_sheet_id': new_id[:20] + '...' if len(new_id) > 20 else new_id})
+        last_sync = get_company_setting('google_sheet_last_sync', company_id=company_id, default='') or None
+        return Response({'google_sheet_id': new_id, 'last_sync': last_sync})
 
 
 class GoogleSheetSyncView(APIView):
-    """POST: trigger manual sync to Google Sheet. Returns { success, message, last_sync }. Full access only."""
+    """POST: trigger manual sync to current admin's company Google Sheet. Returns { success, message, last_sync }. Full access only.
+    Only company-scoped admins can push (so the sheet gets only that company's data). System owner has no company_id so cannot push here."""
     def post(self, request):
         if not _full_settings_access(request):
             return Response({'error': 'Not allowed'}, status=403)
-        result = sync_all(force_full=True)
-        log_activity(request, 'export', 'settings', 'google_sheet_sync', '', details=result)
+        admin, _ = get_request_admin(request)
+        company_id = getattr(admin, 'company_id', None) if admin else None
+        if company_id is None:
+            return Response({
+                'success': False,
+                'message': 'Push is available only for a company. Log in as a company admin (e.g. Tubematic) and use Settings → Push to Google Sheet now.',
+                'last_sync': None,
+            }, status=400)
+        result = sync_all(force_full=True, company_id=company_id)
+        log_activity(request, 'export', 'settings', 'google_sheet_sync', '', details={**result, 'company_id': company_id})
         if result['success']:
             return Response(result, status=200)
         return Response(result, status=400)
@@ -1918,23 +1981,22 @@ class DashboardView(APIView):
         emp_filter = Q()
         if allowed_emp_codes is not None:
             emp_filter = Q(emp_code__in=allowed_emp_codes) if allowed_emp_codes else Q(pk=None)
-        # Auto-run reward engine once per day on first dashboard load (super only to avoid partial run)
-        if not current_admin or current_admin.is_super_admin:
-            if DashboardView._last_reward_run_date != today:
-                try:
-                    run_reward_engine(today)
-                    DashboardView._last_reward_run_date = today
-                except Exception:
-                    pass
+        # Auto-run reward engine once per day on first dashboard load (super only, for all companies)
+        if current_admin and current_admin.is_super_admin and DashboardView._last_reward_run_date != today:
+            try:
+                run_reward_engine(today, company_id=None)
+                DashboardView._last_reward_run_date = today
+            except Exception:
+                pass
         total_employees = Employee.objects.filter(emp_filter).count()  # all (including Inactive)
         active_employees = Employee.objects.filter(status__in=Employee.EMPLOYED_STATUSES).filter(emp_filter).count()  # not Inactive
         att_qs = Attendance.objects.filter(date=today)
         if allowed_emp_codes is not None:
             att_qs = att_qs.filter(emp_filter)
-        Attendance.objects.filter(
-            date=today,
-            punch_in__isnull=False
-        ).exclude(status='Present').update(status='Present')
+        punch_in_update_qs = Attendance.objects.filter(date=today, punch_in__isnull=False).exclude(status='Present')
+        if allowed_emp_codes is not None:
+            punch_in_update_qs = punch_in_update_qs.filter(emp_filter)
+        punch_in_update_qs.update(status='Present')
         today_present = att_qs.filter(Q(punch_in__isnull=False) | Q(status='Present')).count()
         today_absent = max(active_employees - today_present, 0)  # absent among active (expected to work)
         week_start = today - timedelta(days=6)
@@ -2019,9 +2081,10 @@ class SalaryMonthlyView(APIView):
             salaries = salaries.filter(emp_code__icontains=emp_code_filter)
         search = request.query_params.get('search', '').strip()
         if search:
-            emp_codes = Employee.objects.filter(
-                Q(emp_code__icontains=search) | Q(name__icontains=search)
-            ).values_list('emp_code', flat=True)
+            emp_qs = Employee.objects.filter(Q(emp_code__icontains=search) | Q(name__icontains=search))
+            if allowed_emp_codes is not None:
+                emp_qs = emp_qs.filter(emp_code__in=allowed_emp_codes) if allowed_emp_codes else emp_qs.none()
+            emp_codes = list(emp_qs.values_list('emp_code', flat=True))
             salaries = salaries.filter(emp_code__in=emp_codes)
         data = SalarySerializer(salaries.order_by('emp_code'), many=True).data
         advance_by_emp = get_advance_totals_by_emp(month=month, year=year)
@@ -2417,9 +2480,10 @@ class BonusOverviewView(APIView):
         if allowed_emp_codes is not None:
             salaries = salaries.filter(emp_code__in=allowed_emp_codes) if allowed_emp_codes else salaries.none()
         if search:
-            emp_codes = Employee.objects.filter(
-                Q(emp_code__icontains=search) | Q(name__icontains=search)
-            ).values_list('emp_code', flat=True)
+            emp_qs = Employee.objects.filter(Q(emp_code__icontains=search) | Q(name__icontains=search))
+            if allowed_emp_codes is not None:
+                emp_qs = emp_qs.filter(emp_code__in=allowed_emp_codes) if allowed_emp_codes else emp_qs.none()
+            emp_codes = list(emp_qs.values_list('emp_code', flat=True))
             salaries = salaries.filter(emp_code__in=emp_codes)
 
         sal_list = list(salaries.order_by('-bonus', 'emp_code').values(
@@ -2826,8 +2890,10 @@ class PenaltyDetailView(APIView):
 # ---------- Run reward engine (manual trigger) ----------
 class RunRewardEngineView(APIView):
     def post(self, request):
-        result = run_reward_engine()
-        log_activity(request, 'run', 'rewards', 'reward_engine', '', details=result if isinstance(result, dict) else {'created': result})
+        admin, _ = get_request_admin(request)
+        company_id = getattr(admin, 'company_id', None) if admin else None
+        result = run_reward_engine(company_id=company_id)
+        log_activity(request, 'run', 'rewards', 'reward_engine', '', details={**(result if isinstance(result, dict) else {'created': result}), 'company_id': company_id})
         return Response({'success': True, 'created': result})
 
 

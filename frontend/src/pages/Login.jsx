@@ -156,29 +156,37 @@ export default function Login() {
         )}
 
         {mode === 'employee' && companyChoice && companyChoice.employees?.length > 0 && (
-          <div className="loginCompanyChoiceOverlay" onClick={() => setCompanyChoice(null)}>
-            <div className="card loginCompanyChoiceCard" onClick={(ev) => ev.stopPropagation()}>
-              <h3 className="loginCompanyChoiceTitle">Select company</h3>
-              <p className="muted" style={{ marginBottom: '1rem', fontSize: '0.9rem' }}>
-                You work in more than one company. Choose which company data to view.
-              </p>
+          <div className="loginCompanyChoiceOverlay" onClick={() => !loading && setCompanyChoice(null)}>
+            <div className="loginCompanyChoiceCard" onClick={(ev) => ev.stopPropagation()}>
+              <div className="loginCompanyChoiceHeader">
+                <span className="loginCompanyChoiceIcon" aria-hidden>🏢</span>
+                <h3 className="loginCompanyChoiceTitle">Select company</h3>
+                <p className="loginCompanyChoiceSub">
+                  You work in more than one company. Choose which one to view.
+                </p>
+              </div>
               <ul className="loginCompanyChoiceList">
                 {companyChoice.employees.map((emp) => (
                   <li key={emp.emp_code}>
                     <button
                       type="button"
-                      className="btn btn-primary loginCompanyChoiceBtn"
+                      className="loginCompanyChoiceBtn"
                       onClick={() => handleSelectCompany(emp.emp_code)}
                       disabled={loading}
                     >
-                      {emp.company_name} {emp.company_code !== '—' ? `(${emp.company_code})` : ''}
+                      <span className="loginCompanyChoiceBtnName">{emp.company_name}</span>
+                      {emp.company_code !== '—' && (
+                        <span className="loginCompanyChoiceBtnCode">{emp.company_code}</span>
+                      )}
                     </button>
                   </li>
                 ))}
               </ul>
-              <button type="button" className="btn btn-secondary" onClick={() => setCompanyChoice(null)}>
-                Cancel
-              </button>
+              <div className="loginCompanyChoiceFooter">
+                <button type="button" className="loginCompanyChoiceCancel" onClick={() => setCompanyChoice(null)} disabled={loading}>
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
         )}

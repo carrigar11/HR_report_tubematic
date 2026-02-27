@@ -14,6 +14,7 @@ from django.db.models import Sum
 from django.utils import timezone
 
 from .models import Employee, Attendance, Salary, SalaryAdvance, Penalty, SystemSetting, ShiftOvertimeBonus
+from .settings_utils import get_company_setting
 from .export_excel import (
     _get_date_filter_queryset,
     _get_advance_by_emp,
@@ -69,14 +70,11 @@ def _get_credentials():
     )
 
 
-def get_sheet_id():
-    """Sheet ID from SystemSetting (key=google_sheet_id) or from env GOOGLE_SHEET_ID."""
-    try:
-        obj = SystemSetting.objects.get(key='google_sheet_id')
-        if obj.value and obj.value.strip():
-            return obj.value.strip()
-    except SystemSetting.DoesNotExist:
-        pass
+def get_sheet_id(company_id=None):
+    """Sheet ID for company (from CompanySetting then SystemSetting) or from env GOOGLE_SHEET_ID. company_id=None uses global."""
+    sid = get_company_setting('google_sheet_id', company_id=company_id, default='').strip()
+    if sid:
+        return sid
     return (os.environ.get('GOOGLE_SHEET_ID') or '').strip()
 
 
@@ -113,9 +111,12 @@ def _ensure_sheets_exist(service, spreadsheet_id, sheet_names=None):
 
 
 # ---------- Sheet 1: All dates by year-month, Total Salary = all-time ----------
-def _build_sheet1_data():
+def _build_sheet1_data(allowed_emp_codes=None):
     """Rows for Sheet 1: columns = Sr No, PLANT, Total Man Hrs, [year-month cols], Present, Absent, Avg Salary, Avg/hr, Absenteeism %, Total Salary (all-time), Bonus hrs, Bonus Rs."""
-    att_dates = Attendance.objects.values_list('date', flat=True).distinct()
+    att_qs = Attendance.objects.all()
+    if allowed_emp_codes is not None:
+        att_qs = att_qs.filter(emp_code__in=allowed_emp_codes)
+    att_dates = att_qs.values_list('date', flat=True).distinct()
     if not att_dates:
         return [['Sr No', 'PLANT', 'Total Man Hrs', 'Total Worker Present', 'Total Worker Absent',
                   'Average Salary', 'Average Salary/hr', 'Absenteeism %', 'Total Salary + Bonus (payout)',
@@ -130,15 +131,25 @@ def _build_sheet1_data():
         year_months_set.add((d.year, d.month))
         _, last = monthrange(d.year, d.month)
         d = date(d.year, d.month, last) + timedelta(days=1)
-    for (y, m) in Salary.objects.filter(bonus__gt=0).values_list('year', 'month').distinct():
+    sal_ym = Salary.objects.filter(bonus__gt=0)
+    if allowed_emp_codes is not None:
+        sal_ym = sal_ym.filter(emp_code__in=allowed_emp_codes)
+    for (y, m) in sal_ym.values_list('year', 'month').distinct():
         year_months_set.add((int(y), int(m)))
     year_months = sorted(year_months_set)
 
+    emp_qs = Employee.objects.all()
+    if allowed_emp_codes is not None:
+        emp_qs = emp_qs.filter(emp_code__in=allowed_emp_codes)
     att_all = Attendance.objects.all()
-    employees = list(Employee.objects.all().order_by('dept_name', 'emp_code'))
-    advance_all = _get_advance_by_emp(date_from=min_date, date_to=max_date)
-    penalty_all = _get_penalty_by_emp(date_from=min_date, date_to=max_date)
+    if allowed_emp_codes is not None:
+        att_all = att_all.filter(emp_code__in=allowed_emp_codes)
+    employees = list(emp_qs.order_by('dept_name', 'emp_code'))
+    advance_all = _get_advance_by_emp(date_from=min_date, date_to=max_date, allowed_emp_codes=allowed_emp_codes)
+    penalty_all = _get_penalty_by_emp(date_from=min_date, date_to=max_date, allowed_emp_codes=allowed_emp_codes)
     att_qs = _get_date_filter_queryset(date_from=min_date, date_to=max_date)
+    if allowed_emp_codes is not None:
+        att_qs = att_qs.filter(emp_code__in=allowed_emp_codes)
     sorted_dates = sorted(set(att_qs.values_list('date', flat=True)))
     _, payroll_rows = build_payroll_rows(employees, att_qs, advance_by_emp=advance_all, penalty_by_emp=penalty_all)
     _set_bonus_columns_for_sheet1(payroll_rows, year_months)
@@ -283,17 +294,22 @@ def _set_bonus_columns_for_sheet1(payroll_rows, year_months):
 
 
 # ---------- Sheet 2: Current year, Jan–Dec columns, no Absenteeism ----------
-def _build_sheet2_data():
+def _build_sheet2_data(allowed_emp_codes=None):
     """Current year: one row per plant, cols = Sr No, PLANT, Jan..Dec (salary per month), Average Salary, Average Salary/hr, Total Salary, Total Bonus (hrs), Total Bonus (Rs)."""
     today = timezone.localdate()
     year = today.year
     month_start = date(year, 1, 1)
     month_end = today  # only months that have passed or current
 
-    employees = list(Employee.objects.all().order_by('dept_name', 'emp_code'))
-    advance_by_emp = _get_advance_by_emp(month=None, year=None, date_from=month_start, date_to=month_end)
-    penalty_by_emp = _get_penalty_by_emp(month=None, year=None, date_from=month_start, date_to=month_end)
+    emp_qs = Employee.objects.all()
+    if allowed_emp_codes is not None:
+        emp_qs = emp_qs.filter(emp_code__in=allowed_emp_codes)
+    employees = list(emp_qs.order_by('dept_name', 'emp_code'))
+    advance_by_emp = _get_advance_by_emp(month=None, year=None, date_from=month_start, date_to=month_end, allowed_emp_codes=allowed_emp_codes)
+    penalty_by_emp = _get_penalty_by_emp(month=None, year=None, date_from=month_start, date_to=month_end, allowed_emp_codes=allowed_emp_codes)
     att_qs = _get_date_filter_queryset(date_from=month_start, date_to=month_end)
+    if allowed_emp_codes is not None:
+        att_qs = att_qs.filter(emp_code__in=allowed_emp_codes)
     sorted_dates = sorted(set(att_qs.values_list('date', flat=True)))
     _, payroll_rows = build_payroll_rows(employees, att_qs, advance_by_emp=advance_by_emp, penalty_by_emp=penalty_by_emp)
     from .export_excel import _set_bonus_columns_for_date_range
@@ -325,15 +341,24 @@ def _build_sheet2_data():
             dept_month_salary[dept][d.month] += amt
 
     # Bonus (rs) per department per month (from Salary.bonus hours × rate) for total row
-    emp_codes_with_bonus = set(Salary.objects.filter(year=year).values_list('emp_code', flat=True))
+    sal_year = Salary.objects.filter(year=year)
+    if allowed_emp_codes is not None:
+        sal_year = sal_year.filter(emp_code__in=allowed_emp_codes)
+    emp_codes_with_bonus = set(sal_year.values_list('emp_code', flat=True))
     all_emp_codes = set(emp_to_dept.keys()) | emp_codes_with_bonus
+    emp_filter_qs = Employee.objects.filter(emp_code__in=all_emp_codes)
+    if allowed_emp_codes is not None:
+        emp_filter_qs = emp_filter_qs.filter(emp_code__in=allowed_emp_codes)
     salary_type_by_emp = {
         e['emp_code']: (e.get('salary_type') or 'Monthly').strip() or 'Monthly'
-        for e in Employee.objects.filter(emp_code__in=all_emp_codes).values('emp_code', 'salary_type')
+        for e in emp_filter_qs.values('emp_code', 'salary_type')
     }
     dept_month_bonus_amt = defaultdict(lambda: defaultdict(float))
     for m in range(1, 13):
-        for s in Salary.objects.filter(year=year, month=m).filter(bonus__gt=0).values('emp_code', 'bonus', 'base_salary'):
+        sal_m = Salary.objects.filter(year=year, month=m, bonus__gt=0)
+        if allowed_emp_codes is not None:
+            sal_m = sal_m.filter(emp_code__in=allowed_emp_codes)
+        for s in sal_m.values('emp_code', 'bonus', 'base_salary'):
             ec = s['emp_code']
             dept = emp_to_dept.get(ec, '')
             bonus_hrs = float(s.get('bonus') or 0)
@@ -400,10 +425,13 @@ def _build_sheet2_data():
     return rows
 
 
-def _day_bonus_per_dept(single_date):
+def _day_bonus_per_dept(single_date, allowed_emp_codes=None):
     """OT bonus (hrs) and (rs) for that day only, by department. Uses ShiftOvertimeBonus."""
     from collections import defaultdict
-    emp_codes = list(Employee.objects.values_list('emp_code', flat=True))
+    emp_qs = Employee.objects.values_list('emp_code', flat=True)
+    if allowed_emp_codes is not None:
+        emp_qs = emp_qs.filter(emp_code__in=allowed_emp_codes) if allowed_emp_codes else emp_qs.none()
+    emp_codes = list(emp_qs)
     if not emp_codes:
         return {}
     qs = ShiftOvertimeBonus.objects.filter(
@@ -438,16 +466,23 @@ def _day_bonus_per_dept(single_date):
 
 
 # ---------- Sheet 3: Plant Report (Previous day) ----------
-def _build_sheet3_data():
+def _build_sheet3_data(allowed_emp_codes=None):
     """Plant Report for previous day: Average Salary and Average Salary/hr are for that day only; OT bonus (hrs)/(rs) are from start of month till previous day."""
     today = timezone.localdate()
     yesterday = today - timedelta(days=1)
     month_start = yesterday.replace(day=1)
     att_yesterday = _get_date_filter_queryset(single_date=yesterday)
+    if allowed_emp_codes is not None:
+        att_yesterday = att_yesterday.filter(emp_code__in=allowed_emp_codes)
     att_month = Attendance.objects.filter(date__gte=month_start, date__lte=yesterday)
-    employees = list(Employee.objects.all().order_by('dept_name', 'emp_code'))
-    advance_by_emp = _get_advance_by_emp(month=yesterday.month, year=yesterday.year)
-    penalty_by_emp = _get_penalty_by_emp(month=yesterday.month, year=yesterday.year)
+    if allowed_emp_codes is not None:
+        att_month = att_month.filter(emp_code__in=allowed_emp_codes)
+    emp_qs = Employee.objects.all()
+    if allowed_emp_codes is not None:
+        emp_qs = emp_qs.filter(emp_code__in=allowed_emp_codes)
+    employees = list(emp_qs.order_by('dept_name', 'emp_code'))
+    advance_by_emp = _get_advance_by_emp(month=yesterday.month, year=yesterday.year, allowed_emp_codes=allowed_emp_codes)
+    penalty_by_emp = _get_penalty_by_emp(month=yesterday.month, year=yesterday.year, allowed_emp_codes=allowed_emp_codes)
     sorted_dates, payroll_rows = build_payroll_rows(
         employees, att_yesterday, advance_by_emp=advance_by_emp, penalty_by_emp=penalty_by_emp
     )
@@ -459,7 +494,7 @@ def _build_sheet3_data():
     for row in payroll_rows:
         row['total'] = emp_to_month_total.get(row['emp_code'], 0)
     # OT bonus (hrs) and (rs) = from start of month till previous day (month-to-date for report date)
-    month_to_date_bonus_per_dept = _month_to_date_bonus_per_dept(month_start, yesterday, employees)
+    month_to_date_bonus_per_dept = _month_to_date_bonus_per_dept(month_start, yesterday, employees, allowed_emp_codes=allowed_emp_codes)
     month_total_per_dept = {}
     for row in payroll_rows:
         dept = row.get('department') or ''
@@ -533,12 +568,15 @@ def _build_sheet3_data():
 
 
 # ---------- Sheet 4: All employee data ----------
-def _build_sheet4_data():
+def _build_sheet4_data(allowed_emp_codes=None):
     """All columns from Employee model."""
     cols = ['emp_code', 'name', 'mobile', 'email', 'gender', 'dept_name', 'designation', 'status',
             'employment_type', 'salary_type', 'base_salary', 'shift', 'shift_from', 'shift_to', 'created_at', 'updated_at']
     rows = [cols]
-    for emp in Employee.objects.all().order_by('emp_code'):
+    emp_qs = Employee.objects.all()
+    if allowed_emp_codes is not None:
+        emp_qs = emp_qs.filter(emp_code__in=allowed_emp_codes)
+    for emp in emp_qs.order_by('emp_code'):
         row = []
         for c in cols:
             v = getattr(emp, c, None)
@@ -569,15 +607,20 @@ def _sheet_range(sheet_name, start_cell='A1'):
 
 
 # ---------- Sheet 5: One tab per department (from–to, current month), advance, bonus, penalty ----------
-def _build_sheet5_sheets_data():
+def _build_sheet5_sheets_data(allowed_emp_codes=None):
     """One sheet per department. Each sheet: From–To, employee rows with Salary, Bonus (hrs), Bonus (Rs), Penalty, Advance, and a total row."""
     today = timezone.localdate()
     month_start = today.replace(day=1)
     month_end = today
-    employees = list(Employee.objects.all().order_by('dept_name', 'emp_code'))
-    advance_by_emp = _get_advance_by_emp(month=today.month, year=today.year)
-    penalty_by_emp = _get_penalty_by_emp(month=today.month, year=today.year)
+    emp_qs = Employee.objects.all()
+    if allowed_emp_codes is not None:
+        emp_qs = emp_qs.filter(emp_code__in=allowed_emp_codes)
+    employees = list(emp_qs.order_by('dept_name', 'emp_code'))
+    advance_by_emp = _get_advance_by_emp(month=today.month, year=today.year, allowed_emp_codes=allowed_emp_codes)
+    penalty_by_emp = _get_penalty_by_emp(month=today.month, year=today.year, allowed_emp_codes=allowed_emp_codes)
     att_qs = _get_date_filter_queryset(date_from=month_start, date_to=month_end)
+    if allowed_emp_codes is not None:
+        att_qs = att_qs.filter(emp_code__in=allowed_emp_codes)
     _, payroll_rows = build_payroll_rows(
         employees, att_qs, advance_by_emp=advance_by_emp, penalty_by_emp=penalty_by_emp
     )
@@ -770,45 +813,78 @@ def _merge_total_salary_cell(service, spreadsheet_id, sheet_id, data_start_row_1
         logger.warning('Could not merge TOTAL SALARY cell: %s', e)
 
 
-def _apply_plant_report_sheet_format(service, spreadsheet_id, sheet_id, num_rows, num_cols):
+def _apply_plant_report_sheet_format(service, spreadsheet_id, sheet_id, num_rows, num_cols, data_start_row_0=1, data_start_col_0=1):
     """
     Apply color schema (same as other sheet): header orange, total red, in-between blue.
-    Also add borders to the whole data section. Data from B2: row 1 = header, last = total.
+    Also add borders to the whole data section.
+
+    data_start_row_0 / data_start_col_0 are 0-based indexes of the top-left cell
+    of the data header row (where the first row of `data` was written).
+    Previously this was hard-coded for B2; now we can also support layouts like D4.
     """
     if not num_rows or not num_cols or sheet_id is None:
         return
     header_orange = {'red': 1.0, 'green': 0.82, 'blue': 0.6}
     total_red = {'red': 1.0, 'green': 0.82, 'blue': 0.82}
     data_blue = {'red': 0.82, 'green': 0.92, 'blue': 1.0}
-    end_col = 1 + num_cols
+    end_col = data_start_col_0 + num_cols
     border_style = {'style': 'SOLID', 'color': {'red': 0.2, 'green': 0.2, 'blue': 0.2}}
     borders = {'top': border_style, 'bottom': border_style, 'left': border_style, 'right': border_style}
+
+    header_row_0 = data_start_row_0
+    total_row_0 = data_start_row_0 + num_rows - 1
+    data_rows_start_0 = data_start_row_0 + 1
+
     requests = [
         {
             'repeatCell': {
-                'range': {'sheetId': sheet_id, 'startRowIndex': 1, 'endRowIndex': 2, 'startColumnIndex': 1, 'endColumnIndex': end_col},
+                'range': {
+                    'sheetId': sheet_id,
+                    'startRowIndex': header_row_0,
+                    'endRowIndex': header_row_0 + 1,
+                    'startColumnIndex': data_start_col_0,
+                    'endColumnIndex': end_col,
+                },
                 'cell': {'userEnteredFormat': {'backgroundColor': header_orange}},
                 'fields': 'userEnteredFormat.backgroundColor',
             }
         },
         {
             'repeatCell': {
-                'range': {'sheetId': sheet_id, 'startRowIndex': num_rows, 'endRowIndex': num_rows + 1, 'startColumnIndex': 1, 'endColumnIndex': end_col},
+                'range': {
+                    'sheetId': sheet_id,
+                    'startRowIndex': total_row_0,
+                    'endRowIndex': total_row_0 + 1,
+                    'startColumnIndex': data_start_col_0,
+                    'endColumnIndex': end_col,
+                },
                 'cell': {'userEnteredFormat': {'backgroundColor': total_red}},
                 'fields': 'userEnteredFormat.backgroundColor',
             }
         },
         {
             'repeatCell': {
-                'range': {'sheetId': sheet_id, 'startRowIndex': 2, 'endRowIndex': num_rows, 'startColumnIndex': 1, 'endColumnIndex': end_col},
+                'range': {
+                    'sheetId': sheet_id,
+                    'startRowIndex': data_rows_start_0,
+                    'endRowIndex': total_row_0,
+                    'startColumnIndex': data_start_col_0,
+                    'endColumnIndex': end_col,
+                },
                 'cell': {'userEnteredFormat': {'backgroundColor': data_blue}},
                 'fields': 'userEnteredFormat.backgroundColor',
             }
         },
-        # Borders around the whole data section (B2 to end)
+        # Borders around the whole data section
         {
             'repeatCell': {
-                'range': {'sheetId': sheet_id, 'startRowIndex': 1, 'endRowIndex': num_rows + 1, 'startColumnIndex': 1, 'endColumnIndex': end_col},
+                'range': {
+                    'sheetId': sheet_id,
+                    'startRowIndex': header_row_0,
+                    'endRowIndex': total_row_0 + 1,
+                    'startColumnIndex': data_start_col_0,
+                    'endColumnIndex': end_col,
+                },
                 'cell': {'userEnteredFormat': {'borders': borders}},
                 'fields': 'userEnteredFormat.borders',
             }
@@ -821,14 +897,14 @@ def _apply_plant_report_sheet_format(service, spreadsheet_id, sheet_id, num_rows
         logger.warning('Could not apply Plant Report formatting: %s', e)
 
 
-def _apply_plant_report_title_row(service, spreadsheet_id, sheet_id, num_cols):
+def _apply_plant_report_title_row(service, spreadsheet_id, sheet_id, num_cols, start_col_0=1):
     """
     Merge top row (B1 to last data column) on Plant Report sheet, set 'PLANT REPORT' styling:
     center alignment (horizontal + vertical), light gray background, full border.
     """
     if sheet_id is None or num_cols < 1:
         return
-    end_col = 1 + num_cols
+    end_col = start_col_0 + num_cols
     light_gray = {'red': 0.9, 'green': 0.9, 'blue': 0.9}
     border_style = {'style': 'SOLID', 'color': {'red': 0.2, 'green': 0.2, 'blue': 0.2}}
     borders = {'top': border_style, 'bottom': border_style, 'left': border_style, 'right': border_style}
@@ -839,7 +915,7 @@ def _apply_plant_report_title_row(service, spreadsheet_id, sheet_id, num_cols):
                     'sheetId': sheet_id,
                     'startRowIndex': 0,
                     'endRowIndex': 1,
-                    'startColumnIndex': 1,
+                    'startColumnIndex': start_col_0,
                     'endColumnIndex': end_col,
                 },
                 'mergeType': 'MERGE_ALL',
@@ -851,7 +927,7 @@ def _apply_plant_report_title_row(service, spreadsheet_id, sheet_id, num_cols):
                     'sheetId': sheet_id,
                     'startRowIndex': 0,
                     'endRowIndex': 1,
-                    'startColumnIndex': 1,
+                    'startColumnIndex': start_col_0,
                     'endColumnIndex': end_col,
                 },
                 'cell': {
@@ -970,26 +1046,31 @@ def _add_data_borders(service, spreadsheet_id, sheet_id, num_rows, num_cols, sta
         logger.warning('Could not apply data borders: %s', e)
 
 
-def sync_all(force_full=False):
+def sync_all(force_full=False, company_id=None):
     """
-    Push all 5 sheets to the configured Google Sheet. If not force_full, Sheet 1 and 2 may be updated
-    less often (e.g. only when new month) to reduce API calls; for now we always update all.
+    Push all 5 sheets to the configured Google Sheet for the given company (or global if company_id=None).
     Returns dict with success, message, last_sync.
     """
-    spreadsheet_id = get_sheet_id()
+    spreadsheet_id = get_sheet_id(company_id=company_id)
     if not spreadsheet_id:
         return {'success': False, 'message': 'Google Sheet ID not set. Set it in Settings or GOOGLE_SHEET_ID in .env.'}
+
+    allowed_emp_codes = None
+    if company_id is not None:
+        allowed_emp_codes = list(Employee.objects.filter(company_id=company_id).values_list('emp_code', flat=True))
+        if not allowed_emp_codes:
+            return {'success': False, 'message': 'No employees in this company.', 'last_sync': None}
 
     try:
         service = _sheets_service()
         # Build fixed sheets (1–4) and department payroll (one sheet per dept)
         sheets_data_1_4 = [
-            _build_sheet1_data(),
-            _build_sheet2_data(),
-            _build_sheet3_data(),
-            _build_sheet4_data(),
+            _build_sheet1_data(allowed_emp_codes=allowed_emp_codes),
+            _build_sheet2_data(allowed_emp_codes=allowed_emp_codes),
+            _build_sheet3_data(allowed_emp_codes=allowed_emp_codes),
+            _build_sheet4_data(allowed_emp_codes=allowed_emp_codes),
         ]
-        sheet5_list = _build_sheet5_sheets_data()  # list of (sheet_name, data)
+        sheet5_list = _build_sheet5_sheets_data(allowed_emp_codes=allowed_emp_codes)  # list of (sheet_name, data)
         all_sheet_names = FIXED_SHEET_NAMES + [name for name, _ in sheet5_list]
         _ensure_sheets_exist(service, spreadsheet_id, all_sheet_names)
 
@@ -1004,7 +1085,13 @@ def sync_all(force_full=False):
             if not data:
                 continue
             data = _values_to_sheet_format(data)
-            start = 'B2' if sheet_name in ('All dates by month', 'Current year', 'Plant Report (Previous day)') else 'A1'
+            if sheet_name == 'Plant Report (Previous day)':
+                # Start Plant Report (Previous day) table at D4 (for nicer layout/margin)
+                start = 'D4'
+            elif sheet_name in ('All dates by month', 'Current year'):
+                start = 'B2'
+            else:
+                start = 'A1'
             range_name = _sheet_range(sheet_name, start)
             body = {'values': data}
             try:
@@ -1027,34 +1114,58 @@ def sync_all(force_full=False):
                 logger.info('Updated sheet "%s" with %s rows (after retry)', sheet_name, len(data))
             if sheet_name in ('Plant Report (Previous day)', 'Current year') and len(data) > 0 and len(data[0]) > 0:
                 sheet_id = _get_sheet_id_by_title(service, spreadsheet_id, sheet_name)
-                _apply_plant_report_sheet_format(
-                    service, spreadsheet_id, sheet_id,
-                    num_rows=len(data),
-                    num_cols=len(data[0]),
-                )
+                if sheet_name == 'Plant Report (Previous day)':
+                    # Data header written at D4 => row index 3, column index 3 (0-based)
+                    _apply_plant_report_sheet_format(
+                        service, spreadsheet_id, sheet_id,
+                        num_rows=len(data),
+                        num_cols=len(data[0]),
+                        data_start_row_0=3,
+                        data_start_col_0=3,
+                    )
+                else:
+                    _apply_plant_report_sheet_format(
+                        service, spreadsheet_id, sheet_id,
+                        num_rows=len(data),
+                        num_cols=len(data[0]),
+                    )
             if sheet_name in ('All dates by month', 'Current year', 'Plant Report (Previous day)') and len(data) > 0 and len(data[0]) > 0:
                 try:
+                    title_start = 'D1' if sheet_name == 'Plant Report (Previous day)' else 'B1'
                     service.spreadsheets().values().update(
                         spreadsheetId=spreadsheet_id,
-                        range=_sheet_range(sheet_name, 'B1'),
+                        range=_sheet_range(sheet_name, title_start),
                         valueInputOption='USER_ENTERED',
                         body={'values': [['PLANT REPORT']]},
                     ).execute()
                 except Exception as e:
                     logger.warning('Could not write PLANT REPORT title on %s: %s', sheet_name, e)
                 sid = _get_sheet_id_by_title(service, spreadsheet_id, sheet_name)
-                _apply_plant_report_title_row(service, spreadsheet_id, sid, len(data[0]))
+                if sheet_name == 'Plant Report (Previous day)':
+                    # Title row aligned with data block that starts at column D
+                    _apply_plant_report_title_row(service, spreadsheet_id, sid, len(data[0]), start_col_0=3)
+                else:
+                    _apply_plant_report_title_row(service, spreadsheet_id, sid, len(data[0]))
             if sheet_name == 'Current year' and len(data) >= 3 and len(data[0]) > 0:
                 sid = _get_sheet_id_by_title(service, spreadsheet_id, sheet_name)
                 _apply_current_year_color_scale(service, spreadsheet_id, sid, len(data), len(data[0]))
             if sheet_name in ('All dates by month', 'Current year', 'Plant Report (Previous day)') and len(data) > 1:
                 sid = _get_sheet_id_by_title(service, spreadsheet_id, sheet_name)
-                _merge_total_salary_cell(
-                    service, spreadsheet_id, sid,
-                    data_start_row_1based=2,
-                    num_data_rows=len(data),
-                    start_col_0based=1,
-                )
+                if sheet_name == 'Plant Report (Previous day)':
+                    # Data at D4 => row 4 (1-based), column index 3 (D) for TOTAL SALARY merge
+                    _merge_total_salary_cell(
+                        service, spreadsheet_id, sid,
+                        data_start_row_1based=4,
+                        num_data_rows=len(data),
+                        start_col_0based=3,
+                    )
+                else:
+                    _merge_total_salary_cell(
+                        service, spreadsheet_id, sid,
+                        data_start_row_1based=2,
+                        num_data_rows=len(data),
+                        start_col_0based=1,
+                    )
             # Borders on data section: "All dates by month" (B2) gets borders only; others already in _apply_plant_report_sheet_format
             if sheet_name == 'All dates by month' and len(data) > 0 and len(data[0]) > 0:
                 sid = _get_sheet_id_by_title(service, spreadsheet_id, sheet_name)
@@ -1091,14 +1202,11 @@ def sync_all(force_full=False):
                 sid = _get_sheet_id_by_title(service, spreadsheet_id, sheet_name)
                 _add_data_borders(service, spreadsheet_id, sid, len(data), len(data[0]), start_row_0=0, start_col_0=0)
 
-        # Optionally store last_sync in SystemSetting
+        # Store last_sync per company (or global)
         try:
-            from django.utils.dateformat import format as date_format
-            from datetime import datetime
             last_sync = timezone.now().isoformat()
-            obj, _ = SystemSetting.objects.get_or_create(key='google_sheet_last_sync', defaults={'value': '', 'description': 'Last Google Sheet sync time'})
-            obj.value = last_sync
-            obj.save(update_fields=['value'])
+            from .settings_utils import set_company_setting
+            set_company_setting('google_sheet_last_sync', last_sync, company_id, description='Last Google Sheet sync time')
         except Exception:
             pass
 

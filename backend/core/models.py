@@ -105,7 +105,7 @@ class Employee(models.Model):
     EMPLOYMENT_TYPE_CHOICES = [('Full-time', 'Full-time'), ('Hourly', 'Hourly')]
     SALARY_TYPE_CHOICES = [('Monthly', 'Monthly'), ('Hourly', 'Hourly'), ('Fixed', 'Fixed')]
 
-    emp_code = models.CharField(max_length=50, unique=True, db_index=True)
+    emp_code = models.CharField(max_length=50, db_index=True)  # unique per company (see Meta.constraints)
     name = models.CharField(max_length=255)
     mobile = models.CharField(max_length=20, blank=True)
     email = models.EmailField(blank=True)
@@ -133,6 +133,12 @@ class Employee(models.Model):
     class Meta:
         db_table = 'employees'
         ordering = ['emp_code']
+        constraints = [
+            # Same emp_code cannot exist twice in the same company
+            models.UniqueConstraint(fields=['company', 'emp_code'], condition=models.Q(company__isnull=False), name='unique_emp_code_per_company'),
+            # When company is null, emp_code must still be unique among those
+            models.UniqueConstraint(fields=['emp_code'], condition=models.Q(company__isnull=True), name='unique_emp_code_when_no_company'),
+        ]
 
     def __str__(self):
         return f"{self.emp_code} - {self.name}"
@@ -390,7 +396,7 @@ class PenaltyInquiry(models.Model):
 
 
 class SystemSetting(models.Model):
-    """Configurable thresholds for auto reward engine."""
+    """Configurable thresholds for auto reward engine (global defaults)."""
     key = models.CharField(max_length=100, unique=True)
     value = models.CharField(max_length=255)
     description = models.CharField(max_length=255, blank=True)
@@ -401,6 +407,26 @@ class SystemSetting(models.Model):
 
     def __str__(self):
         return f"{self.key}={self.value}"
+
+
+class CompanySetting(models.Model):
+    """Per-company overrides: Google Sheet ID, bonus/penalty rules, etc. company_id null = global default."""
+    company = models.ForeignKey(Company, null=True, blank=True, on_delete=models.CASCADE, related_name='settings')
+    key = models.CharField(max_length=100)
+    value = models.CharField(max_length=500)
+    description = models.CharField(max_length=255, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'company_settings'
+        ordering = ['company_id', 'key']
+        constraints = [
+            models.UniqueConstraint(fields=['company', 'key'], condition=models.Q(company__isnull=False), name='unique_company_setting_per_company'),
+            models.UniqueConstraint(fields=['key'], condition=models.Q(company__isnull=True), name='unique_company_setting_global_key'),
+        ]
+
+    def __str__(self):
+        return f"{self.company_id or 'global'}:{self.key}={self.value}"
 
 
 class PlantReportRecipient(models.Model):
